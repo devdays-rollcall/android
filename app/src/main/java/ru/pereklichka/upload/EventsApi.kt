@@ -7,8 +7,9 @@ import retrofit2.http.POST
 import retrofit2.http.Url
 
 /**
- * Сервер событий. Адрес сервера вводят на экране диагностики во время работы, поэтому полный URL передаётся
- * в каждом вызове, а не задаётся в Retrofit заранее. Используют `UploadWorker` и его тест с MockWebServer.
+ * Клиент Retrofit для сервера событий (`docs/server/openapi.yaml`). Адрес сервера вводят на экране диагностики
+ * во время работы, поэтому полный URL передаётся в каждом вызове. Используют [UploadWorker] и его тест
+ * с MockWebServer.
  */
 interface EventsApi {
 
@@ -25,8 +26,10 @@ interface EventsApi {
     ): Response<AcceptedDto>
 
     companion object {
+        /** Полный адрес `POST /api/v1/events` для адреса сервера из `AppSettings`. */
         fun eventsUrl(serverUrl: String): String = serverUrl.trimEnd('/') + "/api/v1/events"
 
+        /** Значение заголовка Authorization для токена группы. */
         fun bearer(token: String): String = "Bearer $token"
     }
 }

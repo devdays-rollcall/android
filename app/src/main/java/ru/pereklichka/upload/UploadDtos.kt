@@ -8,7 +8,7 @@ import java.time.Instant
 // Тела запросов и ответов POST /api/v1/events поле в поле по docs/server/openapi.yaml.
 // Схемы GET (EventOutput, EventPage) телефону не нужны и здесь не описаны.
 
-/** `EventBatch`: пачка не больше 500 событий, [senderId] это мой `member_id`. Пустая пачка служит heartbeat. */
+/** `EventBatch`: пачка не больше 500 событий, [senderId] это `member_id` этого телефона. Пустая пачка служит heartbeat. */
 @Serializable
 data class EventBatchDto(
     @SerialName("sender_id") val senderId: String,
