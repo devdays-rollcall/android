@@ -171,7 +171,8 @@ class RouteService : Service() {
         fun start() {
             // Кого слышали в прошлой группе, в состоянии новой группы не нужно.
             presence.clear()
-            // Движок запускается до транспорта: PeerTransport не обещает хранить события, пока их никто не читает.
+            // Движок запускается до транспорта. Его подписка всё равно может начаться позже, и первые события
+            // транспорта сохраняет буфер Channel.UNLIMITED, хотя контракт PeerTransport этого не обещает.
             engine.start(scope, group)
             transport.start(
                 TransportConfig(

@@ -48,7 +48,8 @@ class NearbyPeerTransport @Inject constructor(
 
     override fun start(config: TransportConfig) {
         // TODO(Ольга): проверить радио и включить advertising и discovery по политике из 03.
-        //  Политика в docs/03-sync-protocol.md, «Транспорт поверх Nearby Connections». Решения о соединениях через ConnectionPolicy, соединения принимать без кода, после перезапуска
+        //  03 значит docs/03-sync-protocol.md, раздел «Транспорт поверх Nearby Connections». Решения о соединениях
+        //  через ConnectionPolicy, входящие принимать без сверки кода аутентификации Nearby, после перезапуска
         //  процесса поднимать всё с нуля.
         //  docs/team/olga-transport.md
         throw NotImplementedError("TODO(Ольга): проверить радио и включить advertising и discovery по политике из 03.")

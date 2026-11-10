@@ -72,7 +72,7 @@ class RoomMeshStore @Inject constructor(
 
     override suspend fun apply(delta: IncomingDelta): ApplyResult {
         // TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».
-        //  Правила в docs/03-sync-protocol.md. Максимумы читать внутри транзакции, порядок проверок как в admit
+        //  03 значит docs/03-sync-protocol.md. Максимумы читать внутри транзакции, порядок проверок как в admit
         //  у InMemoryMeshStore.
         //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».")

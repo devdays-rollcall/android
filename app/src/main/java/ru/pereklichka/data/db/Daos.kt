@@ -51,7 +51,7 @@ interface ControlEventDao {
     suspend fun deleteAll()
 }
 
-/** Запросы к точкам трека. Выборку неотправленных и пометки использует `UploadWorker`, остальное `RoomMeshStore`. */
+/** Запросы к точкам трека для `RoomMeshStore`, `UploadWorker` (неотправленные и пометки) и счётчиков диагностики. */
 @Dao
 interface LocationDao {
     @Insert
