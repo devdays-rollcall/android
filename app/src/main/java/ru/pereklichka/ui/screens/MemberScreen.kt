@@ -6,7 +6,7 @@ import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.rules.GroupView
 
 /**
- * Карточка участника (ФТ-12, ФТ-15, ФТ-17): точность позиции, кто слышал последним (`lastHeardBy`),
+ * Карточка участника: точность позиции, кто слышал последним (`lastHeardBy`),
  * «Объявить тревогу», «Вижу, в порядке» при активной тревоге о нём.
  *
  * Задача: docs/team/valentin-ui.md

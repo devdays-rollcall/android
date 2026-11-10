@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import ru.pereklichka.domain.rules.GroupView
 
 /**
- * Отлучка (ФТ-14): 5, 10 или 20 минут и отмена. Сколько осталось, видно по `awayRemainingMs` у меня в `view.members`.
+ * Отлучка: 5, 10 или 20 минут и отмена. Сколько осталось, видно по `awayRemainingMs` у меня в `view.members`.
  *
  * Задача: docs/team/valentin-ui.md
  */

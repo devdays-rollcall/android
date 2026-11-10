@@ -22,7 +22,7 @@ interface GroupDao {
     suspend fun deleteAll()
 }
 
-/** Запросы к событиям для `RoomMeshStore`. Если ему не хватит запросов, новые добавляются сюда же. */
+/** Запросы к событиям для `RoomMeshStore`. */
 @Dao
 interface ControlEventDao {
     /** Падает на повторном id или паре (author, seq): хранилище проверяет это до вставки. */

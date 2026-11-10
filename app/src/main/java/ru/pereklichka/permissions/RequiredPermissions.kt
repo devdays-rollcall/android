@@ -30,7 +30,7 @@ object RequiredPermissions {
             add(Manifest.permission.BLUETOOTH_CONNECT)
         }
         if (sdk >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.NEARBY_WIFI_DEVICES)
-        // До Android 13 Nearby ищет соседей через геолокацию.
+        // До Android 13 сканирование Bluetooth и Wi-Fi, через которое Nearby ищет соседей, требует разрешения на геолокацию.
         if (sdk < Build.VERSION_CODES.TIRAMISU) addAll(location())
     }
 
@@ -39,8 +39,8 @@ object RequiredPermissions {
         listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
 
     /**
-     * «Разрешить всегда»: с ним служба после перезапуска поднимается и с типом location. Спрашивать ли его,
-     * решает команда; запрашивается отдельно и после [location].
+     * «Разрешить всегда»: с ним служба после перезапуска поднимается и с типом location. Сейчас его не
+     * спрашивают. Если начнут, запрашивать его нужно отдельно и после [location].
      */
     fun backgroundLocation(sdk: Int = Build.VERSION.SDK_INT): List<String> =
         if (sdk >= Build.VERSION_CODES.Q) listOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION) else emptyList()

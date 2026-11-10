@@ -23,7 +23,7 @@
     <!-- GPS трека; до Android 13 его же требует Nearby. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- «Разрешить всегда» запрашивается по решению команды. -->
+    <!-- «Разрешить всегда»: объявлено заранее, сейчас не запрашивается. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

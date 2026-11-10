@@ -14,12 +14,14 @@ import javax.inject.Singleton
 
 /**
  * Средства против сна системы на маршруте: partial wake lock, исключение из оптимизации батареи и страница
- * автозапуска у Xiaomi и Honor. Wake lock берёт и отпускает `RouteService`, остальное открывают экран разрешений
+ * автозапуска у Xiaomi, Honor и Huawei. Wake lock берёт и отпускает `RouteService`, остальное открывают экран разрешений
  * и диагностика.
  *
  * Исключение из оптимизации обязательно: в режиме Doze система игнорирует wake lock приложений без него,
- * и неподвижный телефон перестаёт отправлять сводки. Цепочек воскрешения службы здесь нет намеренно, потому что,
- * по рассказам разработчиков, MagicOS отзывает исключение у приложений, которые упорно поднимаются разными путями.
+ * и неподвижный телефон перестаёт отправлять сводки. Других способов поднимать службу после убийства
+ * (будильники, второй процесс, перезапуск из приёмников) здесь нет намеренно: MagicOS у Honor может отозвать
+ * исключение у приложения, которое упорно поднимается разными путями. В документации Honor этого нет,
+ * так поведение описывают разработчики, столкнувшиеся с ним.
  */
 @Singleton
 class PowerTools @Inject constructor(@ApplicationContext private val context: Context) {
@@ -82,7 +84,7 @@ class PowerTools @Inject constructor(@ApplicationContext private val context: Co
     private companion object {
         const val WAKE_LOCK_TAG = "pereklichka:route"
 
-        /** Известные страницы автозапуска. В документации производителей их нет, адреса взяты из опыта других разработчиков. */
+        /** Страницы автозапуска Xiaomi, Honor и Huawei. Производители их не документируют, адреса известны по чужим приложениям. */
         val AUTOSTART_PAGES = listOf(
             ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
             ComponentName("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),

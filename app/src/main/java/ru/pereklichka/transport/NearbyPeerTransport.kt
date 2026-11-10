@@ -25,7 +25,8 @@ import javax.inject.Singleton
  * Параметры Nearby: `P2P_CLUSTER`, serviceId с тегом группы, `member_id` как имя устройства, `NON_DISRUPTIVE`.
  * Кого подключать и когда, решает [ConnectionPolicy], радио проверяет [RadioCheck]. Обратные вызовы Nearby
  * приходят в главный поток, поэтому их нужно сразу перекладывать в [eventsChannel] и ничего тяжёлого в них
- * не делать. Подтверждения доставки обрабатываются здесь же, движок их не ждёт.
+ * не делать. Подтверждение доставки (`onPayloadTransferUpdate`) нужно передавать
+ * ждущему `send` прямо здесь: через [eventsChannel] движок прочитает его только после возврата из `send`.
  *
  * Задача: docs/team/olga-transport.md
  */
@@ -45,6 +46,7 @@ class NearbyPeerTransport @Inject constructor(
 
     override fun start(config: TransportConfig) {
         // TODO(Ольга): проверить радио и включить advertising и discovery по политике из 03.
+        //  03 это docs/03-sync-protocol.md, раздел «Транспорт поверх Nearby Connections».
         //  Решения о соединениях через ConnectionPolicy, соединения принимать без кода, после перезапуска
         //  процесса поднимать всё с нуля.
         //  docs/team/olga-transport.md

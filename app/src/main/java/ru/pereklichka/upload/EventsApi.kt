@@ -14,7 +14,7 @@ import retrofit2.http.Url
 interface EventsApi {
 
     /**
-     * `POST /api/v1/events`. [Response] нужен, чтобы различать коды ответа: 202, 413, 422, 401, 503.
+     * `POST /api/v1/events`. [Response] нужен, чтобы различать коды ответа: 202, 400, 401, 413, 422, 503.
      * @param url [eventsUrl] от адреса из `AppSettings`.
      * @param authorization [bearer] от токена группы. В логи его выводить нельзя.
      */

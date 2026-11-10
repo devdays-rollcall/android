@@ -52,8 +52,9 @@ import javax.inject.Inject
  * с выключенным экраном. Пока она работает, система показывает её постоянное уведомление ([ServiceNotification]).
  *
  * Интерфейс запускает её через [start] при создании группы, вступлении и каждом возврате на экран
- * (`GroupViewModel.ensureRouteServiceRunning`). Запускать её нужно, пока приложение на экране, потому что
- * на Android 14 службу с типом location нельзя создать из фона. Типы службы (location, connectedDevice)
+ * (`GroupViewModel.ensureRouteServiceRunning`). Запускать её нужно, пока приложение на экране: из фона
+ * Android 12 и новее foreground service запускать не даёт, а тип location на Android 14 из фона не поднять
+ * и без «Разрешить всегда». Типы службы (location, connectedDevice)
  * выбираются по выданным разрешениям. Для активной группы служба запускает [RouteSession]: `SyncEngine`,
  * транспорт, [SelfStateProducer], `StatusMonitor`, [TrackRecorder], wake lock и отправку на сервер.
  *
@@ -171,7 +172,7 @@ class RouteService : Service() {
         fun start() {
             // Кого слышали в прошлой группе, в состоянии новой группы не нужно.
             presence.clear()
-            // Движок запускается до транспорта, иначе он пропустит первые подключения.
+            // Движок запускается до транспорта: PeerTransport не обещает хранить события, пока их никто не читает.
             engine.start(scope, group)
             transport.start(
                 TransportConfig(

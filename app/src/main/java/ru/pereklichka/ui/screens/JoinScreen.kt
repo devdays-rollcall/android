@@ -11,7 +11,7 @@ import ru.pereklichka.qr.QrParseResult
 import ru.pereklichka.qr.rememberQrScanner
 
 /**
- * Вступление (ФТ-10): сканер QR и ввод имени. Работает в авиарежиме, сканеру `rememberQrScanner` интернет не нужен.
+ * Вступление: сканер QR и ввод имени. Работает в авиарежиме, сканеру `rememberQrScanner` интернет не нужен.
  *
  * Задача: docs/team/valentin-ui.md
  */

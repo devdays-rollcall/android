@@ -27,7 +27,7 @@ import javax.inject.Singleton
  * от соседей) проходят через него, а правила приёма те же, что в эталонном `InMemoryMeshStore`.
  *
  * Hilt подставляет его везде, где нужен [MeshStore]. Свой `member_id` берётся из [GroupRepository.activeGroup].
- * Перевод строк базы в модели уже есть в `data/db/Mappers.kt`, и `toEntity()` у точки сам ставит `rejected`.
+ * Строки базы переводит в модели и обратно `data/db/Mappers.kt`, и `toEntity()` у точки сам ставит `rejected`.
  * Запись пишется внутри `db.withTransaction`, а [changesFlow] срабатывает после фиксации транзакции.
  * Проверяет реализацию `RoomMeshStoreContractTest`.
  *
@@ -72,7 +72,8 @@ class RoomMeshStore @Inject constructor(
 
     override suspend fun apply(delta: IncomingDelta): ApplyResult {
         // TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».
-        //  Максимумы читать внутри транзакции, порядок проверок как в admit у InMemoryMeshStore.
+        //  03 это docs/03-sync-protocol.md. Максимумы читать внутри транзакции, порядок проверок как в admit
+        //  у InMemoryMeshStore.
         //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».")
     }

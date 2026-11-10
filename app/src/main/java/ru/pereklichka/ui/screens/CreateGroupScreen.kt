@@ -3,7 +3,7 @@ package ru.pereklichka.ui.screens
 import androidx.compose.runtime.Composable
 
 /**
- * Создание группы (ФТ-1): название группы и своё имя. После создания сразу открывается экран QR (`LobbyScreen`).
+ * Создание группы: название группы и своё имя. После создания сразу открывается экран QR (`LobbyScreen`).
  *
  * Задача: docs/team/valentin-ui.md
  */

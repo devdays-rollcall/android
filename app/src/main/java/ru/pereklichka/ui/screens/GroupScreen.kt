@@ -6,7 +6,7 @@ import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.rules.GroupView
 
 /**
- * Список группы (ФТ-12). По каждому участнику: имя, статус текстом, когда слышали последний раз (`lastContact`,
+ * Список группы. По каждому участнику: имя, статус текстом, когда слышали последний раз (`lastContact`,
  * «примерно», если `approximate`), расстояние и направление, заряд. Сверху баннеры `view.alarms` и `view.prompts`.
  * Это главный экран, пока группа есть.
  *

@@ -8,7 +8,11 @@ import java.time.Instant
 // Тела запросов и ответов POST /api/v1/events поле в поле по docs/server/openapi.yaml.
 // Схемы GET (EventOutput, EventPage) телефону не нужны и здесь не описаны.
 
-/** `EventBatch`: пачка не больше 500 событий, [senderId] это `member_id` этого телефона. Пустая пачка служит heartbeat. */
+/**
+ * `EventBatch`: пачка не больше 500 событий (`UploadWorker` шлёт по 200), [senderId] это `member_id` этого телефона.
+ * Пустую пачку телефон шлёт как heartbeat, пока идёт маршрут: по ней сервер знает, что телефон на связи,
+ * даже когда новых точек нет.
+ */
 @Serializable
 data class EventBatchDto(
     @SerialName("sender_id") val senderId: String,
@@ -48,7 +52,7 @@ data class LocationDataDto(
     @SerialName("battery_percent") val batteryPercent: Int? = null,
 )
 
-/** `Accepted`: ответ 202, пачку подтвердил JetStream. */
+/** `Accepted`: ответ 202, сервер принял всю пачку. В выдаче `GET` точки появляются чуть позже. */
 @Serializable
 data class AcceptedDto(val accepted: Int)
 

@@ -35,10 +35,7 @@ data class DiagnosticsState(
     val sync: SyncDiagnostics = SyncDiagnostics(),
 )
 
-/**
- * Состояния телефона, о смене которых система не сообщает, поэтому экран перечитывает их раз в 2 секунды.
- * Флаг «Не беспокоить» сюда добавит Валентин.
- */
+/** Системные флаги для раздела «Телефон». Экран перечитывает их раз в 2 секунды, это проще, чем подписываться на рассылку о каждом. */
 data class SystemChecks(
     val bluetoothEnabled: Boolean = false,
     val playServicesAvailable: Boolean = false,
@@ -61,9 +58,6 @@ data class DatabaseCounts(
  *
  * Задача: docs/team/olga-transport.md
  */
-// TODO(Ольга): добавить соседей с временем последнего сообщения и список блокировки (AppSettings.setBlocked).
-//  На этом списке держится проверка пересылки через посредника на одном столе.
-//  docs/team/olga-transport.md
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -77,6 +71,10 @@ class DiagnosticsViewModel @Inject constructor(
     private val uploadScheduler: UploadScheduler,
     uploadStatus: UploadStatus,
 ) : ViewModel() {
+
+    // TODO(Ольга): добавить соседей с временем последнего сообщения и список блокировки (AppSettings.setBlocked).
+    //  Блокировка нужна, чтобы на одном столе заставить телефоны общаться через посредника.
+    //  docs/team/olga-transport.md
 
     private val systemChecks = flow {
         while (true) {

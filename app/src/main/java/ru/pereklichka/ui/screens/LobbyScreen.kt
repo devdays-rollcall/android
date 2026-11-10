@@ -13,7 +13,7 @@ import ru.pereklichka.qr.QrFormat
 import ru.pereklichka.qr.QrImage
 
 /**
- * QR и сбор (ФТ-3, ФТ-4, ФТ-5): QR для вступления, кто уже вступил, «Поделиться токеном», «Выходим» у руководителя.
+ * QR и сбор: QR для вступления, кто уже вступил, «Поделиться токеном», «Выходим» у руководителя.
  * Поля: `view.group` (для QR), `view.members`, `view.iAmLeader`, `view.route`.
  *
  * Задача: docs/team/valentin-ui.md
@@ -21,7 +21,7 @@ import ru.pereklichka.qr.QrImage
 @Composable
 fun LobbyScreen(view: GroupView, onStartRoute: () -> Unit, onOpenGroup: () -> Unit) {
     // TODO(Валентин): QR крупно и контрастно, список вступивших, «Поделиться токеном» через ACTION_SEND
-    //  (токен и адрес сайта из AppSettings), «Выходим» только у руководителя.
+    //  (токен и адрес сервера AppSettings.serverUrl), «Выходим» только у руководителя.
     //  docs/team/valentin-ui.md
     val qrText = remember(view.group) {
         QrFormat.encode(QrPayload(view.group.token, view.group.name, view.group.leaderId))

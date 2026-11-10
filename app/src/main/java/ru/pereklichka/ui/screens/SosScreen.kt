@@ -5,7 +5,7 @@ import androidx.compose.runtime.Composable
 import ru.pereklichka.domain.rules.GroupView
 
 /**
- * SOS (ФТ-16). Отправка удержанием кнопки 2 секунды, после отправки звонок в 112 через `ACTION_DIAL` и текст
+ * SOS. Отправка удержанием кнопки 2 секунды, после отправки звонок в 112 через `ACTION_DIAL` и текст
  * с координатами из моей позиции в `view.members`.
  *
  * Задача: docs/team/valentin-ui.md

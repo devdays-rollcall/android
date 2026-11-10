@@ -26,7 +26,7 @@ class TrackRecorder @Inject constructor(
     private val ownLocation: OwnLocation,
     private val battery: BatteryLevel,
 ) {
-    /** Работает, пока не отменят корутину. [route] даёт `RouteSession` из текущего `GroupView`. */
+    /** Работает, пока не отменят корутину. Поток [route] строит `RouteSession` из текущего `GroupView`. */
     suspend fun run(route: StateFlow<RouteState>) {
         route
             .map { it != RouteState.FINISHED }

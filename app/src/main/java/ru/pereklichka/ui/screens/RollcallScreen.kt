@@ -6,7 +6,7 @@ import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.rules.GroupView
 
 /**
- * Перекличка (ФТ-7, ФТ-13). У руководителя три списка из `view.rollcall`: ответили, рядом но молчат, не слышно.
+ * Перекличка. У руководителя три списка из `view.rollcall`: ответили, рядом но молчат, не слышно.
  * У участника большая кнопка «Я здесь», пока его нет в `answered`.
  *
  * Задача: docs/team/valentin-ui.md
