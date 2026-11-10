@@ -12,18 +12,26 @@ import ru.pereklichka.domain.time.Stamped
 import ru.pereklichka.domain.time.ageNow
 
 /**
- * Правила статусов: из снимка данных считает [GroupView] для экранов и `StatusMonitor`.
+ * Правила статусов: из снимка хранилища считает [GroupView], то есть кто в группе, кого не слышно,
+ * какие тревоги активны и кто ответил на перекличку.
  *
- * Создаёт и вызывает его `GroupViewProvider` раз в 2 секунды и при изменении данных; при переключении режима демо
- * провайдер создаёт калькулятор с другими [Thresholds]. Это чистая функция: никакого состояния между вызовами
- * и никаких полей «статус» в базе. Тревоги, перекличка и состояние маршрута зависят только от множества событий,
- * поэтому одинаковые события в любом порядке и с повторами дают одинаковый результат на всех телефонах.
- * Настенное время в расчётах не участвует.
+ * Создаёт и вызывает его `GroupViewProvider` раз в 2 секунды и при изменении данных, а при переключении режима
+ * демо создаёт калькулятор с другими [Thresholds]. Кратко правила такие:
+ * - состав группы даёт событие JOINED, руководитель берётся из [ru.pereklichka.domain.model.GroupInfo];
+ * - маршрут ACTIVE после ROUTE_STARTED руководителя и FINISHED после его ROUTE_FINISHED;
+ * - участник «Не слышно» (LOST), если он не в отлучке, а контакта не было или он старше [Thresholds.lostAfterMs];
+ * - какие тревоги активны, решает [activeAlarms].
+ *
+ * Расчёт идёт с нуля при каждом вызове: состояния между вызовами нет, полей «статус» в базе тоже нет.
+ * Тревоги, перекличка и состояние маршрута зависят только от множества событий, поэтому одинаковые события
+ * в любом порядке и с повторами дают одинаковый результат на всех телефонах. Настенное время в расчётах
+ * не участвует.
  */
 class GroupCalculator(private val thresholds: Thresholds) {
 
     /**
-     * @param heardAgo кого мой телефон слышал напрямую и сколько миллисекунд назад, из `PresenceTracker.heardAgo()`.
+     * Считает вид группы на текущий момент [clock].
+     * @param heardAgo кого мой телефон слышал напрямую и сколько миллисекунд назад, из [PresenceTracker.heardAgo].
      * @param myFix моя последняя фиксация для расстояний и направлений; null, если её ещё нет.
      */
     fun compute(snapshot: GroupSnapshot, heardAgo: Map<MemberId, Long>, myFix: Fix?, clock: Clock): GroupView =
@@ -113,8 +121,10 @@ class GroupCalculator(private val thresholds: Thresholds) {
         }
 
         /**
-         * Минимум из всех наблюдений: моё прямое, возраст последнего состояния и события участника и, для каждого
-         * участника O, возраст состояния O плюс то, сколько назад O слышал его (`03-sync-protocol.md`).
+         * Последний контакт группы с участником: минимум из моего прямого наблюдения, возраста его последнего
+         * состояния и события и, для каждого участника O, возраста состояния O плюс того, сколько назад O его слышал
+         * (`docs/03-sync-protocol.md`, «Кого телефон слышит»). Оценка локальная: на разных телефонах она
+         * может отличаться на секунды.
          */
         private fun lastContact(id: MemberId): Contact? {
             val observations = buildList {
@@ -152,8 +162,8 @@ class GroupCalculator(private val thresholds: Thresholds) {
                 .filter { it.value.type == EventType.ROLLCALL_ANSWER && rollcall.value.id in it.value.refs }
                 .map { it.value.author }
                 .toSet()
-            // Порог «слышен сейчас» здесь не годится: за три-четыре перехода оценка контакта доходит до 30 с,
-            // поэтому «рядом» значит «не LOST».
+            // «Рядом» здесь значит «не LOST». Порог «слышен сейчас» (30 с) не годится: через три-четыре посредника
+            // оценка контакта доходит до 30 с, и человек рядом попал бы в «не слышно».
             val (answered, silent) = members.filter { !it.isLeader }.partition { it.id in answeredIds }
             val (notHeard, silentNearby) = silent.partition { it.presence == Presence.LOST }
             return RollcallView(
@@ -193,6 +203,6 @@ class GroupCalculator(private val thresholds: Thresholds) {
         private fun nameOf(id: MemberId): String = names[id] ?: id.value
     }
 
-    /** Наблюдение о последнем контакте и тот, кто слышал участника напрямую. */
+    /** Одно наблюдение для последнего контакта: возраст и кто слышал участника напрямую (null, если неизвестно). */
     private class Contact(val age: Age, val heardBy: MemberId?)
 }

@@ -7,7 +7,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** Расстояние и направление между точками на сфере. Нужны `GroupCalculator` и `TrackThinner`. */
+/** Расстояние и направление между точками на сфере. Нужны [GroupCalculator] и `TrackThinner`. */
 object Geo {
 
     private const val EARTH_RADIUS_M = 6_371_000.0
