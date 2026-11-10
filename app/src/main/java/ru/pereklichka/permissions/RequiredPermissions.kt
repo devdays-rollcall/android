@@ -8,13 +8,13 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 
 /**
- * Разрешения, которые приложение запрашивает во время работы, по назначению и версиям Android.
- * Все они объявлены в манифесте. Список Nearby взят из документации Nearby Connections. Камеры здесь нет:
+ * Списки разрешений, которые приложение запрашивает во время работы, по назначению и версиям Android.
+ * Все они объявлены в манифесте. Список Nearby взят из документации Nearby Connections. Камеры здесь нет,
  * сканер QR спрашивает её сам при открытии.
  *
- * Читают их экран разрешений (что спросить), `RouteService` (с какими типами запускаться) и диагностика.
- * Параметр [sdk] нужен тестам, в приложении остаётся версия телефона. Константы новых разрешений компилятор
- * подставляет строками, а версию проверяет код по [sdk], поэтому предупреждение InlinedApi подавлено.
+ * Читают их [PermissionsScreen] (что спросить), `RouteService` (с какими типами запускаться) и диагностика.
+ * Параметр `sdk` нужен тестам, в приложении остаётся версия телефона. Константы новых разрешений компилятор
+ * подставляет строками, а версию проверяет код по `sdk`, поэтому предупреждение InlinedApi подавлено.
  */
 @SuppressLint("InlinedApi")
 object RequiredPermissions {
@@ -49,9 +49,10 @@ object RequiredPermissions {
     fun notifications(sdk: Int = Build.VERSION.SDK_INT): List<String> =
         if (sdk >= Build.VERSION_CODES.TIRAMISU) listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
 
-    /** Какие из [permissions] ещё не выданы. */
+    /** Те из [permissions], которые ещё не выданы. */
     fun missing(context: Context, permissions: List<String>): List<String> =
         permissions.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
 
+    /** true, если выданы все [permissions]. */
     fun allGranted(context: Context, permissions: List<String>): Boolean = missing(context, permissions).isEmpty()
 }

@@ -10,15 +10,21 @@ import ru.pereklichka.ui.screens.StubButton
 import ru.pereklichka.ui.screens.StubScreen
 
 /**
- * Запрос разрешений с объяснением. Служба берёт только те типы, на которые выданы разрешения (Android 14 роняет
- * запуск типа без своего разрешения с `SecurityException`), а без разрешений и на обмен, и на геолокацию
- * не стартует вовсе: `RouteService.start` вернёт false.
+ * Экран разрешений: спрашивает разрешения на обмен, геолокацию и уведомления и объясняет, зачем каждое.
+ * Открывается со стартового экрана и из диагностики, [onDone] возвращает назад.
+ *
+ * Служба берёт только те типы, на которые выданы разрешения (Android 14 роняет запуск типа без своего
+ * разрешения с `SecurityException`), а без разрешений и на обмен, и на геолокацию не стартует вовсе:
+ * `RouteService.start` вернёт false.
+ *
+ * Задача: docs/team/vasilisa-service-storage.md
  */
 @Composable
 fun PermissionsScreen(onDone: () -> Unit) {
     // TODO(Василиса): сначала обмен и GPS (RequiredPermissions.exchange и location), потом уведомления, по строке
     //  объяснения на группу; проверить, что геолокация включена в системе; при отказе в уведомлениях объяснить
-    //  последствия и предложить настройки. Исключение из оптимизации через PowerTools. docs/team/vasilisa-service-storage.md
+    //  последствия и предложить настройки. Исключение из оптимизации через PowerTools.
+    //  docs/team/vasilisa-service-storage.md
     val context = LocalContext.current
     val missing = RequiredPermissions.missing(
         context,
