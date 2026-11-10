@@ -19,6 +19,7 @@ import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.model.QrPayload
 import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.rules.GroupView
+import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.service.RouteService
 import ru.pereklichka.status.GroupViewProvider
 import javax.inject.Inject
@@ -49,6 +50,17 @@ class GroupViewModel @Inject constructor(
      */
     val hadGroupAtStart: StateFlow<Boolean?> = flow { emit(repository.activeGroup() != null) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
+
+    /**
+     * Поднимает службу, когда приложение на экране: после убийства процесса, принудительной остановки или выдачи
+     * разрешений. Для той же группы служба ничего не перезапускает; после завершения маршрута не поднимается.
+     */
+    fun ensureRouteServiceRunning() {
+        viewModelScope.launch {
+            if (repository.activeGroup() == null || view.value?.route == RouteState.FINISHED) return@launch
+            RouteService.start(context)
+        }
+    }
 
     fun createGroup(groupName: String, myName: String, onCreated: () -> Unit) {
         viewModelScope.launch {

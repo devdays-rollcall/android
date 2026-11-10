@@ -47,6 +47,9 @@ data class ControlEventEntity(
 /**
  * Точка трека любого автора. [uploaded] ставит `UploadWorker` после ответа 202, [rejected] стоит у точки,
  * которую нельзя отправлять на сервер. Других изменений у точки после записи не бывает.
+ *
+ * Широта и долгота допускают NULL: SQLite хранит NaN как NULL, а чужую точку с NaN всё равно нужно сохранить,
+ * иначе поток её автора встанет. Маппер возвращает NULL обратно как NaN.
  */
 @Entity(
     tableName = "location_point",
@@ -56,8 +59,8 @@ data class LocationPointEntity(
     @PrimaryKey val id: String,
     val author: String,
     val seq: Long,
-    val latitude: Double,
-    val longitude: Double,
+    val latitude: Double?,
+    val longitude: Double?,
     val recordedAtMs: Long,
     val accuracyM: Double?,
     val altitudeM: Double?,

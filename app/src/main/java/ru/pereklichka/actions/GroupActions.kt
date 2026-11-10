@@ -28,6 +28,7 @@ class GroupActions @Inject constructor(
 ) {
     /** Новая группа, где я руководитель, и моё событие JOINED. */
     suspend fun createGroup(groupName: String, myName: String): GroupInfo {
+        require(myName.isNotBlank()) { "Пустое имя" }
         val group = repository.createGroup(groupName)
         store.appendOwnEvent(ControlEventDraft(EventType.JOINED, name = myName.trim()))
         return group
@@ -35,6 +36,7 @@ class GroupActions @Inject constructor(
 
     /** Вступление по QR. Повторное вступление в ту же группу не пишет второй JOINED. */
     suspend fun joinGroup(qr: QrPayload, myName: String) {
+        require(myName.isNotBlank()) { "Пустое имя" }
         val group = repository.join(qr)
         // JOINED проверяется по хранилищу, а не по тому, была ли группа: так он допишется и после сбоя на середине.
         if (store.summary().control[group.me] == null) {

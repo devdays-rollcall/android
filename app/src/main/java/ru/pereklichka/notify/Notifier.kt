@@ -7,7 +7,8 @@ import ru.pereklichka.domain.model.MemberId
  * Показывает уведомления. На телефоне это `AndroidNotifier`, в тестах фейк.
  *
  * Что и когда показывать, решает `StatusMonitor`; здесь только как. Одно событие даёт одно уведомление:
- * повторный [show] с тем же [NotifyEvent.key] обновляет его, а [dismiss] убирает.
+ * повторный [show] с тем же [NotifyEvent.key] обновляет его, а [dismiss] убирает. Снятая тревога приходит
+ * через [show] как [NotifyEvent.AlarmResolved]: её уведомление с тем же ключом нужно убрать или сменить на «снята».
  */
 interface Notifier {
     fun show(event: NotifyEvent)

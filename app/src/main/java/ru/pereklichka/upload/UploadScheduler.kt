@@ -16,7 +16,7 @@ import javax.inject.Singleton
 
 /**
  * Ставит [UploadWorker] в очередь WorkManager. Отправка не зависит от службы: WorkManager сам дождётся сети
- * и повторит задачу после сбоя с растущей паузой от 10 секунд.
+ * и повторит разовую задачу после сбоя с растущей паузой от 10 секунд; периодическая просто сработает в свой срок.
  */
 @Singleton
 class UploadScheduler @Inject constructor(@ApplicationContext private val context: Context) {

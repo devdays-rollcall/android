@@ -143,15 +143,18 @@ abstract class MeshStoreContractTest {
 
     @Test
     fun `точка с недопустимыми значениями хранится с пометкой и не рвёт префикс`() = storeTest { store ->
-        val bad = point(bob, 1, latitude = 200.0)
-        val good = point(bob, 2)
+        val outOfRange = point(bob, 1, latitude = 200.0)
+        // SQLite хранит NaN как NULL, поэтому такая точка требует от Room отдельного внимания.
+        val notANumber = point(bob, 2, latitude = Double.NaN)
+        val good = point(bob, 3)
 
-        val result = store.apply(IncomingDelta(locations = listOf(bad, good)))
+        val result = store.apply(IncomingDelta(locations = listOf(outOfRange, notANumber, good)))
 
-        assertEquals(ApplyResult(newLocations = 2), result)
-        assertTrue(isRejected(bad.id))
+        assertEquals(ApplyResult(newLocations = 3), result)
+        assertTrue(isRejected(outOfRange.id))
+        assertTrue(isRejected(notANumber.id))
         assertFalse(isRejected(good.id))
-        assertEquals(listOf(bad, good), store.locations(bob, 0, 10))
+        assertEquals(listOf(outOfRange, notANumber, good), store.locations(bob, 0, 10))
     }
 
     @Test

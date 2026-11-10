@@ -7,6 +7,7 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import mockwebserver3.Dispatcher
@@ -25,10 +26,15 @@ import ru.pereklichka.data.db.LocationPointEntity
 import ru.pereklichka.data.inMemoryDatabase
 import ru.pereklichka.di.NetworkModule
 import ru.pereklichka.domain.model.GroupInfo
+import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.testing.FakeClock
+import ru.pereklichka.domain.testing.InMemoryMeshStore
+import ru.pereklichka.service.OwnLocation
+import ru.pereklichka.status.GroupViewProvider
 import java.util.Collections
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -42,13 +48,18 @@ class UploadWorkerTest {
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val db = inMemoryDatabase()
-    private val repository = GroupRepository(db, FakeClock { 0 })
+    private val clock = FakeClock { 0 }
+    private val repository = GroupRepository(db, clock)
+    private val uploadStatus = UploadStatus()
     private val settings = AppSettings(context)
     private val server = MockWebServer()
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Тела всех запросов, которые получил сервер, по порядку. */
     private val batches: MutableList<EventBatchDto> = Collections.synchronizedList(mutableListOf())
+
+    /** id точек из пачек, на которые сервер ответил 202. */
+    private val acceptedIds: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private lateinit var group: GroupInfo
 
     @Before
@@ -72,7 +83,8 @@ class UploadWorkerTest {
         val result = runWorker()
 
         assertEquals(ListenableWorker.Result.success(), result)
-        assertEquals(listOf(200, 50), batches.map { it.events.size })
+        // Пустые пачки здесь возможны: это heartbeat.
+        assertEquals(listOf(200, 50), batches.map { it.events.size }.filter { it > 0 })
         assertEquals(0, db.locationDao().unsent(1_000).size)
         assertTrue(batches.all { it.senderId == group.me.value })
         assertEquals("Bearer ${group.token}", server.takeRequest().headers["Authorization"])
@@ -116,7 +128,7 @@ class UploadWorkerTest {
 
         assertEquals(true, db.locationDao().isRejected(badId))
         assertEquals(0, db.locationDao().unsent(1_000).size)
-        assertEquals(19, batches.filter { it.events.none { e -> e.id == badId } }.sumOf { it.events.size })
+        assertEquals((1..20).map { "point-$it" }.toSet() - badId, acceptedIds.toSet())
     }
 
     @Test
@@ -126,6 +138,7 @@ class UploadWorkerTest {
 
         assertEquals(ListenableWorker.Result.failure(), runWorker())
         assertEquals(5, db.locationDao().unsent(1_000).size)
+        assertNotNull(uploadStatus.lastError.value, "Ошибка 401 должна попасть в диагностику")
     }
 
     @Test
@@ -141,13 +154,21 @@ class UploadWorkerTest {
         assertEquals(3, batches.sumOf { it.events.size })
     }
 
-    private suspend fun runWorker(): ListenableWorker.Result {
+    private suspend fun TestScope.runWorker(): ListenableWorker.Result {
+        val viewProvider = GroupViewProvider(
+            store = InMemoryMeshStore(group, clock),
+            presence = PresenceTracker(clock),
+            ownLocation = OwnLocation(),
+            settings = settings,
+            clock = clock,
+            scope = backgroundScope,
+        )
         val worker = TestListenableWorkerBuilder<UploadWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
                     UploadWorker(
                         appContext, workerParameters, db.locationDao(), repository,
-                        NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings,
+                        NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings, viewProvider, uploadStatus,
                     )
             })
             .build()
@@ -164,8 +185,10 @@ class UploadWorkerTest {
         }
     }
 
-    private fun accepted(batch: EventBatchDto) =
-        MockResponse.Builder().code(202).body("""{"accepted":${batch.events.size}}""").build()
+    private fun accepted(batch: EventBatchDto): MockResponse {
+        acceptedIds += batch.events.map { it.id }
+        return MockResponse.Builder().code(202).body("""{"accepted":${batch.events.size}}""").build()
+    }
 
     private fun error(code: String) = """{"error":{"code":"$code","message":"$code"}}"""
 

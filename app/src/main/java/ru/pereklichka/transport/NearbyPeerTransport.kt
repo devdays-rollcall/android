@@ -2,12 +2,14 @@ package ru.pereklichka.transport
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import ru.pereklichka.di.ApplicationScope
 import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.sync.PeerTransport
 import ru.pereklichka.domain.sync.TransportConfig
@@ -26,6 +28,8 @@ import javax.inject.Singleton
 class NearbyPeerTransport @Inject constructor(
     @ApplicationContext private val context: Context,
     private val radioCheck: RadioCheck,
+    /** Для отложенных запросов соединения, повторов и окон поиска: живёт дольше одного запуска транспорта. */
+    @ApplicationScope private val scope: CoroutineScope,
 ) : PeerTransport {
 
     private val eventsChannel = Channel<TransportEvent>(Channel.UNLIMITED)

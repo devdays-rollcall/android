@@ -37,6 +37,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val demoMode by viewModel.demoMode.collectAsStateWithLifecycle()
+    val uploadError by viewModel.uploadError.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var editedUrl by remember(serverUrl) { mutableStateOf(serverUrl) }
 
@@ -88,6 +89,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             )
             Button(onClick = { viewModel.setServerUrl(editedUrl) }) { Text("Сохранить адрес") }
             Button(onClick = viewModel::uploadNow) { Text("Отправить на сервер сейчас") }
+            Line("Ошибка отправки", uploadError ?: "нет")
         }
     }
 }

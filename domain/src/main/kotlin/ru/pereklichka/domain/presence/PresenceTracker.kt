@@ -37,6 +37,11 @@ class PresenceTracker @Inject constructor(private val clock: Clock) {
         return clock.elapsedMs() - heardAt <= HEARD_NOW_MS
     }
 
+    /** Забывает всех. Вызывает `RouteService` при запуске для новой группы: у неё другие участники. */
+    fun clear() {
+        lastHeardState.value = emptyMap()
+    }
+
     /** Кого слышал за последние [HEARD_AGO_WINDOW_MS] и сколько миллисекунд назад. */
     fun heardAgo(): Map<MemberId, Long> {
         val now = clock.elapsedMs()

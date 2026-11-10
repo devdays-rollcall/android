@@ -1,5 +1,6 @@
 package ru.pereklichka.status
 
+import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.Presence
 import ru.pereklichka.domain.rules.RouteState
@@ -11,10 +12,11 @@ data class NotificationChanges(val show: List<NotifyEvent>, val dismiss: List<St
 /**
  * Переходы из `docs/team/techlead.md`, раздел «StatusMonitor». Чистая функция, её проверяет `NotificationChangesTest`.
  *
- * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. Переход участника в LOST даёт MemberLost только
- * руководителю на маршруте: в сборе люди ещё не вышли, после завершения уже разошлись. Новая перекличка, на которую
- * я не ответил, даёт RollcallStarted, новая подсказка о близости NearbyConfirm. Когда повод пропал, уведомление
- * убирается. [previous] равен null после перезапуска процесса, тогда об активных тревогах напомнят ещё раз.
+ * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. «Не слышно» (MemberLost) получает только руководитель
+ * и только на маршруте: в сборе люди ещё не вышли, после завершения уже разошлись. Кто был LOST в момент выхода,
+ * тоже попадает в уведомления, а после завершения они убираются. Новая перекличка, на которую я не ответил, даёт
+ * RollcallStarted, новая подсказка о близости NearbyConfirm. Когда повод пропал, уведомление убирается.
+ * [previous] равен null после перезапуска процесса, тогда об активных тревогах напомнят ещё раз.
  */
 fun notificationChanges(previous: GroupView?, current: GroupView): NotificationChanges {
     val show = mutableListOf<NotifyEvent>()
@@ -28,12 +30,10 @@ fun notificationChanges(previous: GroupView?, current: GroupView): NotificationC
     }
     for (alarmId in previousAlarmIds - currentAlarmIds) show += NotifyEvent.AlarmResolved(alarmId)
 
-    val wasLost = previous?.members.orEmpty().filter { it.presence == Presence.LOST }.map { it.id }.toSet()
-    val isLost = current.members.filter { it.presence == Presence.LOST }.map { it.id }.toSet()
-    if (current.iAmLeader && current.route == RouteState.ACTIVE) {
-        for (member in current.members) {
-            if (member.id in isLost && member.id !in wasLost) show += NotifyEvent.MemberLost(member.id, member.name)
-        }
+    val wasLost = previous?.lostMembersToReport().orEmpty()
+    val isLost = current.lostMembersToReport()
+    for (member in current.members) {
+        if (member.id in isLost && member.id !in wasLost) show += NotifyEvent.MemberLost(member.id, member.name)
     }
     for (member in wasLost - isLost) dismiss += NotifyEvent.lostKey(member)
 
@@ -55,6 +55,9 @@ fun notificationChanges(previous: GroupView?, current: GroupView): NotificationC
 
     return NotificationChanges(show, dismiss)
 }
+
+private fun GroupView.lostMembersToReport(): Set<MemberId> =
+    if (iAmLeader && route == RouteState.ACTIVE) members.filter { it.presence == Presence.LOST }.map { it.id }.toSet() else emptySet()
 
 /** Идёт перекличка, на которую мне нужно ответить. Руководитель её сам объявил и не отвечает. */
 private fun GroupView.awaitsMyAnswer(): Boolean {

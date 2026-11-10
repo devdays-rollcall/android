@@ -9,7 +9,8 @@ import androidx.core.content.ContextCompat
 
 /**
  * Разрешения, которые приложение запрашивает во время работы, по назначению и версиям Android.
- * Все они объявлены в манифесте. Список Nearby взят из документации Nearby Connections.
+ * Все они объявлены в манифесте. Список Nearby взят из документации Nearby Connections. Камеры здесь нет:
+ * сканер QR спрашивает её сам при открытии.
  *
  * Читают их экран разрешений (что спросить), `RouteService` (с какими типами запускаться) и диагностика.
  * Параметр [sdk] нужен тестам, в приложении остаётся версия телефона. Константы новых разрешений компилятор
@@ -47,9 +48,6 @@ object RequiredPermissions {
     /** Без уведомлений нет звука тревоги. До Android 13 разрешение не нужно. */
     fun notifications(sdk: Int = Build.VERSION.SDK_INT): List<String> =
         if (sdk >= Build.VERSION_CODES.TIRAMISU) listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
-
-    /** Камера для сканера QR. Сканер zxing-android-embedded запрашивает её сам при открытии. */
-    fun camera(): List<String> = listOf(Manifest.permission.CAMERA)
 
     /** Какие из [permissions] ещё не выданы. */
     fun missing(context: Context, permissions: List<String>): List<String> =

@@ -23,6 +23,7 @@ import ru.pereklichka.domain.sync.SyncEngine
 import ru.pereklichka.service.PowerTools
 import ru.pereklichka.transport.RadioCheck
 import ru.pereklichka.upload.UploadScheduler
+import ru.pereklichka.upload.UploadStatus
 import javax.inject.Inject
 
 /** Всё, что показывает экран диагностики. */
@@ -50,9 +51,9 @@ data class DatabaseCounts(
     val states: Int = 0,
 )
 
-/**
- * Данные экрана диагностики. Ольга добавит сюда соседей с временем последнего сообщения и список блокировки.
- */
+/** Данные экрана диагностики. */
+// TODO(Ольга): добавить соседей с временем последнего сообщения и список блокировки (AppSettings.setBlocked).
+//  Проверка пересылки через посредника на одном столе держится на этом списке. docs/team/olga-transport.md
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -64,6 +65,7 @@ class DiagnosticsViewModel @Inject constructor(
     val powerTools: PowerTools,
     private val settings: AppSettings,
     private val uploadScheduler: UploadScheduler,
+    uploadStatus: UploadStatus,
 ) : ViewModel() {
 
     private val systemChecks = flow {
@@ -92,6 +94,7 @@ class DiagnosticsViewModel @Inject constructor(
 
     val serverUrl: StateFlow<String> = settings.serverUrl
     val demoMode: StateFlow<Boolean> = settings.demoMode
+    val uploadError: StateFlow<String?> = uploadStatus.lastError
 
     fun setServerUrl(url: String) = settings.setServerUrl(url)
 

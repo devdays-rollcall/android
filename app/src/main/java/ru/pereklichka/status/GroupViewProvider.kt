@@ -26,7 +26,8 @@ import javax.inject.Singleton
  *
  * Пересчитывает вид через [GroupCalculator] при каждом новом снимке хранилища, смене своей позиции или режима демо
  * и раз в [REFRESH_MS]: «Не слышно» наступает со временем, даже если в базе ничего не изменилось.
- * Пока на [view] никто не подписан, пересчёт стоит; null значит, что группы ещё нет.
+ * Пока на [view] никто не подписан, пересчёт стоит, а значение сбрасывается в null: устаревший вид после паузы
+ * дал бы `StatusMonitor` ложные уведомления. null значит, что группы нет или первый расчёт ещё не готов.
  */
 @Singleton
 class GroupViewProvider @Inject constructor(
@@ -45,7 +46,11 @@ class GroupViewProvider @Inject constructor(
         refreshTicks(),
     ) { snapshot, calculator, myFix, _ ->
         calculator.compute(snapshot, presence.heardAgo(), myFix, clock)
-    }.stateIn(scope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), initialValue = null)
+    }.stateIn(
+        scope,
+        SharingStarted.WhileSubscribed(stopTimeoutMillis = STOP_TIMEOUT_MS, replayExpirationMillis = 0),
+        initialValue = null,
+    )
 
     private fun refreshTicks() = flow {
         while (true) {

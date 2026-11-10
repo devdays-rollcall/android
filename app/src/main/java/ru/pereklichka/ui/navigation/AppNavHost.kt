@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -42,6 +43,10 @@ fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
     val hadGroupAtStart by viewModel.hadGroupAtStart.collectAsStateWithLifecycle()
     val view by viewModel.view.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+    LifecycleResumeEffect(Unit) {
+        viewModel.ensureRouteServiceRunning()
+        onPauseOrDispose { }
+    }
     val startDestination: Any = when (hadGroupAtStart) {
         null -> return Loading()
         true -> GroupRoute

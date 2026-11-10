@@ -10,8 +10,9 @@ import ru.pereklichka.ui.screens.StubButton
 import ru.pereklichka.ui.screens.StubScreen
 
 /**
- * Запрос разрешений с объяснением. Служба не стартует, пока не выданы разрешения на обмен и геолокацию:
- * на Android 14 запуск службы с типом location без них падает с `SecurityException`.
+ * Запрос разрешений с объяснением. Служба берёт только те типы, на которые выданы разрешения (Android 14 роняет
+ * запуск типа без своего разрешения с `SecurityException`), а без разрешений и на обмен, и на геолокацию
+ * не стартует вовсе: `RouteService.start` вернёт false.
  */
 @Composable
 fun PermissionsScreen(onDone: () -> Unit) {

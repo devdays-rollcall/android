@@ -72,6 +72,7 @@ class RouteService : Service() {
     @Inject lateinit var uploadScheduler: UploadScheduler
     @Inject lateinit var settings: AppSettings
     @Inject lateinit var config: SyncConfig
+    @Inject lateinit var presence: PresenceTracker
 
     @JvmField
     @Inject
@@ -96,7 +97,8 @@ class RouteService : Service() {
             ACTION_START -> startRoute()
             ACTION_STOP -> stopRoute()
         }
-        return START_STICKY
+        // В фейковом режиме перезапускать нечего, а ветка перезапуска выше пока заглушка.
+        return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
     }
 
     override fun onDestroy() {
@@ -106,8 +108,9 @@ class RouteService : Service() {
     }
 
     private fun startRoute() {
-        val types = foregroundServiceTypes()
+        val types = foregroundServiceTypes(this)
         if (types == 0) {
+            // start() проверяет разрешения заранее; сюда попадаем, только если их отозвали за мгновение до запуска.
             Log.w(TAG, "Нет разрешений ни на обмен, ни на геолокацию, служба не запускается")
             stopSelf()
             return
@@ -138,22 +141,6 @@ class RouteService : Service() {
         networkCallback = null
     }
 
-    /**
-     * Типы службы по выданным разрешениям: без них Android 14 не даст запустить службу с этим типом.
-     * До Android 10 `ServiceCompat.startForeground` типы не передаёт, поэтому константы новых версий безопасны.
-     */
-    @SuppressLint("InlinedApi")
-    private fun foregroundServiceTypes(): Int {
-        var types = 0
-        if (RequiredPermissions.allGranted(this, RequiredPermissions.exchange())) {
-            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        }
-        return types
-    }
-
     /** Появилась сеть с интернетом: пора отправить точки на сервер. */
     private fun registerNetworkCallback() {
         if (networkCallback != null) return
@@ -171,6 +158,8 @@ class RouteService : Service() {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         fun start() {
+            // Кого слышали в прошлой группе, в состоянии новой группы не нужно.
+            presence.clear()
             // Движок до транспорта, чтобы не пропустить подключения.
             engine.start(scope, group)
             transport.start(
@@ -190,7 +179,7 @@ class RouteService : Service() {
                 .map { it.route }
                 .stateIn(scope, SharingStarted.Eagerly, RouteState.LOBBY)
             scope.launch { selfStateProducer.run() }
-            scope.launch { statusMonitor.run() }
+            scope.launch { statusMonitor.run(group) }
             scope.launch { trackRecorder.run(routeState) }
             scope.launch {
                 routeState.first { it == RouteState.FINISHED }
@@ -219,14 +208,37 @@ class RouteService : Service() {
         private const val ACTION_START = "ru.pereklichka.action.START_ROUTE"
         private const val ACTION_STOP = "ru.pereklichka.action.STOP_ROUTE"
 
-        /** Запускает службу для активной группы. Вызывать, пока приложение на экране. */
-        fun start(context: Context) {
+        /**
+         * Запускает службу для активной группы, пока приложение на экране. Повторный вызов для той же группы
+         * ничего не перезапускает. Возвращает false, если нет разрешений ни на обмен, ни на геолокацию:
+         * служба, запущенная без startForeground, уронила бы приложение.
+         */
+        fun start(context: Context): Boolean {
+            if (foregroundServiceTypes(context) == 0) return false
             ContextCompat.startForegroundService(context, Intent(context, RouteService::class.java).setAction(ACTION_START))
+            return true
         }
 
         /** Останавливает службу: кнопка «Выключить» после завершения маршрута. */
         fun stop(context: Context) {
             context.startService(Intent(context, RouteService::class.java).setAction(ACTION_STOP))
+        }
+
+        /**
+         * Типы службы по выданным разрешениям: без них Android 14 не даст запустить службу с этим типом.
+         * До Android 10 `ServiceCompat.startForeground` типы не передаёт, поэтому константы новых версий безопасны.
+         */
+        @SuppressLint("InlinedApi")
+        private fun foregroundServiceTypes(context: Context): Int {
+            var types = 0
+            if (RequiredPermissions.allGranted(context, RequiredPermissions.exchange())) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            }
+            // GPS трека нужна точная геолокация; приблизительной для типа location не хватит.
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
+            return types
         }
     }
 }
