@@ -43,7 +43,10 @@ data class MemberView(
     /** Когда группа последний раз слышала участника; null, если не слышала ни разу. */
     val lastContact: Age?,
     val heardDirectlyNow: Boolean,
-    /** Чьё наблюдение дало [lastContact]; null, если контакта не было. */
+    /**
+     * Кто слышал участника напрямую, когда случился [lastContact]: я сам или участник, в чьём состоянии он записан
+     * в `heardAgoMs`. null, если свежее всего оказалась собственная запись участника или контакта не было.
+     */
     val lastHeardBy: MemberId?,
     val position: LatLon?,
     val positionAge: Age?,
@@ -55,7 +58,9 @@ data class MemberView(
     val batteryPercent: Int?,
     /** Сколько осталось до конца отлучки; null, если отлучки нет. */
     val awayRemainingMs: Long?,
+    /** Есть активная тревога о нём, в том числе SOS. */
     val hasActiveAlarm: Boolean,
+    /** Среди активных тревог о нём есть его собственный SOS. */
     val hasSos: Boolean,
 )
 

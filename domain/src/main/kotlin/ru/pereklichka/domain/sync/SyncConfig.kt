@@ -18,4 +18,8 @@ data class SyncConfig(
     val maxPointsPerDelta: Int = 300,
     /** Столько неразборчивых сообщений подряд от одного соседа рвут соединение. */
     val maxCorruptInRow: Int = 3,
+    /** Своё состояние, которое пишет `SelfStateProducer`. */
+    val stateIntervalMs: Long = 15_000,
+    /** Сколько служба продолжает обмен после ROUTE_FINISHED, чтобы завершение дошло до всех. */
+    val exchangeAfterFinishMs: Long = 15 * 60_000,
 )

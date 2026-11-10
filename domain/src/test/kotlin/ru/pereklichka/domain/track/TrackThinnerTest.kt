@@ -1,13 +1,11 @@
 package ru.pereklichka.domain.track
 
-import org.junit.Ignore
 import ru.pereklichka.domain.model.Fix
 import ru.pereklichka.domain.model.LatLon
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /** GPS отдаёт фиксацию раз в 5 с; в трек идёт смещение на 15 м или прошедшая минута. */
-@Ignore("включи, когда сделаешь TrackThinner и Geo.distanceM")
 class TrackThinnerTest {
 
     private val start = LatLon(43.35, 42.44)
@@ -45,9 +43,20 @@ class TrackThinnerTest {
         assertEquals(listOf(0L, 60_000L, 120_000L), kept.map { it.elapsedRealtimeMs })
     }
 
-    private fun fix(elapsedMs: Long, northM: Double, wallJumpMs: Long = 0) = Fix(
+    @Test
+    fun `неточная фиксация идёт в трек только по времени`() {
+        val thinner = TrackThinner()
+        // Точность 80 м: скачки на 30 м у стоящего человека смещением не считаются.
+        val fixes = (0..24).map { i -> fix(i * 5_000L, northM = if (i % 2 == 0) 0.0 else 30.0, accuracyM = 80.0) }
+
+        val kept = fixes.filter(thinner::shouldKeep)
+
+        assertEquals(listOf(0L, 60_000L, 120_000L), kept.map { it.elapsedRealtimeMs })
+    }
+
+    private fun fix(elapsedMs: Long, northM: Double, wallJumpMs: Long = 0, accuracyM: Double = 5.0) = Fix(
         position = LatLon(start.latitude + northM / METERS_PER_DEGREE, start.longitude),
-        accuracyM = 5.0,
+        accuracyM = accuracyM,
         altitudeM = null,
         speedMps = null,
         bearingDeg = null,

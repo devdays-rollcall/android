@@ -1,6 +1,5 @@
 package ru.pereklichka.domain.rules
 
-import org.junit.Ignore
 import ru.pereklichka.domain.model.ControlEvent
 import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.EventType
@@ -26,7 +25,6 @@ import kotlin.test.assertTrue
  * Правила из `docs/team/techlead.md`. Свойства тревог, переклички и маршрута повторяют модель
  * `docs/verification/test_rules.py`: результат не зависит от порядка событий, повторов и настенных часов.
  */
-@Ignore("включи, когда сделаешь GroupCalculator и Geo")
 class GroupCalculatorTest {
 
     private var nowMs = 10 * 60 * 60_000L
