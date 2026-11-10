@@ -20,7 +20,7 @@ data class GroupInfo(
 /**
  * Содержимое QR-кода для вступления: всё, что нужно телефону участника, чтобы найти группу без интернета.
  *
- * Строку QR собирает и разбирает `QrFormat`, а `GroupActions.joinGroup` превращает [QrPayload] в [GroupInfo].
+ * Строку QR собирает и разбирает `QrFormat`, а `GroupRepository.join` превращает [QrPayload] в [GroupInfo].
  */
 data class QrPayload(
     val token: String,

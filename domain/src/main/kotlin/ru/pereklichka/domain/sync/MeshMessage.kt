@@ -13,8 +13,8 @@ import ru.pereklichka.domain.time.ageNow
 /**
  * Сообщение между соседями: сводка [Hello] или порция записей [Delta]. Кодирует и разбирает его [MeshCodec].
  *
- * Формат меняется только через Никиту и с увеличением [Hello.PROTOCOL_VERSION], потому что телефоны с разным
- * форматом не смогут обмениваться.
+ * Формат меняется только вместе с увеличением [Hello.PROTOCOL_VERSION], потому что телефоны с разным форматом
+ * не смогут обмениваться.
  */
 @Serializable
 sealed interface MeshMessage

@@ -20,7 +20,7 @@ interface PeerTransport {
     /** Соседи, с которыми сейчас есть соединение. Показывает диагностика. */
     val connectedPeers: StateFlow<Set<MemberId>>
 
-    /** Включает advertising и discovery. После перезапуска процесса поднимает всё с нуля. */
+    /** Включает advertising и discovery. На соединения прошлого запуска не рассчитывает: после смерти процесса Nearby их уже закрыл. */
     fun start(config: TransportConfig)
 
     /** Рвёт все соединения и выключает advertising и discovery. */

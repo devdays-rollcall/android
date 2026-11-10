@@ -14,6 +14,6 @@ interface Clock {
     /** Миллисекунды от эпохи по настенным часам, `System.currentTimeMillis()`. */
     fun wallMs(): Long
 
-    /** Номер загрузки телефона, `Settings.Global.BOOT_COUNT`. */
+    /** Номер загрузки телефона: `Settings.Global.BOOT_COUNT`, а если его нет, момент загрузки с точностью до минуты. */
     fun bootId(): String
 }

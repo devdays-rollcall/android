@@ -330,7 +330,7 @@ class GroupCalculatorTest {
         }
     }
 
-    /** То, что обязано совпадать на всех телефонах с одинаковыми событиями, без учёта порядка в списках. */
+    /** То, что не должно зависеть от порядка и повторов событий при тех же `heardAgo` и часах, без учёта порядка в списках. */
     private data class Essence(
         val route: RouteState,
         val alarms: Set<EventId>,
@@ -347,7 +347,7 @@ class GroupCalculatorTest {
         prompts = view.prompts.map { it.member }.toSet(),
     )
 
-    /** Правдоподобная история, как `random_history` в модели: авторы ссылаются только на то, что уже было. */
+    /** Случайная история: авторы ссылаются только на то, что уже было. */
     private fun randomHistory(random: Random): History {
         val history = History()
         history.joinAll(ageMs = 60 * 60_000)

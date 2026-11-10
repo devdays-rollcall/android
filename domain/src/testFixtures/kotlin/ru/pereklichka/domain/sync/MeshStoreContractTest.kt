@@ -144,7 +144,7 @@ abstract class MeshStoreContractTest {
     @Test
     fun `точка с недопустимыми значениями хранится с пометкой и не рвёт префикс`() = storeTest { store ->
         val outOfRange = point(bob, 1, latitude = 200.0)
-        // SQLite хранит NaN как NULL, поэтому такая точка требует от Room отдельного внимания.
+        // SQLite хранит NaN как NULL, поэтому Room должен сохранить такую точку с NULL и вернуть её с NaN.
         val notANumber = point(bob, 2, latitude = Double.NaN)
         val good = point(bob, 3)
 

@@ -83,7 +83,7 @@ class MeshSimulation(private val test: TestScope, seed: Int) {
         }
     }
 
-    /** Каждая связь между телефонами появляется и пропадает через случайные 5–60 с до момента [until], как в модели. */
+    /** Каждая связь между телефонами появляется и пропадает через случайные 5–60 с до момента [until]. */
     fun flapLinks(until: Duration) {
         for ((index, first) in phones.withIndex()) {
             for (second in phones.drop(index + 1)) {

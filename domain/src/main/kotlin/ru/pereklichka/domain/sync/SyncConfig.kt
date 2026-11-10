@@ -15,7 +15,7 @@ data class SyncConfig(
     val maxMessageBytes: Int = 32 * 1024,
     /** Сколько событий помещается в одну Delta. */
     val maxEventsPerDelta: Int = 200,
-    /** Сколько точек помещается в одну Delta (одна порция точек). */
+    /** Сколько точек помещается в одну Delta, это и есть одна порция точек. */
     val maxPointsPerDelta: Int = 300,
     /** Столько неразборчивых сообщений подряд от одного соседа рвут соединение. */
     val maxCorruptInRow: Int = 3,

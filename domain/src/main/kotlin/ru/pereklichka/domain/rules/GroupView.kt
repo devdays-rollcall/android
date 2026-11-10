@@ -12,7 +12,7 @@ import ru.pereklichka.domain.time.Age
  * Считает его [GroupCalculator], публикует `GroupViewProvider` раз в 2 секунды и при изменении данных. Экраны
  * получают его через `GroupViewModel`, а `StatusMonitor` по разнице двух видов решает, какие уведомления
  * показать. Экраны только рисуют то, что пришло: возраст и статусы уже посчитаны, внутри composable их
- * не считают. Новые поля добавляет Никита.
+ * не считают.
  */
 data class GroupView(
     val group: GroupInfo,
