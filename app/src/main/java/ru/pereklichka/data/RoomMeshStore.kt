@@ -215,7 +215,7 @@ class RoomMeshStore @Inject constructor(
         //  своё событие с номером MAX(seq) + 1 в той же транзакции, затем OWN_EVENT в changesFlow.
         //  Готовое событие даёт draft.toEvent, отметку свежести Stamped.own.
         //  docs/team/vasilisa-service-storage.md
-        //throw NotImplementedError("TODO(Василиса): своё событие с номером MAX(seq) + 1 в той же транзакции, затем OWN_EVENT в changesFlow.")
+
 
         val meId = me()
 
