@@ -23,11 +23,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * [MeshStore] на Room. Эталон поведения лежит в `InMemoryMeshStore`, проверяет обе реализации `MeshStoreContractTest`
- * (здесь это `RoomMeshStoreContractTest`). Свой `member_id` берётся из `GroupRepository.activeGroup()`.
+ * Хранилище записей группы на Room: [MeshStore], который работает на телефоне. Все записи (свои и пришедшие
+ * от соседей) проходят через него, а правила приёма те же, что в эталонном `InMemoryMeshStore`.
  *
- * Перевод строк базы в модели уже есть в `data/db/Mappers.kt`: `toEntity()` у точки сам ставит `rejected`.
- * Запись пишется внутри `db.withTransaction`, а [changesFlow] срабатывает после её фиксации.
+ * Hilt подставляет его везде, где нужен [MeshStore]. Свой `member_id` берётся из [GroupRepository.activeGroup].
+ * Перевод строк базы в модели уже есть в `data/db/Mappers.kt`, и `toEntity()` у точки сам ставит `rejected`.
+ * Запись пишется внутри `db.withTransaction`, а [changesFlow] срабатывает после фиксации транзакции.
+ * Проверяет реализацию `RoomMeshStoreContractTest`.
+ *
+ * Задача: docs/team/vasilisa-service-storage.md
  */
 @Singleton
 class RoomMeshStore @Inject constructor(
@@ -42,7 +46,8 @@ class RoomMeshStore @Inject constructor(
 
     override suspend fun summary(): SyncSummary {
         // TODO(Василиса): сводка: максимальный номер события и точки по каждому автору и номер каждого состояния.
-        //  Запросы maxSeqByAuthor уже есть в DAO. docs/team/vasilisa-service-storage.md
+        //  Запросы maxSeqByAuthor уже есть в DAO.
+        //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): сводка: максимальный номер события и точки по каждому автору и номер каждого состояния.")
     }
 
@@ -54,7 +59,8 @@ class RoomMeshStore @Inject constructor(
 
     override suspend fun locations(author: MemberId, afterSeq: Long, limit: Int): List<LocationPoint> {
         // TODO(Василиса): точки автора с номерами больше afterSeq по возрастанию, не больше limit.
-        //  Точки с пометкой rejected тоже отдаются: соседям они нужны ради префикса. docs/team/vasilisa-service-storage.md
+        //  Точки с пометкой rejected тоже отдаются: соседям они нужны ради префикса.
+        //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): точки автора с номерами больше afterSeq по возрастанию, не больше limit.")
     }
 
@@ -66,26 +72,29 @@ class RoomMeshStore @Inject constructor(
 
     override suspend fun apply(delta: IncomingDelta): ApplyResult {
         // TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».
-        //  Максимумы читать внутри транзакции, точки вставлять пачкой; поведение сверять с InMemoryMeshStore.
+        //  Максимумы читать внутри транзакции, порядок проверок как в admit у InMemoryMeshStore.
         //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».")
     }
 
     override suspend fun appendOwnEvent(draft: ControlEventDraft): ControlEvent {
         // TODO(Василиса): своё событие с номером MAX(seq) + 1 в той же транзакции, затем OWN_EVENT в changesFlow.
-        //  Готовое событие даёт draft.toEvent, отметку свежести Stamped.own. docs/team/vasilisa-service-storage.md
+        //  Готовое событие даёт draft.toEvent, отметку свежести Stamped.own.
+        //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): своё событие с номером MAX(seq) + 1 в той же транзакции, затем OWN_EVENT в changesFlow.")
     }
 
     override suspend fun appendOwnLocation(fix: Fix, batteryPercent: Int?): LocationPoint {
         // TODO(Василиса): своя точка с номером MAX(seq) + 1 в той же транзакции, затем OWN_LOCATION в changesFlow.
-        //  Готовую точку даёт fix.toLocationPoint. docs/team/vasilisa-service-storage.md
+        //  Готовую точку даёт fix.toLocationPoint.
+        //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): своя точка с номером MAX(seq) + 1 в той же транзакции, затем OWN_LOCATION в changesFlow.")
     }
 
     override suspend fun putOwnState(draft: MemberStateDraft): MemberState {
         // TODO(Василиса): своё состояние со следующим номером состояния, затем OWN_STATE в changesFlow.
-        //  Готовое состояние даёт draft.toState(me, seq, clock.elapsedMs()). docs/team/vasilisa-service-storage.md
+        //  Готовое состояние даёт draft.toState(me, seq, clock.elapsedMs()).
+        //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): своё состояние со следующим номером состояния, затем OWN_STATE в changesFlow.")
     }
 

@@ -11,7 +11,7 @@ import ru.pereklichka.data.db.AppDatabase
 import ru.pereklichka.data.db.LocationDao
 import javax.inject.Singleton
 
-/** База Room и её DAO. Остальные DAO берутся из [AppDatabase] там, где нужны транзакции. */
+/** Модуль Hilt для базы Room. [LocationDao] выдаётся отдельно для `UploadWorker`, остальные DAO берутся из [AppDatabase] там, где нужны транзакции. */
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {

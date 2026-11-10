@@ -14,8 +14,8 @@ import javax.inject.Singleton
 /**
  * Настройки, которые меняют на экране диагностики: адрес сервера, режим демо, список блокировки.
  *
- * Хранятся в SharedPreferences и живут дольше группы. Значения отдаются потоками, поэтому изменение
- * сразу видят `GroupViewProvider` (порог «Не слышно»), транспорт (блокировка) и `UploadWorker` (адрес).
+ * Хранятся в SharedPreferences и живут дольше группы. Значения отдаются потоками, поэтому изменение сразу видят
+ * `GroupViewProvider` (порог «Не слышно»), транспорт (блокировка) и `UploadWorker` (адрес).
  */
 @Singleton
 class AppSettings @Inject constructor(@ApplicationContext context: Context) {
@@ -31,7 +31,7 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     /** Адрес сервера без завершающей косой черты, например `http://192.168.1.20:8080`; пусто, пока не ввели. */
     val serverUrl: StateFlow<String> = serverUrlState.asStateFlow()
 
-    /** Режим демо: «Не слышно» через 60 с вместо 120 с. */
+    /** Режим демо: «Не слышно» через 60 с вместо 120 с. С фейковыми данными из `DataModeModule` он не связан. */
     val demoMode: StateFlow<Boolean> = demoModeState.asStateFlow()
 
     /** К этим участникам транспорт не подключается и отбрасывает их сообщения (проверка пересылки на одном столе). */

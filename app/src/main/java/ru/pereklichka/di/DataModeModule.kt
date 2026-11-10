@@ -6,11 +6,14 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 
 /**
- * Переключатель фейковых данных. Пока true, экраны показывают `FakeGroupViews` и их кнопки ничего не пишут,
- * а `RouteService` только показывает уведомление. Так по экранам можно ходить, пока не готовы `RoomMeshStore`,
- * Nearby и движок.
+ * Переключатель фейковых данных. Пока он true, экраны показывают `FakeGroupViews` и их кнопки ничего не пишут,
+ * а `RouteService` только показывает уведомление и не запускает ни обмен, ни GPS. Так по экранам можно ходить,
+ * пока не готовы `RoomMeshStore`, `SyncEngine` и Nearby. Создание группы и вступление работают и в этом режиме.
  *
- * Когда они готовы, поставь false: экраны получат настоящий `GroupView`, а служба запустит обмен и GPS.
+ * Когда части готовы, Никита ставит false: экраны получат настоящий `GroupView`, а служба запустит всё.
+ * Любая оставшаяся заглушка с `NotImplementedError` тогда уронит приложение.
+ *
+ * Задача: docs/team/techlead.md
  */
 @Module
 @InstallIn(SingletonComponent::class)

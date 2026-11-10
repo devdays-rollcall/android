@@ -5,8 +5,9 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 /**
- * База одной активной группы. Создание новой группы или вступление в другую очищает все таблицы
- * (`GroupRepository`). Схема выгружается в `app/schemas`, чтобы её изменения было видно в ревью.
+ * База Room с данными одной активной группы: группа, события, точки трека и состояния участников.
+ * Создание новой группы или вступление в другую очищает все таблицы ([ru.pereklichka.data.GroupRepository]).
+ * Схема выгружается в `app/schemas`, чтобы её изменения было видно в ревью.
  */
 @Database(
     entities = [GroupInfoEntity::class, ControlEventEntity::class, LocationPointEntity::class, MemberStateEntity::class],

@@ -11,8 +11,9 @@ import ru.pereklichka.domain.model.MemberState
 import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.time.Stamped
 
-// Перевод строк базы в модели domain и обратно. Строки хранят id и перечисления текстом,
-// поэтому незнакомое значение из базы становится EventType.UNKNOWN или null, а не падением.
+// Перевод строк базы в модели domain и обратно. Пользуются ими RoomMeshStore и GroupRepository.
+// Строки хранят id и перечисления текстом, поэтому незнакомое значение из базы становится
+// EventType.UNKNOWN или null, и чтение не падает.
 
 fun GroupInfoEntity.toModel(): GroupInfo = GroupInfo(
     tag = tag,
@@ -76,7 +77,7 @@ fun LocationPointEntity.toModel(): LocationPoint = LocationPoint(
     batteryPercent = batteryPercent,
 )
 
-/** Строка для новой точки: [rejected] ставится, если точка не проходит проверку сервера. */
+/** Строка для новой точки. [LocationPointEntity.rejected] ставится, если точка не проходит `hasValidValues()`. */
 fun LocationPoint.toEntity(): LocationPointEntity = LocationPointEntity(
     id = id.value,
     author = author.value,

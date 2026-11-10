@@ -2,12 +2,12 @@ package ru.pereklichka.di
 
 import javax.inject.Qualifier
 
-/** Область корутин на всё время жизни процесса, на `Dispatchers.Default`. Нужна общим потокам вроде `GroupViewProvider`. */
+/** Метка Hilt для области корутин на всё время жизни процесса (`Dispatchers.Default`). Её берут `GroupViewProvider` и `NearbyPeerTransport`. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class ApplicationScope
 
-/** Переключатель фейковых данных для экранов, значение задаёт `DataModeModule`. */
+/** Метка Hilt для переключателя фейковых данных. Значение задаёт [DataModeModule], читают `GroupViewModel` и `RouteService`. */
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class FakeGroupData

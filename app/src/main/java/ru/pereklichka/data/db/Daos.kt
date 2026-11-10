@@ -6,7 +6,7 @@ import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
-/** Активная группа. */
+/** Запросы к таблице активной группы (одна строка). */
 @Dao
 interface GroupDao {
     @Query("SELECT * FROM group_info LIMIT 1")
@@ -22,7 +22,7 @@ interface GroupDao {
     suspend fun deleteAll()
 }
 
-/** События. Запросы, которых не хватит `RoomMeshStore`, добавляются сюда же. */
+/** Запросы к событиям для `RoomMeshStore`. Если ему не хватит запросов, новые добавляются сюда же. */
 @Dao
 interface ControlEventDao {
     /** Падает на повторном id или паре (author, seq): хранилище проверяет это до вставки. */
@@ -51,7 +51,7 @@ interface ControlEventDao {
     suspend fun deleteAll()
 }
 
-/** Точки трека. Выборку неотправленных и пометки использует `UploadWorker`. */
+/** Запросы к точкам трека. Выборку неотправленных и пометки использует `UploadWorker`, остальное `RoomMeshStore`. */
 @Dao
 interface LocationDao {
     @Insert
@@ -96,7 +96,7 @@ interface LocationDao {
     suspend fun deleteAll()
 }
 
-/** Последние состояния участников. */
+/** Запросы к последним состояниям участников. */
 @Dao
 interface MemberStateDao {
     @Upsert

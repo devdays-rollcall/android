@@ -3,7 +3,7 @@ package ru.pereklichka.data.db
 import androidx.room.TypeConverter
 import kotlinx.serialization.json.Json
 
-/** Списки ссылок и карта `heardAgoMs` хранятся в колонке строкой JSON: по ним никогда не ищут. */
+/** Переводит списки ссылок и карту `heardAgoMs` в строку JSON и обратно. По этим колонкам никогда не ищут, отдельные таблицы им не нужны. */
 class Converters {
 
     @TypeConverter

@@ -6,11 +6,11 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Токен группы и то, что из него выводится.
+ * Токен группы и то, что из него выводится: тег группы и serviceId Nearby.
  *
- * Токен это 32 случайных байта в base64url без выравнивания, 43 символа. Им подписаны запросы к серверу,
- * он лежит в QR. Тег группы открыто уходит в эфир в serviceId Nearby, поэтому он вычисляется из токена
- * через HMAC и сам токен не раскрывает.
+ * Токен это 32 случайных байта в base64url без выравнивания, 43 символа. Он лежит в QR, и с ним телефон
+ * отправляет точки на сервер (`Authorization: Bearer`). Тег группы открыто уходит в эфир в serviceId Nearby,
+ * поэтому он вычисляется из токена через HMAC и сам токен не раскрывает.
  */
 object GroupToken {
 
@@ -23,12 +23,13 @@ object GroupToken {
 
     private val random = SecureRandom()
 
+    /** Новый случайный токен. */
     fun generate(): String {
         val bytes = ByteArray(TOKEN_BYTES).also(random::nextBytes)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
-    /** Похоже ли значение на токен: 43 символа base64url, которые раскодируются в 32 байта. */
+    /** true, если значение похоже на токен: 43 символа base64url, которые раскодируются в 32 байта. */
     fun isWellFormed(token: String): Boolean = token.length == LENGTH && decodeOrNull(token)?.size == TOKEN_BYTES
 
     /**

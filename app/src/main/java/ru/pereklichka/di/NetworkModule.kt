@@ -13,7 +13,7 @@ import ru.pereklichka.upload.EventsApi
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
-/** HTTP-клиент сервера событий. Функции открыты, чтобы `UploadWorkerTest` собрал тот же клиент против MockWebServer. */
+/** Модуль Hilt для клиента сервера событий. Функции публичные, чтобы `UploadWorkerTest` собрал тот же клиент против MockWebServer. */
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -25,7 +25,7 @@ object NetworkModule {
     }
 
     /**
-     * Таймауты короткие: на «почти сети» (Wi-Fi без интернета, белые списки) запрос всё равно не пройдёт,
+     * Таймауты короткие, потому что в «почти сети» (Wi-Fi без интернета, белые списки) запрос всё равно не пройдёт,
      * и лучше быстрее отдать WorkManager повтор.
      */
     @Provides

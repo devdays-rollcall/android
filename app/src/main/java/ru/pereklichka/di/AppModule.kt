@@ -22,8 +22,9 @@ import ru.pereklichka.transport.NearbyPeerTransport
 import javax.inject.Singleton
 
 /**
- * Связывает контракты `domain` и `app` с реализациями на телефоне. Классы с `@Inject constructor`
- * (движок, `PresenceTracker`, `GroupActions` и другие) Hilt создаёт сам, здесь их нет.
+ * Модуль Hilt: связывает интерфейсы `domain` и `app` с реализациями на телефоне ([MeshStore] с `RoomMeshStore`,
+ * [PeerTransport] с `NearbyPeerTransport` и так далее). Классы с `@Inject constructor` (`SyncEngine`,
+ * `PresenceTracker`, `GroupActions` и другие) Hilt создаёт сам, здесь их нет.
  */
 @Module
 @InstallIn(SingletonComponent::class)

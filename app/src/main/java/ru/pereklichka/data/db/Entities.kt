@@ -16,7 +16,7 @@ data class GroupInfoEntity(
     val createdAtWallMs: Long,
 )
 
-/** Отметка свежести записи (`Stamped`), встраивается в строки событий и состояний. */
+/** Колонки отметки свежести (`Stamped`), встраиваются в строки событий и состояний. */
 data class StampColumns(
     val ageAtReceiptMs: Long,
     val receivedAtElapsedMs: Long,
@@ -25,8 +25,9 @@ data class StampColumns(
 )
 
 /**
- * Событие любого автора. Пара (author, seq) уникальна: на ней держится непрерывный префикс.
- * [ignored] стоит у события незнакомого типа: оно хранится ради префикса, но правила его не учитывают.
+ * Строка события любого автора. Пара (author, seq) уникальна, поэтому база не даст записать в поток автора
+ * два события с одним номером. [ignored] стоит у события незнакомого типа: оно хранится ради непрерывного
+ * префикса, но правила его не учитывают.
  */
 @Entity(tableName = "control_event", indices = [Index(value = ["author", "seq"], unique = true)])
 data class ControlEventEntity(
@@ -45,7 +46,7 @@ data class ControlEventEntity(
 )
 
 /**
- * Точка трека любого автора. [uploaded] ставит `UploadWorker` после ответа 202, [rejected] стоит у точки,
+ * Строка точки трека любого автора. [uploaded] ставит `UploadWorker` после ответа 202, [rejected] стоит у точки,
  * которую нельзя отправлять на сервер. Других изменений у точки после записи не бывает.
  *
  * Широта и долгота допускают NULL: SQLite хранит NaN как NULL, а чужую точку с NaN всё равно нужно сохранить,
@@ -71,7 +72,7 @@ data class LocationPointEntity(
     val rejected: Boolean = false,
 )
 
-/** Последнее состояние участника, одна строка на участника. */
+/** Строка последнего состояния участника, одна на участника. */
 @Entity(tableName = "member_state")
 data class MemberStateEntity(
     @PrimaryKey val memberId: String,

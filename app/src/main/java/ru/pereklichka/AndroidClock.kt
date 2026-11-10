@@ -8,7 +8,7 @@ import ru.pereklichka.domain.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Часы телефона для всего, что считает возраст записей. В тестах вместо них `FakeClock`. */
+/** [Clock] на системных часах Android. Hilt подставляет его везде, где нужен `Clock`, в тестах вместо него `FakeClock`. */
 @Singleton
 class AndroidClock @Inject constructor(@ApplicationContext private val context: Context) : Clock {
 

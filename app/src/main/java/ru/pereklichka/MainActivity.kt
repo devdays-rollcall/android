@@ -8,7 +8,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import ru.pereklichka.ui.navigation.AppNavHost
 import ru.pereklichka.ui.theme.PereklichkaTheme
 
-/** Единственная Activity: всё остальное экраны Compose в [AppNavHost]. */
+/** Единственная Activity приложения. Все экраны написаны на Compose и переключаются в [AppNavHost]. */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
