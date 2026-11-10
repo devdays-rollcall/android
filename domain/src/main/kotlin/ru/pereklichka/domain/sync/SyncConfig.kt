@@ -1,8 +1,7 @@
 package ru.pereklichka.domain.sync
 
 /**
- * Тайминги и лимиты обмена из `docs/03-sync-protocol.md`, раздел «Тайминги». Читают их [SyncEngine],
- * [MeshCodec], `SelfStateProducer` и `RouteService`.
+ * Тайминги и лимиты обмена из `docs/03-sync-protocol.md`, раздел «Тайминги».
  *
  * На телефоне экземпляр со значениями по умолчанию создаёт `AppModule`, тест может подставить свои.
  */
@@ -11,7 +10,7 @@ data class SyncConfig(
     val helloIntervalMs: Long = 10_000,
     /** Через сколько миллисекунд без единого сообщения от соседа рвать соединение. */
     val silentDisconnectMs: Long = 45_000,
-    /** Предел одного сообщения после сжатия, байт. Delta больше предела движок делит пополам. */
+    /** Предел одного сообщения после сжатия, байт. Его выбрал протокол, у Nearby предел нагрузки BYTES больше, около 1 МБ. */
     val maxMessageBytes: Int = 32 * 1024,
     /** Сколько событий помещается в одну Delta. */
     val maxEventsPerDelta: Int = 200,

@@ -27,9 +27,9 @@ import ru.pereklichka.domain.time.Clock
 import ru.pereklichka.domain.time.Stamped
 
 /**
- * [MeshStore] в памяти. Работает в тестах обоих модулей (`MeshSimulationTest`, `UploadWorkerTest` и других)
- * и служит эталоном поведения для `RoomMeshStore`: правила приёма из `docs/03-sync-protocol.md` здесь записаны
- * полностью, а обе реализации проходят `MeshStoreContractTest`.
+ * [MeshStore] в памяти для тестов обоих модулей и эталон поведения для `RoomMeshStore`. Правила приёма
+ * из `docs/03-sync-protocol.md` здесь записаны полностью, обе реализации проходят `MeshStoreContractTest`.
+ * Класс лежит в основном наборе исходников `domain` и поэтому попадает в APK, хотя приложение его не использует.
  *
  * Мьютекс делает каждую операцию атомарной, как транзакция Room: две [apply] не перемешиваются,
  * а максимумы по авторам читаются под тем же замком, что и запись.

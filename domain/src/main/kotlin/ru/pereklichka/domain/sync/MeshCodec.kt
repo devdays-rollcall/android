@@ -19,8 +19,8 @@ import javax.inject.Inject
 class MeshCodec @Inject constructor(private val config: SyncConfig) {
 
     /**
-     * Кодирует сообщение. Возвращает `null`, если после сжатия оно больше [SyncConfig.maxMessageBytes]:
-     * такую Delta движок делит пополам и кодирует половины.
+     * Кодирует сообщение. Возвращает `null`, если после сжатия оно больше [SyncConfig.maxMessageBytes],
+     * и тогда движок должен разделить Delta пополам.
      */
     fun encode(message: MeshMessage): ByteArray? {
         val json = meshJson.encodeToString(MeshMessage.serializer(), message).encodeToByteArray()
@@ -66,7 +66,7 @@ class MeshCodec @Inject constructor(private val config: SyncConfig) {
     private companion object {
         const val FORMAT_VERSION: Byte = 1
 
-        /** Предел распакованного JSON, байт. Он взят с большим запасом, а нужен потому, что сжатый мусор может развернуться в гигабайты. */
+        /** Предел распакованного JSON, байт. Нормальное сообщение распаковывается в сотни килобайт, а 32 КБ подобранного мусора gzip разворачивает в десятки мегабайт. */
         const val MAX_JSON_BYTES = 4 * 1024 * 1024
 
         val meshJson = Json {

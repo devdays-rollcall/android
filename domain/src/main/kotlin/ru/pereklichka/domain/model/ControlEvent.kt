@@ -24,8 +24,8 @@ enum class EventType {
 
 /**
  * Вид снятия тревоги в событии RESOLVE. [SELF_OK] присылает сам участник, о котором тревога, [SEEN_OK] любой
- * другой участник, [FALSE_ALARM] руководитель или автор тревоги. Чужое снятие правила тревог
- * в `domain/rules/AlarmRules.kt` не засчитывают.
+ * другой участник, [FALSE_ALARM] руководитель или автор тревоги. Если вид прислал не тот, кому он положен,
+ * правила тревог в `domain/rules/AlarmRules.kt` снятие не засчитывают.
  */
 enum class ResolveKind { SELF_OK, SEEN_OK, FALSE_ALARM }
 
