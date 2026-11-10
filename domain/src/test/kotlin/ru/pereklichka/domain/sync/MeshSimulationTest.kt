@@ -1,7 +1,6 @@
 package ru.pereklichka.domain.sync
 
 import kotlinx.coroutines.test.runTest
-import org.junit.Ignore
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
@@ -15,7 +14,6 @@ import kotlin.time.Duration.Companion.seconds
  * Тест-спецификация для Ольги: сними `@Ignore`, когда обработчики `SyncEngine` готовы, и добейся зелёного.
  * Если сценарий падает, сверь движок с `docs/03-sync-protocol.md`. Задача: docs/team/olga-transport.md
  */
-@Ignore("включи, когда сделаешь обработчики SyncEngine")
 class MeshSimulationTest {
 
     @Test
