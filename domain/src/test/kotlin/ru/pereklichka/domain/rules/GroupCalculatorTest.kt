@@ -22,8 +22,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Правила [GroupCalculator] и [activeAlarms]. Свойства тревог, переклички и маршрута повторяют property-тесты
- * модели правил: результат не зависит от порядка событий, повторов и настенных часов.
+ * Правила статусов [GroupCalculator] и тревог [activeAlarms]. Отдельно проверено, что тревоги, перекличка
+ * и маршрут не зависят от порядка событий, повторов и настенных часов.
  */
 class GroupCalculatorTest {
 

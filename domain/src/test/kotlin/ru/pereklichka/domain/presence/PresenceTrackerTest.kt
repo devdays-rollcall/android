@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** Кого телефон слышит напрямую: порог 30 с, окно 10 минут для `heardAgoMs`, моменты по монотонным часам. */
 class PresenceTrackerTest {
 
     private var nowMs = 0L

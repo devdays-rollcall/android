@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** Виртуальный эфир: связи, задержка, потери и повторы сообщений, остановка транспорта. */
 class InMemoryTransportTest {
 
     @Test

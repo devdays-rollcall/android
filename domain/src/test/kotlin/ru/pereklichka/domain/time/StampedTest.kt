@@ -4,6 +4,7 @@ import ru.pereklichka.domain.testing.FakeClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+/** Возраст записи: по монотонным часам, после перезагрузки по настенным, ограничения возраста из сети. */
 class StampedTest {
 
     private var nowMs = 100_000L

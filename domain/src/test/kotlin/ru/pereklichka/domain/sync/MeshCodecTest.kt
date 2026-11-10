@@ -20,6 +20,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** Кодирование сообщений: туда и обратно, предел 32 КБ, незнакомые типы, точки с NaN и битые байты. */
 class MeshCodecTest {
 
     private val codec = MeshCodec(SyncConfig())

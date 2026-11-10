@@ -4,6 +4,7 @@ import ru.pereklichka.domain.model.LatLon
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
+/** Расстояние и азимут на известных парах точек. */
 class GeoTest {
 
     private val origin = LatLon(43.0, 42.0)

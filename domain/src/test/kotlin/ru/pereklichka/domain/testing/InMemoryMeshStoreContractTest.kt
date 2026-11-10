@@ -6,6 +6,7 @@ import ru.pereklichka.domain.sync.MeshStore
 import ru.pereklichka.domain.sync.MeshStoreContractTest
 import ru.pereklichka.domain.time.Clock
 
+/** Контракт [ru.pereklichka.domain.sync.MeshStore] на эталонном хранилище в памяти. */
 class InMemoryMeshStoreContractTest : MeshStoreContractTest() {
 
     private lateinit var store: InMemoryMeshStore

@@ -5,7 +5,7 @@ import ru.pereklichka.domain.model.LatLon
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** GPS отдаёт фиксацию раз в 5 с; в трек идёт смещение на 15 м или прошедшая минута. */
+/** Прореживание трека: при фиксациях раз в 5 с в трек идёт смещение на 15 м или прошедшая минута. */
 class TrackThinnerTest {
 
     private val start = LatLon(43.35, 42.44)

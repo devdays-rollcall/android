@@ -10,6 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** Чистка фиксации: недопустимые необязательные поля пропадают, фиксация без координат отбрасывается. */
 class LocationSanitizerTest {
 
     private val sanitizer = LocationSanitizer()

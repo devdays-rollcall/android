@@ -27,8 +27,9 @@ import ru.pereklichka.domain.time.Clock
 import ru.pereklichka.domain.time.Stamped
 
 /**
- * Хранилище в памяти для тестов и эталон поведения для `RoomMeshStore`: правила приёма из
- * `03-sync-protocol.md` здесь записаны полностью, и обе реализации проходят `MeshStoreContractTest`.
+ * [MeshStore] в памяти. Работает в тестах обоих модулей (`MeshSimulationTest`, `UploadWorkerTest` и других)
+ * и служит эталоном поведения для `RoomMeshStore`: правила приёма из `docs/03-sync-protocol.md` здесь записаны
+ * полностью, а обе реализации проходят `MeshStoreContractTest`.
  *
  * Мьютекс делает каждую операцию атомарной, как транзакция Room: две [apply] не перемешиваются,
  * а максимумы по авторам читаются под тем же замком, что и запись.
@@ -124,7 +125,7 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
         return state
     }
 
-    /** Помечена ли точка как непригодная для сервера. В `RoomMeshStore` этому соответствует флаг `rejected`. */
+    /** true, если точка помечена как непригодная для сервера. В `RoomMeshStore` этому соответствует флаг `rejected`. */
     suspend fun isRejected(pointId: EventId): Boolean = mutex.withLock { pointId in rejectedPointIds }
 
     private fun applyControl(incoming: List<Stamped<ControlEvent>>, counter: ApplyCounter) {
@@ -181,8 +182,8 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
     }
 
     /**
-     * Можно ли поставить запись автора [author] с номером [seq] в его поток [stream].
-     * Это правило «ровно следующий номер» вместе с проверками на конфликт.
+     * Решает, можно ли поставить запись автора [author] с номером [seq] в его поток [stream]. Это правило
+     * «ровно следующий номер» вместе с проверками на конфликт. Порядок веток важен, `RoomMeshStore` повторяет его.
      */
     private inline fun <T> admit(
         stream: List<T>,

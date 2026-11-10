@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** Проверка значений точки перед отправкой на сервер: диапазоны из `openapi.yaml`, NaN и бесконечности. */
 class LocationPointTest {
 
     private val valid = LocationPoint(

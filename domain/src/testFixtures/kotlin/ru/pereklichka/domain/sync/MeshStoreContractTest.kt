@@ -26,7 +26,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Общий набор проверок для любой реализации [MeshStore]: правила приёма из `03-sync-protocol.md`,
+ * Общий набор проверок для любой реализации [MeshStore]: правила приёма из `docs/03-sync-protocol.md`,
  * свои записи, выборки, поток изменений и снимок.
  *
  * Наследники создают хранилище своей реализации: `InMemoryMeshStoreContractTest` в `domain`
