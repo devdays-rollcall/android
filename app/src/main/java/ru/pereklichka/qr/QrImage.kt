@@ -10,8 +10,8 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
 /**
- * Картинка QR. Поля в четыре модуля и коррекция ошибок уровня Q нужны, чтобы код считывался с экрана на солнце
- * и с бликом. Чёрное на белом без цвета: так контраст наибольший.
+ * Рисует картинку QR для `LobbyScreen`. Поля в четыре модуля и коррекция ошибок уровня Q нужны, чтобы код
+ * считывался с экрана на солнце и с бликом. Цвета чёрный и белый, потому что так контраст наибольший.
  */
 object QrImage {
 
@@ -28,6 +28,7 @@ object QrImage {
         ),
     )
 
+    /** Картинка кода [sizePx] на [sizePx] пикселей вместе с полями. */
     fun bitmap(text: String, sizePx: Int): Bitmap {
         val matrix = matrix(text, sizePx)
         val pixels = IntArray(matrix.width * matrix.height) { index ->

@@ -8,16 +8,17 @@ import java.net.URLEncoder
 import java.util.UUID
 
 /**
- * Строка QR для вступления в группу: `pereklichka://join?v=1&t=<токен>&g=<название>&l=<id руководителя>`.
+ * Собирает и разбирает строку QR для вступления в группу: `pereklichka://join?v=1&t=<токен>&g=<название>&l=<id руководителя>`.
  * Название кодируется как в URL, поэтому в нём можно писать пробелы, `&` и кириллицу.
  *
- * Строку показывает экран «QR и сбор», разбирает сканер ([rememberQrScanner]).
+ * Строку показывает экран «QR и сбор» (`LobbyScreen`), разбирает сканер ([rememberQrScanner]).
  */
 object QrFormat {
 
     private const val PREFIX = "pereklichka://join?"
     private const val VERSION = "1"
 
+    /** Строка QR для [payload]. */
     fun encode(payload: QrPayload): String =
         PREFIX + "v=$VERSION&t=${payload.token}&g=${encodePart(payload.groupName)}&l=${payload.leaderId}"
 
