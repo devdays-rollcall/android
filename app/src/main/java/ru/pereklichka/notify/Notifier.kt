@@ -4,11 +4,12 @@ import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.MemberId
 
 /**
- * Показывает уведомления. На телефоне это `AndroidNotifier`, в тестах фейк.
+ * Показывает и убирает системные уведомления. На телефоне это [AndroidNotifier], в тестах фейк.
  *
- * Что и когда показывать, решает `StatusMonitor`; здесь только как. Одно событие даёт одно уведомление:
- * повторный [show] с тем же [NotifyEvent.key] обновляет его, а [dismiss] убирает. Снятая тревога приходит
- * через [show] как [NotifyEvent.AlarmResolved]: её уведомление с тем же ключом нужно убрать или сменить на «снята».
+ * Что и когда показывать, решает `StatusMonitor`, а реализация решает только как. Одно событие даёт одно
+ * уведомление: повторный [show] с тем же [NotifyEvent.key] обновляет его, а [dismiss] убирает. Снятая тревога
+ * приходит через [show] как [NotifyEvent.AlarmResolved], и её уведомление с тем же ключом нужно убрать
+ * или сменить на «снята».
  */
 interface Notifier {
     fun show(event: NotifyEvent)
@@ -17,10 +18,11 @@ interface Notifier {
     fun dismiss(key: String)
 }
 
-/** Повод для уведомления. [key] годится как tag уведомления. */
+/** Повод для уведомления. [key] одинаков у всех событий об одной тревоге, участнике или перекличке, его берут как tag уведомления. */
 sealed interface NotifyEvent {
     val key: String
 
+    /** Новая тревога или SOS. [isAboutMe] значит, что тревога обо мне, и тексту уведомления нужен свой вариант. */
     data class AlarmRaised(
         val alarmId: EventId,
         val target: MemberId,
@@ -36,10 +38,12 @@ sealed interface NotifyEvent {
         override val key: String get() = alarmKey(alarmId)
     }
 
+    /** Участника «Не слышно». Приходит только руководителю на маршруте. */
     data class MemberLost(val member: MemberId, val name: String) : NotifyEvent {
         override val key: String get() = lostKey(member)
     }
 
+    /** Руководитель начал перекличку, а я ещё не ответил. */
     data class RollcallStarted(val rollcallId: EventId) : NotifyEvent {
         override val key: String get() = rollcallKey(rollcallId)
     }
