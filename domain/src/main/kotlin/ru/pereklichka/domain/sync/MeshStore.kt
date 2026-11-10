@@ -13,7 +13,7 @@ import ru.pereklichka.domain.time.Stamped
  * Хранит всё, что телефон знает о группе, и решает, какие записи от соседа можно принять.
  *
  * На телефоне это `RoomMeshStore`, в тестах [ru.pereklichka.domain.testing.InMemoryMeshStore]; обе реализации
- * проходят один контрактный тест `MeshStoreContractTest`. Своё в хранилище пишут `GroupActions` (события),
+ * проходят один контрактный тест `MeshStoreContractTest`. Свои записи пишут сюда `GroupActions` (события),
  * `TrackRecorder` (точки) и `SelfStateProducer` (состояние). [SyncEngine] берёт отсюда сводку и записи для
  * соседей и применяет их Delta, а `GroupViewProvider` строит из [snapshot] вид группы.
  *
