@@ -22,12 +22,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Единственный источник [GroupView] для экранов и `StatusMonitor`, поэтому экран и уведомления не расходятся.
+ * Единственный источник [GroupView] для экранов, уведомлений и службы, поэтому экран и уведомления не расходятся.
  *
- * Пересчитывает вид через [GroupCalculator] при каждом новом снимке хранилища, смене своей позиции или режима демо
- * и раз в [REFRESH_MS]: «Не слышно» наступает со временем, даже если в базе ничего не изменилось.
+ * Пересчитывает вид через [GroupCalculator] из `MeshStore.snapshot()`, [PresenceTracker], своей позиции
+ * ([OwnLocation]) и режима демо ([AppSettings]). Пересчёт идёт при каждом изменении любого из них и раз
+ * в [REFRESH_MS], потому что «Не слышно» наступает со временем, даже если в базе ничего не изменилось.
+ * Подписаны `GroupViewModel`, [StatusMonitor], `RouteService`, `GroupActions` и `UploadWorker`.
+ *
  * Пока на [view] никто не подписан, пересчёт стоит, а значение сбрасывается в null: устаревший вид после паузы
- * дал бы `StatusMonitor` ложные уведомления. null значит, что группы нет или первый расчёт ещё не готов.
+ * дал бы [StatusMonitor] ложные уведомления. null значит, что группы нет или первый расчёт ещё не готов.
  */
 @Singleton
 class GroupViewProvider @Inject constructor(
@@ -62,7 +65,7 @@ class GroupViewProvider @Inject constructor(
     private companion object {
         const val REFRESH_MS = 2_000L
 
-        /** Переживает поворот экрана без лишнего пересчёта с нуля. */
+        /** Сколько миллисекунд держать расчёт без подписчиков, чтобы поворот экрана не запускал его с нуля. */
         const val STOP_TIMEOUT_MS = 5_000L
     }
 }

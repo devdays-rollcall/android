@@ -6,11 +6,12 @@ import ru.pereklichka.domain.rules.Presence
 import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.notify.NotifyEvent
 
-/** Что показать и что убрать после перехода от одного [GroupView] к следующему. */
+/** Что показать ([show]) и какие уведомления убрать по ключу ([dismiss]) после перехода от одного [GroupView] к следующему. */
 data class NotificationChanges(val show: List<NotifyEvent>, val dismiss: List<String>)
 
 /**
- * Переходы от одного вида к следующему. Чистая функция, её проверяет `NotificationChangesTest`.
+ * Решает, какие уведомления дать при переходе от [previous] к [current]. Вызывает [StatusMonitor], проверяет
+ * `NotificationChangesTest`. Функция чистая, без побочных эффектов.
  *
  * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. «Не слышно» (MemberLost) получает только руководитель
  * и только на маршруте: в сборе люди ещё не вышли, после завершения уже разошлись. Кто был LOST в момент выхода,

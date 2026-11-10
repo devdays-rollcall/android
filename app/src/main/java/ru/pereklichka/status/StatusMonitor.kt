@@ -8,8 +8,11 @@ import ru.pereklichka.notify.Notifier
 import javax.inject.Inject
 
 /**
- * Превращает изменения [GroupView] в уведомления. Запускает его `RouteService` на время работы службы.
- * Правила переходов в [notificationChanges].
+ * Превращает изменения [GroupView] в уведомления: новая тревога, «Не слышно», перекличка, подсказка о близости.
+ *
+ * Запускает его `RouteService` на время работы службы. Монитор сравнивает каждый новый вид из [GroupViewProvider]
+ * с предыдущим по правилам [notificationChanges] и вызывает [Notifier]. Что показывать, решает он, а как
+ * показывать, решает `AndroidNotifier`.
  */
 class StatusMonitor @Inject constructor(
     private val viewProvider: GroupViewProvider,
