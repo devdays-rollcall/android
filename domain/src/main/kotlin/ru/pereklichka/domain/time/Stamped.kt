@@ -5,7 +5,8 @@ package ru.pereklichka.domain.time
  *
  * Часы телефонов в походе расходятся, поэтому время создания записи, записанное другим телефоном,
  * сравнивать нельзя. Вместо него запись несёт свой возраст, а текущий возраст считает [ageNow].
- * Отметку ставит хранилище: для своих записей через [own], для пришедших через [received].
+ * Отметку ставят хранилище для своих записей ([own]) и `Delta.toIncoming` для пришедших от соседа ([received]).
+ * Хранилище сохраняет все четыре поля как есть.
  */
 data class Stamped<out T>(
     val value: T,
@@ -22,7 +23,7 @@ data class Stamped<out T>(
          * Отметка для записи, которая пришла от соседа с возрастом [ageMs].
          *
          * Возраст из сети может быть повреждён, поэтому отрицательный становится нулём,
-         * а больше суток ограничивается сутками (`03-sync-protocol.md`, «Повреждённые сообщения»).
+         * а больше суток ограничивается сутками (`docs/03-sync-protocol.md`, «Повреждённые сообщения»).
          */
         fun <T> received(value: T, ageMs: Long, clock: Clock): Stamped<T> = Stamped(
             value = value,
@@ -48,7 +49,7 @@ fun Stamped<*>.ageNow(clock: Clock): Age {
     if (receivedBootId == clock.bootId()) {
         return Age(ageAtReceiptMs + (clock.elapsedMs() - receivedAtElapsedMs), approximate = false)
     }
-    // Настенные часы могли перевести назад, а возраст не может уменьшиться.
+    // Настенные часы могли перевести назад, а возраст уменьшаться не должен.
     val wallPassedMs = (clock.wallMs() - receivedAtWallMs).coerceAtLeast(0)
     return Age(ageAtReceiptMs + wallPassedMs, approximate = true)
 }

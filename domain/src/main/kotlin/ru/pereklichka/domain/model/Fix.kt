@@ -7,12 +7,13 @@ import kotlinx.serialization.Serializable
 data class LatLon(val latitude: Double, val longitude: Double)
 
 /**
- * GPS-фиксация в том виде, в каком её отдаёт `LocationSource`.
+ * Одна GPS-фиксация своего телефона. Её отдаёт `LocationSource`, чистит [ru.pereklichka.domain.track.LocationSanitizer],
+ * а `TrackRecorder` решает, стать ли ей точкой трека.
  *
- * Необязательные поля заполнены, только если Android их измерил (`hasAccuracy()` и так далее).
- * [timeUtcMs] берётся из `Location.time`: это часы телефона, они не монотонны и годятся только
- * для `recorded_at` на сервере. Возраст фиксации считается по [elapsedRealtimeMs]
- * (`Location.elapsedRealtimeNanos` в миллисекундах).
+ * Необязательные поля заполнены, только если Android их измерил (`hasAccuracy()` и так далее). Точность
+ * и высота в метрах, скорость в м/с, направление движения в градусах от севера. [timeUtcMs] берётся
+ * из `Location.time`: это часы телефона, они не монотонны и годятся только для `recorded_at` на сервере.
+ * Возраст фиксации считается по [elapsedRealtimeMs] (`Location.elapsedRealtimeNanos` в миллисекундах).
  */
 data class Fix(
     val position: LatLon,
