@@ -147,7 +147,7 @@ class UploadWorkerTest {
     @Test
     fun `точка с недопустимыми значениями на сервер не уходит`() = runTest {
         insertPoints(3)
-        // Старая запись без пометки: проверка перед отправкой должна её поймать.
+        // Запись вставлена в обход маппера и потому без пометки rejected: проверка перед отправкой должна её поймать.
         db.locationDao().insertAll(listOf(entity("bad-point", seq = 4, latitude = 120.0)))
         respond { batch -> accepted(batch) }
 

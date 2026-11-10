@@ -12,14 +12,12 @@ import ru.pereklichka.data.db.LocationDao
 import ru.pereklichka.status.GroupViewProvider
 
 /**
- * Задача WorkManager, которая отправляет на сервер точки всей группы, свои и полученные от соседей. Ставит её
- * в очередь [UploadScheduler], когда появляется сеть, после завершения маршрута и раз в 15 минут.
+ * Задача WorkManager, которая отправляет на сервер точки всей группы, свои и полученные от соседей. В очередь
+ * её ставит [UploadScheduler]: при появлении сети, после завершения маршрута и раз в 15 минут.
  *
- * Точки берёт из [LocationDao] пачками, после ответа 202 помечает отправленными. Одни и те же точки отправят
- * несколько телефонов, сервер отсеет повторы по `id`. Пустую пачку (heartbeat) воркер шлёт, только пока маршрут
- * ACTIVE, и состояние маршрута даёт [viewProvider] (`view.filterNotNull().first().route`). Без активной группы
- * вид не появится и `first()` будет ждать вечно, поэтому группу проверяют раньше. Ошибку для диагностики
- * принимает [uploadStatus].
+ * Воркер должен брать точки из [LocationDao] пачками и после ответа 202 помечать их отправленными. Одни и те же
+ * точки отправят несколько телефонов, и сервер отсеет повторы по `id`. Состояние маршрута для heartbeat даёт
+ * [viewProvider], ошибку для диагностики принимает [uploadStatus].
  *
  * Задача: docs/team/daniil-upload.md
  */
@@ -38,7 +36,8 @@ class UploadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         // TODO(Даниил): пачки до 200 из locationDao.unsent(), проверка hasValidValues, разбор кодов ответа, heartbeat.
         //  202 помечает ровно эту пачку, 5xx и нет сети дают retry, 413 уменьшает пачку, 400 и 422 ищут кривую точку,
-        //  401 даёт failure и ошибку в uploadStatus.
+        //  401 даёт failure и ошибку в uploadStatus. Сначала проверить активную группу: без неё
+        //  viewProvider.view.filterNotNull().first() будет ждать вечно.
         //  docs/team/daniil-upload.md, тесты в UploadWorkerTest
         throw NotImplementedError("TODO(Даниил): пачки до 200 из locationDao.unsent(), проверка hasValidValues, разбор кодов ответа, heartbeat.")
     }

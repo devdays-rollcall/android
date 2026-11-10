@@ -23,13 +23,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Хранилище записей группы на Room: [MeshStore], который работает на телефоне. Все записи (свои и пришедшие
- * от соседей) проходят через него, а правила приёма те же, что в эталонном `InMemoryMeshStore`.
+ * [MeshStore] на Room, которым пользуется приложение на телефоне. Через него проходят все записи группы, свои
+ * и пришедшие от соседей, а правила приёма те же, что в эталонном `InMemoryMeshStore`.
  *
- * Hilt подставляет его везде, где нужен [MeshStore]. Свой `member_id` берётся из [GroupRepository.activeGroup].
- * Строки базы переводит в модели и обратно `data/db/Mappers.kt`, и `toEntity()` у точки сам ставит `rejected`.
- * Запись пишется внутри `db.withTransaction`, а [changesFlow] срабатывает после фиксации транзакции.
- * Проверяет реализацию `RoomMeshStoreContractTest`.
+ * Свой `member_id` берётся из [GroupRepository.activeGroup]. Строки базы переводит в модели и обратно
+ * `data/db/Mappers.kt`, причём `toEntity()` у точки сам ставит `rejected`. Каждая запись должна идти внутри
+ * `db.withTransaction`, а [changesFlow] срабатывать после её фиксации. Реализацию проверяет
+ * `RoomMeshStoreContractTest`.
  *
  * Задача: docs/team/vasilisa-service-storage.md
  */
@@ -72,7 +72,7 @@ class RoomMeshStore @Inject constructor(
 
     override suspend fun apply(delta: IncomingDelta): ApplyResult {
         // TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».
-        //  03 это docs/03-sync-protocol.md. Максимумы читать внутри транзакции, порядок проверок как в admit
+        //  Правила в docs/03-sync-protocol.md. Максимумы читать внутри транзакции, порядок проверок как в admit
         //  у InMemoryMeshStore.
         //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): применить Delta одной транзакцией по правилам из 03, раздел «Применение Delta».")

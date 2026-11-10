@@ -18,7 +18,7 @@ class SelfStateProducer @Inject constructor(
     private val battery: BatteryLevel,
     private val config: SyncConfig,
 ) {
-    /** Работает, пока не отменят корутину. Первое состояние пишет сразу. */
+    /** Пишет первое состояние сразу и дальше по таймеру, пока корутину не отменят. */
     suspend fun run() {
         while (true) {
             store.putOwnState(MemberStateDraft(ownLocation.lastFix.value, battery.percent(), presence.heardAgo()))

@@ -13,11 +13,12 @@ data class NotificationChanges(val show: List<NotifyEvent>, val dismiss: List<St
  * Решает, какие уведомления дать при переходе от [previous] к [current]. Вызывает [StatusMonitor], проверяет
  * `NotificationChangesTest`. Побочных эффектов у функции нет.
  *
- * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. «Не слышно» (MemberLost) получает только руководитель
- * и только на маршруте: в сборе люди ещё не вышли, после завершения уже разошлись. Кто был LOST в момент ROUTE_STARTED,
- * тоже получает уведомление, а после ROUTE_FINISHED все уведомления «Не слышно» убираются. Новая перекличка, на которую я не ответил, даёт
+ * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. «Не слышно» (MemberLost) получает только
+ * руководитель и только на маршруте, потому что в «Сборе» люди ещё не вышли, а после завершения уже разошлись.
+ * Об участниках, которых не было слышно уже в момент ROUTE_STARTED, руководитель тоже узнаёт, а после
+ * ROUTE_FINISHED все уведомления «Не слышно» убираются. Новая перекличка, на которую я не ответил, даёт
  * RollcallStarted, новая подсказка о близости NearbyConfirm. Когда повод пропал, уведомление убирается.
- * [previous] равен null после перезапуска процесса, тогда об активных тревогах напомнят ещё раз.
+ * В начале каждого запуска монитора [previous] равен null, и об активных тревогах напомнят ещё раз.
  */
 fun notificationChanges(previous: GroupView?, current: GroupView): NotificationChanges {
     val show = mutableListOf<NotifyEvent>()

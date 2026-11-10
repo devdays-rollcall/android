@@ -6,9 +6,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Показывает уведомления о тревогах, «Не слышно» и перекличке через систему Android. Hilt подставляет его
- * везде, где нужен [Notifier]; вызывает его `StatusMonitor`. Тихий канал службы создаёт `ServiceNotification`,
- * остальные каналы создаются здесь.
+ * [Notifier] на системных уведомлениях Android: тревоги, «Не слышно», перекличка и подсказки о близости.
+ * Вызывает его `StatusMonitor`. Тихий канал службы создаёт `ServiceNotification`, остальные каналы создаются здесь.
  *
  * Задача: docs/team/valentin-ui.md
  */

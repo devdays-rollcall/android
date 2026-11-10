@@ -18,15 +18,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Связь с соседями через Nearby Connections: находит телефоны своей группы (advertising и discovery), держит
- * с ними соединения и передаёт байты движку. Hilt подставляет его везде, где нужен [PeerTransport]; запускает
- * и останавливает его `RouteService`, события читает `SyncEngine`.
+ * [PeerTransport] на Nearby Connections: находит телефоны своей группы через advertising и discovery, держит
+ * с ними соединения и передаёт байты движку. Запускает и останавливает его `RouteService`.
  *
- * Параметры Nearby: `P2P_CLUSTER`, serviceId с тегом группы, `member_id` как имя устройства, `NON_DISRUPTIVE`.
- * Кого подключать и когда, решает [ConnectionPolicy], радио проверяет [RadioCheck]. Обратные вызовы Nearby
- * приходят в главный поток, поэтому их нужно сразу перекладывать в [eventsChannel] и ничего тяжёлого в них
- * не делать. Подтверждение доставки (`onPayloadTransferUpdate`) нужно передавать
- * ждущему `send` прямо здесь: через [eventsChannel] движок прочитает его только после возврата из `send`.
+ * Стратегия `P2P_CLUSTER`, serviceId с тегом группы, имя устройства равно `member_id`. `NON_DISRUPTIVE`
+ * не даёт Nearby переключать Wi-Fi, и телефон не теряет интернет для отправки на сервер. Кого подключать,
+ * решает [ConnectionPolicy], радио проверяет [RadioCheck].
+ *
+ * Обратные вызовы Nearby приходят в главный поток, поэтому их нужно сразу перекладывать в [eventsChannel].
+ * Исключение одно: статус отправки из `onPayloadTransferUpdate` надо отдавать ждущему `send` прямо из
+ * обратного вызова, потому что через [eventsChannel] движок прочитает его только после возврата из `send`.
+ * SUCCESS там значит, что Nearby передал байты, а приём соседнее приложение не подтверждает.
  *
  * Задача: docs/team/olga-transport.md
  */
@@ -46,8 +48,7 @@ class NearbyPeerTransport @Inject constructor(
 
     override fun start(config: TransportConfig) {
         // TODO(Ольга): проверить радио и включить advertising и discovery по политике из 03.
-        //  03 это docs/03-sync-protocol.md, раздел «Транспорт поверх Nearby Connections».
-        //  Решения о соединениях через ConnectionPolicy, соединения принимать без кода, после перезапуска
+        //  Политика в docs/03-sync-protocol.md, «Транспорт поверх Nearby Connections». Решения о соединениях через ConnectionPolicy, соединения принимать без кода, после перезапуска
         //  процесса поднимать всё с нуля.
         //  docs/team/olga-transport.md
         throw NotImplementedError("TODO(Ольга): проверить радио и включить advertising и discovery по политике из 03.")

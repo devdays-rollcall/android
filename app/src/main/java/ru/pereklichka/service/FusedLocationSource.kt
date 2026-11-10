@@ -8,8 +8,7 @@ import ru.pereklichka.domain.model.Fix
 import javax.inject.Inject
 
 /**
- * Источник фиксаций GPS на Fused Location Provider из Google Play Services. Hilt подставляет его везде,
- * где нужен [LocationSource]; подписывается на него [TrackRecorder].
+ * [LocationSource] на Fused Location Provider из Google Play Services. Подписывается на него [TrackRecorder].
  *
  * Задача: docs/team/vasilisa-service-storage.md
  */

@@ -23,8 +23,7 @@ import javax.inject.Singleton
 
 /**
  * Модуль Hilt: связывает интерфейсы `domain` и `app` с реализациями на телефоне ([MeshStore] с `RoomMeshStore`,
- * [PeerTransport] с `NearbyPeerTransport` и так далее). Классы с `@Inject constructor` (`SyncEngine`,
- * `PresenceTracker`, `GroupActions` и другие) Hilt создаёт сам, здесь их нет.
+ * [PeerTransport] с `NearbyPeerTransport` и так далее) и даёт [SyncConfig] со значениями по умолчанию.
  */
 @Module
 @InstallIn(SingletonComponent::class)

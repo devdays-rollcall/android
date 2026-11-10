@@ -9,7 +9,7 @@ import java.time.Instant
 // Схемы GET (EventOutput, EventPage) телефону не нужны и здесь не описаны.
 
 /**
- * `EventBatch`: пачка не больше 500 событий (`UploadWorker` шлёт по 200), [senderId] это `member_id` этого телефона.
+ * `EventBatch`: пачка не больше 500 событий (`UploadWorker` шлёт по 200), [senderId] равен `member_id` этого телефона.
  * Пустую пачку телефон шлёт как heartbeat, пока идёт маршрут: по ней сервер знает, что телефон на связи,
  * даже когда новых точек нет.
  */
@@ -19,7 +19,7 @@ data class EventBatchDto(
     val events: List<EventInputDto>,
 )
 
-/** `EventInput`. [id] это UUID точки, он не меняется ни при пересылке, ни при повторной отправке. */
+/** `EventInput`. В [id] лежит UUID точки, он не меняется ни при пересылке, ни при повторной отправке. */
 @Serializable
 data class EventInputDto(
     val id: String,
@@ -52,7 +52,7 @@ data class LocationDataDto(
     @SerialName("battery_percent") val batteryPercent: Int? = null,
 )
 
-/** `Accepted`: ответ 202, сервер принял всю пачку. В выдаче `GET` точки появляются чуть позже. */
+/** `Accepted`: тело ответа 202, сервер принял всю пачку. */
 @Serializable
 data class AcceptedDto(val accepted: Int)
 

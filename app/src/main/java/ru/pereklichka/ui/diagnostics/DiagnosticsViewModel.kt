@@ -35,7 +35,7 @@ data class DiagnosticsState(
     val sync: SyncDiagnostics = SyncDiagnostics(),
 )
 
-/** Системные флаги для раздела «Телефон». Экран перечитывает их раз в 2 секунды, это проще, чем подписываться на рассылку о каждом. */
+/** Системные флаги для раздела «Телефон». ViewModel перечитывает их раз в 2 секунды, это проще, чем подписываться на рассылку о каждом. */
 data class SystemChecks(
     val bluetoothEnabled: Boolean = false,
     val playServicesAvailable: Boolean = false,

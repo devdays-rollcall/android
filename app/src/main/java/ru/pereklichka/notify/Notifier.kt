@@ -4,12 +4,11 @@ import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.MemberId
 
 /**
- * Показывает и убирает системные уведомления. На телефоне это [AndroidNotifier], в тестах фейк.
+ * Показывает и убирает системные уведомления. Реализация на телефоне [AndroidNotifier], в тестах фейк.
  *
  * Что и когда показывать, решает `StatusMonitor`, а реализация решает только как. Одно событие даёт одно
  * уведомление: повторный [show] с тем же [NotifyEvent.key] обновляет его, а [dismiss] убирает. Снятая тревога
- * приходит через [show] как [NotifyEvent.AlarmResolved], и её уведомление с тем же ключом нужно убрать
- * или сменить на «снята».
+ * приходит через [show] как [NotifyEvent.AlarmResolved], и её уведомление с тем же ключом нужно убрать.
  */
 interface Notifier {
     fun show(event: NotifyEvent)

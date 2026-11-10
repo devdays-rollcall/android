@@ -7,9 +7,9 @@ import ru.pereklichka.domain.model.MemberId
  * соединяться, кто запрашивает первым, когда повторять и когда включать discovery. Чистые функции без Android,
  * их вызывает [NearbyPeerTransport] и проверяет `ConnectionPolicyTest`.
  *
- * Обычных соединений до [MAX_REGULAR_CONNECTIONS], четвёртое только для outsider, то есть телефона из другой
- * части сети. Если бы любой телефон мог занять четвёртое соединение,
- * группа быстро заполнила бы все слоты, и вернувшемуся отставшему не досталось бы ни одного.
+ * Обычных соединений до [MAX_REGULAR_CONNECTIONS], а четвёртое держится для outsider: участника, которого
+ * давно никто не слышал, например вернувшегося отставшего. Если бы четвёртое соединение мог занять любой,
+ * группа быстро заполнила бы все слоты, и отставшему не досталось бы ни одного.
  */
 object ConnectionPolicy {
 
@@ -18,7 +18,7 @@ object ConnectionPolicy {
     /** Сколько миллисекунд ждёт телефон с большим `member_id`, прежде чем запросить соединение сам. */
     const val DEFERRED_REQUEST_MS = 10_000L
 
-    /** При трёх соединениях discovery включается на [DISCOVERY_WINDOW_MS] раз в [DISCOVERY_PERIOD_MS], мс. */
+    /** При трёх соединениях discovery включается на [DISCOVERY_WINDOW_MS] миллисекунд раз в [DISCOVERY_PERIOD_MS]. */
     const val DISCOVERY_WINDOW_MS = 15_000L
     const val DISCOVERY_PERIOD_MS = 60_000L
 

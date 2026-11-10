@@ -48,20 +48,19 @@ import ru.pereklichka.upload.UploadScheduler
 import javax.inject.Inject
 
 /**
- * Foreground service маршрута: держит обмен с соседями, GPS и уведомления, пока телефон лежит в кармане
- * с выключенным экраном. Пока она работает, система показывает её постоянное уведомление ([ServiceNotification]).
+ * Foreground service маршрута. Пока телефон лежит в кармане с выключенным экраном, в ней живут обмен
+ * с соседями, GPS и уведомления, а в шторке висит её постоянное уведомление ([ServiceNotification]).
  *
- * Интерфейс запускает её через [start] при создании группы, вступлении и каждом возврате на экран
- * (`GroupViewModel.ensureRouteServiceRunning`). Запускать её нужно, пока приложение на экране: из фона
- * Android 12 и новее foreground service запускать не даёт, а тип location на Android 14 из фона не поднять
- * и без «Разрешить всегда». Типы службы (location, connectedDevice)
- * выбираются по выданным разрешениям. Для активной группы служба запускает [RouteSession]: `SyncEngine`,
- * транспорт, [SelfStateProducer], `StatusMonitor`, [TrackRecorder], wake lock и отправку на сервер.
+ * Запускает её [start] при создании группы, вступлении и каждом возврате приложения на экран. Делать это
+ * нужно, пока приложение на экране. Из фона Android 12 и новее foreground service не запускает, а тип location
+ * на Android 14 из фона поднимается только с разрешением «Разрешить всегда». Типы службы (location,
+ * connectedDevice) выбираются по выданным разрешениям.
  *
- * В «Сборе» телефон уже обменивается данными и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен
- * идёт ещё [SyncConfig.exchangeAfterFinishMs], чтобы завершение дошло до всех. Данные после остановки
- * остаются в базе. В фейковом режиме (`DataModeModule`) служба показывает уведомление и больше ничего
- * не запускает.
+ * Для активной группы служба поднимает [RouteSession] с движком, транспортом, своим состоянием, монитором
+ * уведомлений, треком, wake lock и отправкой на сервер. В «Сборе» телефон уже обменивается данными
+ * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт ещё [SyncConfig.exchangeAfterFinishMs],
+ * чтобы завершение дошло до всех. В фейковом режиме (`DataModeModule`) служба показывает уведомление
+ * и больше ничего не запускает.
  *
  * Задача: docs/team/vasilisa-service-storage.md (перезапуск после убийства процесса)
  */
@@ -208,7 +207,7 @@ class RouteService : Service() {
             powerTools.releaseWakeLock()
         }
 
-        /** true для outsider (телефона из другой части сети): последний контакт больше 30 с или группа его ещё не знает. */
+        /** true для outsider, см. `TransportConfig.isOutsider`. */
         private fun isOutsider(member: MemberId): Boolean {
             val lastContact = viewProvider.view.value?.members?.firstOrNull { it.id == member }?.lastContact
             return lastContact == null || lastContact.ms > PresenceTracker.HEARD_NOW_MS

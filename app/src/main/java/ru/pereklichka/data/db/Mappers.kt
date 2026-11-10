@@ -12,8 +12,8 @@ import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.time.Stamped
 
 // Перевод строк базы в модели domain и обратно. Пользуются ими RoomMeshStore и GroupRepository.
-// Строки хранят id и перечисления текстом, поэтому незнакомое значение из базы становится
-// EventType.UNKNOWN или null, и чтение не падает.
+// Строки хранят id и перечисления текстом, а незнакомое значение маппер превращает в EventType.UNKNOWN
+// или null, поэтому чтение не падает.
 
 fun GroupInfoEntity.toModel(): GroupInfo = GroupInfo(
     tag = tag,

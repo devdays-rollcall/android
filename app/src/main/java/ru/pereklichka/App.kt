@@ -7,9 +7,8 @@ import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
 /**
- * Класс приложения. Отсюда Hilt строит граф зависимостей, и отсюда же WorkManager берёт фабрику воркеров Hilt,
- * чтобы `UploadWorker` получил свои зависимости. Поэтому стандартный инициализатор WorkManager в манифесте
- * отключён.
+ * Отсюда Hilt строит граф зависимостей, и отсюда же WorkManager берёт фабрику воркеров Hilt, чтобы `UploadWorker`
+ * получил свои зависимости. Поэтому стандартный инициализатор WorkManager в манифесте отключён.
  */
 @HiltAndroidApp
 class App : Application(), Configuration.Provider {

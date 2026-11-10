@@ -14,9 +14,9 @@ import javax.inject.Inject
 /**
  * Включает и выключает GPS по состоянию маршрута и пишет трек. Запускает его [RouteService] на время работы службы.
  *
- * В «Сборе» GPS уже работает, чтобы приёмник прогрелся, но позиция идёт только в [OwnLocation]. На маршруте
- * (ACTIVE) фиксация проходит [LocationSanitizer] и [TrackThinner], и прошедшие пишутся точками трека через
- * `MeshStore.appendOwnLocation`. После завершения GPS выключается.
+ * Каждую фиксацию чистит [LocationSanitizer] и кладёт в [OwnLocation]. В «Сборе» на этом всё: GPS работает,
+ * чтобы приёмник прогрелся. На маршруте (ACTIVE) фиксация ещё проходит [TrackThinner], и прошедшие пишутся
+ * точками трека через `MeshStore.appendOwnLocation`. После завершения GPS выключается.
  */
 class TrackRecorder @Inject constructor(
     private val locationSource: LocationSource,
@@ -26,7 +26,7 @@ class TrackRecorder @Inject constructor(
     private val ownLocation: OwnLocation,
     private val battery: BatteryLevel,
 ) {
-    /** Работает, пока не отменят корутину. Поток [route] строит `RouteSession` из текущего `GroupView`. */
+    /** Крутится до отмены корутины. Поток [route] строит `RouteSession` из текущего `GroupView`. */
     suspend fun run(route: StateFlow<RouteState>) {
         route
             .map { it != RouteState.FINISHED }

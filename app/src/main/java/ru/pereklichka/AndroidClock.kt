@@ -8,7 +8,7 @@ import ru.pereklichka.domain.time.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** [Clock] на системных часах Android. Hilt подставляет его везде, где нужен `Clock`, в тестах вместо него `FakeClock`. */
+/** [Clock] на системных часах Android. В тестах вместо него `FakeClock`. */
 @Singleton
 class AndroidClock @Inject constructor(@ApplicationContext private val context: Context) : Clock {
 
@@ -18,7 +18,8 @@ class AndroidClock @Inject constructor(@ApplicationContext private val context: 
         if (bootCount >= 0) {
             bootCount.toString()
         } else {
-            // Без BOOT_COUNT загрузку отличает её момент по настенным часам с точностью до минуты.
+            // Без BOOT_COUNT загрузку отличаем по её моменту на настенных часах, округлённому вниз до минуты.
+            // На границе минуты или после перевода часов id может смениться, и возрасты станут примерными.
             "t" + (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 60_000
         }
     }
