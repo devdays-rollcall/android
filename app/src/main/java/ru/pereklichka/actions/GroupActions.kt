@@ -14,8 +14,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Действия человека. Каждое превращается в событие через `MeshStore.appendOwnEvent`, движок сразу рассылает его
- * соседям. Вызывает их `GroupViewModel`; запуск службы после создания группы и вступления тоже на нём.
+ * Превращает действия человека (вступить, «Выходим», тревога, ответ на перекличку) в события группы.
+ *
+ * Каждое действие пишет своё событие через [MeshStore.appendOwnEvent], и `SyncEngine` сразу рассылает его соседям.
+ * Вызывает действия `GroupViewModel`, он же после создания группы и вступления запускает службу.
  *
  * Действия руководителя проверяют роль: интерфейс не показывает их участнику, поэтому вызов от участника
  * считается ошибкой и бросает [IllegalStateException].
@@ -26,7 +28,7 @@ class GroupActions @Inject constructor(
     private val store: MeshStore,
     private val viewProvider: GroupViewProvider,
 ) {
-    /** Новая группа, где я руководитель, и моё событие JOINED. */
+    /** Создаёт новую группу, где я руководитель, и пишет моё событие JOINED. Старые данные стираются. */
     suspend fun createGroup(groupName: String, myName: String): GroupInfo {
         require(myName.isNotBlank()) { "Пустое имя" }
         val group = repository.createGroup(groupName)
@@ -34,20 +36,23 @@ class GroupActions @Inject constructor(
         return group
     }
 
-    /** Вступление по QR. Повторное вступление в ту же группу не пишет второй JOINED. */
+    /** Вступает в группу по QR и пишет JOINED. Повторное вступление в ту же группу второй JOINED не пишет. */
     suspend fun joinGroup(qr: QrPayload, myName: String) {
         require(myName.isNotBlank()) { "Пустое имя" }
         val group = repository.join(qr)
-        // JOINED проверяется по хранилищу, а не по тому, была ли группа: так он допишется и после сбоя на середине.
+        // JOINED ищется в хранилище: если прошлое вступление прервалось после записи группы, он допишется сейчас.
         if (store.summary().control[group.me] == null) {
             store.appendOwnEvent(ControlEventDraft(EventType.JOINED, name = myName.trim()))
         }
     }
 
+    /** «Выходим»: маршрут начат (ROUTE_STARTED). Только руководитель. */
     suspend fun startRoute() = appendAsLeader(ControlEventDraft(EventType.ROUTE_STARTED))
 
+    /** Маршрут завершён (ROUTE_FINISHED). Только руководитель. */
     suspend fun finishRoute() = appendAsLeader(ControlEventDraft(EventType.ROUTE_FINISHED))
 
+    /** Новая перекличка (ROLLCALL) с окном 3 минуты. Только руководитель. */
     suspend fun startRollcall() = appendAsLeader(ControlEventDraft(EventType.ROLLCALL))
 
     /** «Я здесь» на перекличку [rollcallId]. */
@@ -66,10 +71,12 @@ class GroupActions @Inject constructor(
         store.appendOwnEvent(ControlEventDraft(EventType.AWAY, durationMs = 0))
     }
 
+    /** Тревога о другом участнике [target]. О себе вместо неё отправляют [sos]. */
     suspend fun raiseAlarm(target: MemberId) {
         store.appendOwnEvent(ControlEventDraft(EventType.ALARM, target = target))
     }
 
+    /** SOS: тревога о себе, автор события и есть тот, о ком тревога. */
     suspend fun sos() {
         store.appendOwnEvent(ControlEventDraft(EventType.SOS))
     }
