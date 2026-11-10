@@ -7,7 +7,7 @@ import ru.pereklichka.domain.model.MemberId
  * без Android, их проверяет `ConnectionPolicyTest`; вызывает их `NearbyPeerTransport`.
  *
  * Обычных соединений до [MAX_REGULAR_CONNECTIONS], четвёртое только для телефона из другой части сети. Без этого
- * резерва телефоны, набрав по четыре соединения, не пускают вернувшегося отставшего (модель `sim_topology.py`).
+ * резерва телефоны, набрав по четыре соединения, не пускают вернувшегося отставшего.
  */
 object ConnectionPolicy {
 

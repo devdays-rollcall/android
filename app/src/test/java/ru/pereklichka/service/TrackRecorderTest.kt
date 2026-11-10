@@ -27,7 +27,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** GPS по состоянию маршрута из `docs/02-architecture.md`: прогрев в «Сборе», трек на маршруте, выключение после. */
+/** GPS по состоянию маршрута: прогрев в «Сборе», трек на маршруте, выключение после. */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class TrackRecorderTest {

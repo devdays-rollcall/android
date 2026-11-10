@@ -28,7 +28,7 @@ import kotlin.time.Duration.Companion.minutes
 
 /**
  * Группа виртуальных телефонов для [MeshSimulationTest]: у каждого свои часы, хранилище, транспорт и настоящий
- * [SyncEngine]. Повторяет устройство модели `docs/verification/sim_protocol.py`: человек идёт и пишет точку
+ * [SyncEngine]. Повторяет устройство исполняемой модели протокола: человек идёт и пишет точку
  * каждые 12,5 с, своё состояние раз в 15 с, при первом запуске записывает JOINED.
  */
 class MeshSimulation(private val test: TestScope, seed: Int) {

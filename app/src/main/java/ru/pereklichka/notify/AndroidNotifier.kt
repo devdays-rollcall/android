@@ -15,7 +15,7 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
     override fun show(event: NotifyEvent) {
         // TODO(Валентин): каналы тревог (USAGE_ALARM), статусов и переклички; event.key как tag уведомления.
         //  Нажатие открывает нужный экран; без POST_NOTIFICATIONS звук тревоги играет само приложение.
-        //  docs/team/valentin-ui.md, раздел «Уведомления»
+        //  docs/team/valentin-ui.md
         throw NotImplementedError("TODO(Валентин): каналы тревог (USAGE_ALARM), статусов и переклички; event.key как tag уведомления.")
     }
 

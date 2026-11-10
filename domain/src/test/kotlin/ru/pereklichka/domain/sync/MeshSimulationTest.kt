@@ -8,10 +8,10 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Сценарии из исполняемой модели `docs/verification/sim_protocol.py` на настоящем [SyncEngine]
- * поверх `InMemoryTransport` и `InMemoryMeshStore`. Если движок и модель расходятся, разберись, кто прав.
+ * Сценарии из исполняемой модели протокола на настоящем [SyncEngine] поверх `InMemoryTransport`
+ * и `InMemoryMeshStore`. Если сценарий падает, сверь движок с `docs/03-sync-protocol.md`.
  *
- * Пороги по времени взяты с запасом относительно результатов модели (`docs/verification/results_protocol.json`):
+ * Пороги по времени взяты с запасом относительно результатов модели:
  * тест ловит поломку правил, а не мерит скорость. В каждом сценарии в конце проверяется непрерывный префикс.
  */
 @Ignore("включи, когда сделаешь обработчики SyncEngine")

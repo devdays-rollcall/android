@@ -22,8 +22,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Правила из `docs/team/techlead.md`. Свойства тревог, переклички и маршрута повторяют модель
- * `docs/verification/test_rules.py`: результат не зависит от порядка событий, повторов и настенных часов.
+ * Правила [GroupCalculator] и [activeAlarms]. Свойства тревог, переклички и маршрута повторяют property-тесты
+ * модели правил: результат не зависит от порядка событий, повторов и настенных часов.
  */
 class GroupCalculatorTest {
 

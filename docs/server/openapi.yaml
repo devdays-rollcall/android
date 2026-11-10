@@ -1,0 +1,229 @@
+openapi: 3.0.3
+info:
+  title: Group Tracking API
+  version: 1.0.0
+servers:
+  - url: /
+security:
+  - groupToken: []
+paths:
+  /api/v1/events:
+    post:
+      operationId: postEvents
+      summary: Accept a batch of events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventBatch'
+      responses:
+        '202':
+          description: Entire batch accepted by the queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/InvalidEvent'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    get:
+      operationId: getEvents
+      summary: Read stored events for the group
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 500
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A page of stored events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    groupToken:
+      type: http
+      scheme: bearer
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid group token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooLarge:
+      description: Request body is too large
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InvalidEvent:
+      description: Event validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Group not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unavailable:
+      description: Required component is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    EventBatch:
+      type: object
+      required: [sender_id, events]
+      properties:
+        sender_id:
+          type: string
+          format: uuid
+        events:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/EventInput'
+    EventInput:
+      type: object
+      required: [id, member_id, type, recorded_at, data]
+      properties:
+        id:
+          type: string
+          format: uuid
+        member_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [location]
+        recorded_at:
+          type: string
+          format: date-time
+        data:
+          $ref: '#/components/schemas/LocationData'
+    EventOutput:
+      type: object
+      required: [id, member_id, type, recorded_at, received_at, data]
+      properties:
+        id:
+          type: string
+          format: uuid
+        member_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [location]
+        recorded_at:
+          type: string
+          format: date-time
+        received_at:
+          type: string
+          format: date-time
+        data:
+          $ref: '#/components/schemas/LocationData'
+    LocationData:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: true
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        accuracy_m:
+          type: number
+          format: double
+          minimum: 0
+        altitude_m:
+          type: number
+          format: double
+        speed_mps:
+          type: number
+          format: double
+          minimum: 0
+        bearing_deg:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 360
+          exclusiveMaximum: true
+        battery_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+    Accepted:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: integer
+          minimum: 0
+          maximum: 500
+    EventPage:
+      type: object
+      required: [events, next_cursor]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventOutput'
+        next_cursor:
+          type: string
+          nullable: true
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

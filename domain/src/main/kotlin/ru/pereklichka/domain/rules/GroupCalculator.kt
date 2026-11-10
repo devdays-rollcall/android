@@ -12,7 +12,7 @@ import ru.pereklichka.domain.time.Stamped
 import ru.pereklichka.domain.time.ageNow
 
 /**
- * Правила статусов из `docs/team/techlead.md`: из снимка данных считает [GroupView] для экранов и `StatusMonitor`.
+ * Правила статусов: из снимка данных считает [GroupView] для экранов и `StatusMonitor`.
  *
  * Создаёт и вызывает его `GroupViewProvider` раз в 2 секунды и при изменении данных; при переключении режима демо
  * провайдер создаёт калькулятор с другими [Thresholds]. Это чистая функция: никакого состояния между вызовами

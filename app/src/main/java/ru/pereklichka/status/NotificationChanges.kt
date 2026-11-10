@@ -10,7 +10,7 @@ import ru.pereklichka.notify.NotifyEvent
 data class NotificationChanges(val show: List<NotifyEvent>, val dismiss: List<String>)
 
 /**
- * Переходы из `docs/team/techlead.md`, раздел «StatusMonitor». Чистая функция, её проверяет `NotificationChangesTest`.
+ * Переходы от одного вида к следующему. Чистая функция, её проверяет `NotificationChangesTest`.
  *
  * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. «Не слышно» (MemberLost) получает только руководитель
  * и только на маршруте: в сборе люди ещё не вышли, после завершения уже разошлись. Кто был LOST в момент выхода,

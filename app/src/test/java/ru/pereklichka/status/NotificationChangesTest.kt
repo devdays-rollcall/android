@@ -16,7 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Переходы `StatusMonitor` из `docs/team/techlead.md`. */
+/** Переходы `StatusMonitor` из KDoc [notificationChanges]. */
 class NotificationChangesTest {
 
     private val leader = MemberId("leader")
