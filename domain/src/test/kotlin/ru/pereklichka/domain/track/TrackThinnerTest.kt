@@ -1,0 +1,64 @@
+package ru.pereklichka.domain.track
+
+import org.junit.Ignore
+import ru.pereklichka.domain.model.Fix
+import ru.pereklichka.domain.model.LatLon
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+/** GPS отдаёт фиксацию раз в 5 с; в трек идёт смещение на 15 м или прошедшая минута. */
+@Ignore("включи, когда сделаешь TrackThinner и Geo.distanceM")
+class TrackThinnerTest {
+
+    private val start = LatLon(43.35, 42.44)
+
+    @Test
+    fun `стоящий человек даёт точку раз в минуту`() {
+        val thinner = TrackThinner()
+        // Десять минут на месте: фиксации каждые 5 с с дрожанием в пару метров.
+        val fixes = (0..120).map { i -> fix(i * 5_000L, northM = if (i % 2 == 0) 0.0 else 2.0) }
+
+        val kept = fixes.filter(thinner::shouldKeep)
+
+        assertEquals((0..10).map { it * 60_000L }, kept.map { it.elapsedRealtimeMs })
+    }
+
+    @Test
+    fun `идущий человек даёт точку каждые 15 метров`() {
+        val thinner = TrackThinner()
+        // 1,2 м/с: каждые 5 с на 6 м дальше, значит в трек идёт каждая третья фиксация (18 м).
+        val fixes = (0..60).map { i -> fix(i * 5_000L, northM = i * 6.0) }
+
+        val kept = fixes.filter(thinner::shouldKeep)
+
+        assertEquals((0..60 step 3).map { it * 6.0 }, kept.map { northOf(it) })
+    }
+
+    @Test
+    fun `перевод часов телефона на решение не влияет`() {
+        val thinner = TrackThinner()
+        // Настенное время прыгает на час назад, монотонное идёт ровно.
+        val fixes = (0..24).map { i -> fix(i * 5_000L, northM = 0.0, wallJumpMs = if (i > 6) -3_600_000 else 0) }
+
+        val kept = fixes.filter(thinner::shouldKeep)
+
+        assertEquals(listOf(0L, 60_000L, 120_000L), kept.map { it.elapsedRealtimeMs })
+    }
+
+    private fun fix(elapsedMs: Long, northM: Double, wallJumpMs: Long = 0) = Fix(
+        position = LatLon(start.latitude + northM / METERS_PER_DEGREE, start.longitude),
+        accuracyM = 5.0,
+        altitudeM = null,
+        speedMps = null,
+        bearingDeg = null,
+        timeUtcMs = 1_794_300_000_000 + elapsedMs + wallJumpMs,
+        elapsedRealtimeMs = elapsedMs,
+    )
+
+    private fun northOf(fix: Fix): Double = Math.round((fix.position.latitude - start.latitude) * METERS_PER_DEGREE).toDouble()
+
+    private companion object {
+        /** Метров в градусе широты при радиусе Земли 6 371 000 м. */
+        const val METERS_PER_DEGREE = 6_371_000 * Math.PI / 180
+    }
+}
