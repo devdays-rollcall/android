@@ -17,6 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/** Перевод моделей в строки Room и обратно: пометки «не учитывать» у незнакомого события и `rejected` у недопустимой точки. */
 class MappersTest {
 
     private val bob = MemberId("bob")

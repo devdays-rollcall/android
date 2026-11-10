@@ -11,6 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
+/** Строка QR: туда и обратно, понятные ошибки для чужого и битого кода, картинка считывается обратно. */
 class QrFormatTest {
 
     private val payload = QrPayload(

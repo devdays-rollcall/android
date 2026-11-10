@@ -14,7 +14,13 @@ import ru.pereklichka.domain.sync.MeshStore
 import ru.pereklichka.domain.sync.MeshStoreContractTest
 import ru.pereklichka.domain.time.Clock
 
-/** Тот же контракт, что проходит `InMemoryMeshStore`, на Room в памяти через Robolectric, без эмулятора. */
+/**
+ * Контракт `MeshStore` на `RoomMeshStore`: те же проверки, что проходит `InMemoryMeshStore`, на Room в памяти
+ * через Robolectric, без эмулятора.
+ *
+ * Тест-спецификация для Василисы: сними `@Ignore`, когда `RoomMeshStore` готов, и добейся зелёного.
+ * Задача: docs/team/vasilisa-service-storage.md
+ */
 @Ignore("включи, когда сделаешь RoomMeshStore")
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)

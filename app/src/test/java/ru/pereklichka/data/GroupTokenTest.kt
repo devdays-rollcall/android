@@ -6,6 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
+/** Токен группы и тег из него. Эталонный тег закреплён, потому что телефоны с разным тегом не найдут друг друга. */
 class GroupTokenTest {
 
     @Test

@@ -15,6 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
+/** Создание группы и вступление: новый `member_id`, повторное вступление и очистка данных при смене группы. */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class GroupRepositoryTest {

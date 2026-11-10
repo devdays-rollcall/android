@@ -7,7 +7,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Политика соединений из `03-sync-protocol.md`: резерв четвёртого слота и кто стучится первым. */
+/** Политика соединений из `docs/03-sync-protocol.md`: резерв четвёртого слота, кто запрашивает первым, паузы повторов. */
 class ConnectionPolicyTest {
 
     private val a = MemberId("1a")

@@ -16,7 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Переходы `StatusMonitor` из KDoc [notificationChanges]. */
+/** Какие уведомления даёт переход от одного `GroupView` к другому: тревоги, «Не слышно», перекличка, подсказки. */
 class NotificationChangesTest {
 
     private val leader = MemberId("leader")

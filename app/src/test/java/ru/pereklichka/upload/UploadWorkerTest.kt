@@ -38,8 +38,11 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Реакция на ответы сервера из `docs/team/daniil-upload.md`: 202 помечает пачку, 503 даёт повтор,
- * 413 уменьшает пачку, 422 находит кривую точку, 401 останавливает отправку.
+ * Реакция `UploadWorker` на ответы сервера: 202 помечает пачку, 503 даёт повтор, 413 уменьшает пачку,
+ * 422 находит кривую точку, 401 останавливает отправку. Сервер подменяет MockWebServer.
+ *
+ * Тест-спецификация для Даниила: сними `@Ignore`, когда `UploadWorker` готов, и добейся зелёного.
+ * Задача: docs/team/daniil-upload.md
  */
 @Ignore("включи, когда сделаешь UploadWorker")
 @RunWith(RobolectricTestRunner::class)
