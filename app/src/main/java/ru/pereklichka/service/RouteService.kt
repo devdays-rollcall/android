@@ -48,14 +48,21 @@ import ru.pereklichka.upload.UploadScheduler
 import javax.inject.Inject
 
 /**
- * Служба маршрута: держит обмен, GPS и уведомления, пока телефон в кармане.
+ * Foreground service маршрута: держит обмен с соседями, GPS и уведомления, пока телефон лежит в кармане
+ * с выключенным экраном. Пока она работает, система показывает её постоянное уведомление ([ServiceNotification]).
  *
- * Интерфейс запускает её через [start] при создании группы и вступлении, пока приложение на экране: на Android 14
- * службу с типом location нельзя создать из фона. Служба стартует сразу с двумя типами, location и connectedDevice,
- * в «Сборе» уже обменивается данными и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт ещё
- * [SyncConfig.exchangeAfterFinishMs], чтобы завершение дошло до всех. Данные после остановки остаются в базе.
+ * Интерфейс запускает её через [start] при создании группы, вступлении и каждом возврате на экран
+ * (`GroupViewModel.ensureRouteServiceRunning`). Запускать её нужно, пока приложение на экране, потому что
+ * на Android 14 службу с типом location нельзя создать из фона. Типы службы (location, connectedDevice)
+ * выбираются по выданным разрешениям. Для активной группы служба запускает [RouteSession]: `SyncEngine`,
+ * транспорт, [SelfStateProducer], `StatusMonitor`, [TrackRecorder], wake lock и отправку на сервер.
  *
- * В фейковом режиме (`DataModeModule`) служба показывает уведомление и больше ничего не запускает.
+ * В «Сборе» телефон уже обменивается данными и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен
+ * идёт ещё [SyncConfig.exchangeAfterFinishMs], чтобы завершение дошло до всех. Данные после остановки
+ * остаются в базе. В фейковом режиме (`DataModeModule`) служба показывает уведомление и больше ничего
+ * не запускает.
+ *
+ * Задача: docs/team/vasilisa-service-storage.md (перезапуск после убийства процесса)
  */
 @AndroidEntryPoint
 class RouteService : Service() {
@@ -88,15 +95,17 @@ class RouteService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
             // TODO(Василиса): безопасный перезапуск после убийства процесса.
-            //  startForeground только с типом connectedDevice (location, если выдано «Разрешить всегда»), перехватить
-            //  ForegroundServiceStartNotAllowedException и показать «Маршрут не завершён». docs/team/vasilisa-service-storage.md
+            //  startForeground только с типом connectedDevice (location, если выдано «Разрешить всегда»),
+            //  перехватить ForegroundServiceStartNotAllowedException и показать «Маршрут не завершён».
+            //  docs/team/vasilisa-service-storage.md
             throw NotImplementedError("TODO(Василиса): безопасный перезапуск после убийства процесса.")
         }
         when (intent.action) {
             ACTION_START -> startRoute()
             ACTION_STOP -> stopRoute()
         }
-        // В фейковом режиме перезапускать нечего, а ветка перезапуска выше пока заглушка.
+        // В фейковом режиме перезапускать нечего. Без фейкового режима система вернёт службу с пустым интентом
+        // после убийства процесса, и ветка перезапуска выше должна быть готова.
         return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
     }
 
@@ -109,7 +118,7 @@ class RouteService : Service() {
     private fun startRoute() {
         val types = foregroundServiceTypes(this)
         if (types == 0) {
-            // start() проверяет разрешения заранее; сюда попадаем, только если их отозвали за мгновение до запуска.
+            // start() проверяет разрешения заранее, так что сюда попадаем, только если их отозвали за мгновение до запуска.
             Log.w(TAG, "Нет разрешений ни на обмен, ни на геолокацию, служба не запускается")
             stopSelf()
             return
@@ -120,7 +129,7 @@ class RouteService : Service() {
         registerNetworkCallback()
         serviceScope.launch {
             val group = groupRepository.activeGroup() ?: return@launch stopRoute()
-            // Интерфейс запускает службу при каждом создании группы и вступлении; та же группа ничего не перезапускает.
+            // Интерфейс запускает службу при каждом возврате на экран, поэтому та же группа ничего не перезапускает.
             if (route?.group == group) return@launch
             route?.stop()
             route = RouteSession(group).also { it.start() }
@@ -140,7 +149,7 @@ class RouteService : Service() {
         networkCallback = null
     }
 
-    /** Появилась сеть с интернетом: пора отправить точки на сервер. */
+    /** Подписывается на появление сети с интернетом: тогда точки сразу уходят на сервер через `UploadScheduler.uploadNow`. */
     private fun registerNetworkCallback() {
         if (networkCallback != null) return
         val callback = object : ConnectivityManager.NetworkCallback() {
@@ -151,7 +160,10 @@ class RouteService : Service() {
         networkCallback = callback
     }
 
-    /** Части службы, работающие для одной группы. Новая группа получает новый сеанс с чистого листа. */
+    /**
+     * Части службы, работающие для одной группы. Новая группа получает новый сеанс с чистого листа.
+     * Запуск и остановка идут на главном потоке, сами части работают в своей области на `Dispatchers.Default`.
+     */
     private inner class RouteSession(val group: GroupInfo) {
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -159,7 +171,7 @@ class RouteService : Service() {
         fun start() {
             // Кого слышали в прошлой группе, в состоянии новой группы не нужно.
             presence.clear()
-            // Движок до транспорта, чтобы не пропустить подключения.
+            // Движок запускается до транспорта, иначе он пропустит первые подключения.
             engine.start(scope, group)
             transport.start(
                 TransportConfig(
@@ -195,7 +207,7 @@ class RouteService : Service() {
             powerTools.releaseWakeLock()
         }
 
-        /** Телефон из другой части сети: последний контакт больше 30 с или группа его ещё не знает. */
+        /** true для outsider (телефона из другой части сети): последний контакт больше 30 с или группа его ещё не знает. */
         private fun isOutsider(member: MemberId): Boolean {
             val lastContact = viewProvider.view.value?.members?.firstOrNull { it.id == member }?.lastContact
             return lastContact == null || lastContact.ms > PresenceTracker.HEARD_NOW_MS
@@ -208,9 +220,9 @@ class RouteService : Service() {
         private const val ACTION_STOP = "ru.pereklichka.action.STOP_ROUTE"
 
         /**
-         * Запускает службу для активной группы, пока приложение на экране. Повторный вызов для той же группы
-         * ничего не перезапускает. Возвращает false, если нет разрешений ни на обмен, ни на геолокацию:
-         * служба, запущенная без startForeground, уронила бы приложение.
+         * Запускает службу для активной группы. Вызывать, только пока приложение на экране. Повторный вызов
+         * для той же группы ничего не перезапускает. Возвращает false и службу не запускает, если нет разрешений
+         * ни на обмен, ни на геолокацию: служба без `startForeground` уронила бы приложение.
          */
         fun start(context: Context): Boolean {
             if (foregroundServiceTypes(context) == 0) return false
@@ -224,8 +236,9 @@ class RouteService : Service() {
         }
 
         /**
-         * Типы службы по выданным разрешениям: без них Android 14 не даст запустить службу с этим типом.
-         * До Android 10 `ServiceCompat.startForeground` типы не передаёт, поэтому константы новых версий безопасны.
+         * Типы службы по выданным разрешениям, 0 если нельзя ни один: без разрешения Android 14 роняет запуск
+         * службы с этим типом. До Android 10 `ServiceCompat.startForeground` типы не передаёт, поэтому константы
+         * новых версий здесь безопасны.
          */
         @SuppressLint("InlinedApi")
         private fun foregroundServiceTypes(context: Context): Int {
@@ -233,7 +246,7 @@ class RouteService : Service() {
             if (RequiredPermissions.allGranted(context, RequiredPermissions.exchange())) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             }
-            // GPS трека нужна точная геолокация; приблизительной для типа location не хватит.
+            // Тип location берётся только с точной геолокацией: по приблизительной трек не записать.
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             }

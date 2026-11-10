@@ -5,16 +5,20 @@ import android.content.Context
 import android.content.Intent
 
 /**
- * Запуск службы после перезагрузки телефона посреди маршрута. В манифесте приёмник выключен
- * (`android:enabled="false"`), пока он не готов: иначе телефон падал бы при каждой загрузке.
+ * Поднимает [RouteService] после перезагрузки телефона посреди маршрута. Система вызывает его по BOOT_COMPLETED.
+ * В манифесте приёмник выключен (`android:enabled="false"`), пока он не готов, иначе приложение падало бы
+ * при каждой загрузке телефона.
+ *
+ * Задача: docs/team/vasilisa-service-storage.md
  */
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         // TODO(Василиса): после загрузки поднять службу, если маршрут активной группы не завершён.
-        //  Только тип connectedDevice, для GPS уведомление «Маршрут не завершён, откройте приложение»; потом включить
-        //  приёмник в манифесте. docs/team/vasilisa-service-storage.md
+        //  Только тип connectedDevice и уведомление «Маршрут не завершён, откройте приложение», потом включить
+        //  приёмник в манифесте.
+        //  docs/team/vasilisa-service-storage.md
         throw NotImplementedError("TODO(Василиса): после загрузки поднять службу, если маршрут активной группы не завершён.")
     }
 }

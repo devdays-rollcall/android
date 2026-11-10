@@ -8,8 +8,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Моя последняя фиксация. Пишет её `TrackRecorder`, читают `SelfStateProducer` (позиция в своём состоянии)
- * и `GroupViewProvider` (расстояния до участников). Фиксация уже очищена `LocationSanitizer`.
+ * Хранит мою последнюю фиксацию GPS. Пишет её [TrackRecorder], читают [SelfStateProducer] (позиция в своём
+ * состоянии) и `GroupViewProvider` (расстояния до участников). Фиксация уже очищена `LocationSanitizer`.
  */
 @Singleton
 class OwnLocation @Inject constructor() {

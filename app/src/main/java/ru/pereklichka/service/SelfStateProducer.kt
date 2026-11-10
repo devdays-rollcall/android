@@ -9,7 +9,7 @@ import javax.inject.Inject
 
 /**
  * Пишет своё состояние раз в [SyncConfig.stateIntervalMs]: последнюю фиксацию, заряд и кого телефон слышит.
- * Движок сразу рассылает новое состояние соседям. Запускает `RouteService` на время работы службы.
+ * `SyncEngine` сразу рассылает новое состояние соседям. Запускает его [RouteService] на время работы службы.
  */
 class SelfStateProducer @Inject constructor(
     private val store: MeshStore,

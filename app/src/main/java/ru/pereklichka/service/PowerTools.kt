@@ -13,12 +13,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Всё, что не даёт системе усыпить приложение на маршруте: partial wake lock, исключение из оптимизации батареи
- * и страница автозапуска у Xiaomi и Honor.
+ * Средства против сна системы на маршруте: partial wake lock, исключение из оптимизации батареи и страница
+ * автозапуска у Xiaomi и Honor. Wake lock берёт и отпускает `RouteService`, остальное открывают экран разрешений
+ * и диагностика.
  *
- * Исключение из оптимизации обязательно: в режиме Doze система игнорирует wake lock приложений без него, и неподвижный
- * телефон перестаёт отправлять сводки. Цепочек воскрешения службы здесь нет намеренно: по словам разработчиков, MagicOS
- * отзывает исключение у приложений, которые упорно поднимаются разными путями.
+ * Исключение из оптимизации обязательно: в режиме Doze система игнорирует wake lock приложений без него,
+ * и неподвижный телефон перестаёт отправлять сводки. Цепочек воскрешения службы здесь нет намеренно, потому что,
+ * по рассказам разработчиков, MagicOS отзывает исключение у приложений, которые упорно поднимаются разными путями.
  */
 @Singleton
 class PowerTools @Inject constructor(@ApplicationContext private val context: Context) {
@@ -26,8 +27,10 @@ class PowerTools @Inject constructor(@ApplicationContext private val context: Co
     private val powerManager = context.getSystemService(PowerManager::class.java)
     private var wakeLock: PowerManager.WakeLock? = null
 
-    /** Держит процессор включённым, пока работает служба. Повторный вызов ничего не меняет. */
-    // Срока у wake lock нет намеренно: служба держит его весь маршрут и отпускает в releaseWakeLock.
+    /**
+     * Держит процессор включённым, пока работает служба. Повторный вызов ничего не меняет. Срока у wake lock
+     * нет намеренно: служба держит его весь маршрут и отпускает в [releaseWakeLock].
+     */
     @SuppressLint("WakelockTimeout")
     fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
@@ -37,16 +40,18 @@ class PowerTools @Inject constructor(@ApplicationContext private val context: Co
         }
     }
 
+    /** Отпускает wake lock, если он взят. */
     fun releaseWakeLock() {
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
     }
 
+    /** true, если приложение в исключениях из оптимизации батареи. */
     fun isIgnoringBatteryOptimizations(): Boolean = powerManager.isIgnoringBatteryOptimizations(context.packageName)
 
     /**
-     * Системный диалог «Разрешить работу в фоне». Открывать из Activity, когда [isIgnoringBatteryOptimizations] false.
-     * Lint предупреждает, что Google Play ограничивает это действие, но без исключения обмен в Doze встаёт.
+     * Интент системного диалога «Разрешить работу в фоне». Открывать из Activity, когда [isIgnoringBatteryOptimizations]
+     * вернул false. Lint предупреждает, что Google Play ограничивает это действие, но без исключения обмен в Doze встаёт.
      */
     @SuppressLint("BatteryLife")
     fun ignoreBatteryOptimizationsIntent(): Intent =
@@ -77,7 +82,7 @@ class PowerTools @Inject constructor(@ApplicationContext private val context: Co
     private companion object {
         const val WAKE_LOCK_TAG = "pereklichka:route"
 
-        /** Известные страницы автозапуска. Их нет в документации производителей, адреса взяты из практики разработчиков. */
+        /** Известные страницы автозапуска. В документации производителей их нет, адреса взяты из опыта других разработчиков. */
         val AUTOSTART_PAGES = listOf(
             ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
             ComponentName("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),

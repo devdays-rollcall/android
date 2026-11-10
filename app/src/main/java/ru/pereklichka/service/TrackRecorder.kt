@@ -12,9 +12,11 @@ import ru.pereklichka.domain.track.TrackThinner
 import javax.inject.Inject
 
 /**
- * GPS по состоянию маршрута. В «Сборе» GPS уже работает, чтобы приёмник прогрелся, но позиция идёт только
- * в [OwnLocation]. На маршруте фиксации, которые пропустил [TrackThinner], пишутся точками трека.
- * После завершения GPS выключается. Запускает `RouteService` на время работы службы.
+ * Включает и выключает GPS по состоянию маршрута и пишет трек. Запускает его [RouteService] на время работы службы.
+ *
+ * В «Сборе» GPS уже работает, чтобы приёмник прогрелся, но позиция идёт только в [OwnLocation]. На маршруте
+ * (ACTIVE) фиксация проходит [LocationSanitizer] и [TrackThinner], и прошедшие пишутся точками трека через
+ * `MeshStore.appendOwnLocation`. После завершения GPS выключается.
  */
 class TrackRecorder @Inject constructor(
     private val locationSource: LocationSource,
@@ -24,7 +26,7 @@ class TrackRecorder @Inject constructor(
     private val ownLocation: OwnLocation,
     private val battery: BatteryLevel,
 ) {
-    /** Работает, пока не отменят корутину. */
+    /** Работает, пока не отменят корутину. [route] даёт `RouteSession` из текущего `GroupView`. */
     suspend fun run(route: StateFlow<RouteState>) {
         route
             .map { it != RouteState.FINISHED }

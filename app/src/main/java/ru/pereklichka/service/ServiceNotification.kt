@@ -11,14 +11,15 @@ import ru.pereklichka.MainActivity
 import ru.pereklichka.R
 
 /**
- * Постоянное уведомление службы. Канал тихий: уведомление висит весь маршрут, а звук нужен только тревогам,
- * у которых свои каналы в `AndroidNotifier`.
+ * Постоянное уведомление foreground service, которое [RouteService] показывает весь маршрут. Канал тихий,
+ * потому что звук нужен только тревогам, а у них свои каналы в `AndroidNotifier`. Нажатие открывает приложение.
  */
 object ServiceNotification {
 
     const val ID = 1
     private const val CHANNEL_ID = "route"
 
+    /** Уведомление для `startForeground`. Канал создаётся при первом вызове. */
     fun build(context: Context): Notification {
         ensureChannel(context)
         val openApp = PendingIntent.getActivity(
