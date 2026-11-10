@@ -10,7 +10,7 @@ import java.util.zip.GZIPOutputStream
 import javax.inject.Inject
 
 /**
- * Превращает [MeshMessage] в байты для `PeerTransport.send` и обратно.
+ * Превращает [MeshMessage] в байты для [PeerTransport.send] и обратно. Вызывает его только [SyncEngine].
  *
  * Формат: один байт версии формата, затем JSON, сжатый gzip. JSON выбран ради отладки, его можно
  * распечатать в лог. Декодер игнорирует неизвестные поля, а незнакомый тип события превращает
@@ -66,11 +66,11 @@ class MeshCodec @Inject constructor(private val config: SyncConfig) {
     private companion object {
         const val FORMAT_VERSION: Byte = 1
 
-        /** Предел распакованного JSON с большим запасом: сжатый мусор может развернуться в гигабайты. */
+        /** Предел распакованного JSON, байт. Он взят с большим запасом, а нужен потому, что сжатый мусор может развернуться в гигабайты. */
         const val MAX_JSON_BYTES = 4 * 1024 * 1024
 
         val meshJson = Json {
-            // Хранилище держит точки с NaN в префиксе автора (помечает их rejected), и пересылать их тоже нужно.
+            // Точки с NaN хранилище держит в префиксе автора с пометкой rejected, и пересылать их тоже нужно.
             allowSpecialFloatingPointValues = true
             ignoreUnknownKeys = true
             coerceInputValues = true

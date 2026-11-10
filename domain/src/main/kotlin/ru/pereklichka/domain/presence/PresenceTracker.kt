@@ -10,20 +10,20 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Кого телефон слышит напрямую. Присутствие считается по трафику: любое сообщение от соседа значит
- * «слышу», событие Nearby о разрыве для этого не используется.
+ * Помнит, когда телефон последний раз слышал каждого соседа напрямую. Слышать значит получить любое сообщение;
+ * событие Nearby о разрыве для этого не используется, потому что неизвестно, через сколько оно срабатывает.
  *
- * [onHeard] вызывает движок на каждое входящее сообщение. [heardAgo] читают `SelfStateProducer`
- * (поле `heardAgoMs` своего состояния) и `GroupViewProvider` (для `GroupCalculator`).
- * Моменты хранятся по монотонным часам, поэтому перевод настенных часов на присутствие не влияет.
- * Методы можно вызывать из любых потоков.
+ * [onHeard] вызывает `SyncEngine` на каждое входящее сообщение. [heardAgo] читают `SelfStateProducer`
+ * (поле `heardAgoMs` своего состояния) и `GroupViewProvider` (для `GroupCalculator`). Моменты хранятся
+ * по монотонным часам, поэтому перевод настенных часов на присутствие не влияет. Методы можно вызывать
+ * из любых потоков.
  */
 @Singleton
 class PresenceTracker @Inject constructor(private val clock: Clock) {
 
     private val lastHeardState = MutableStateFlow<Map<MemberId, Long>>(emptyMap())
 
-    /** `Clock.elapsedMs()` последнего сообщения от каждого, кого телефон слышал с момента запуска. */
+    /** `Clock.elapsedMs()` последнего сообщения от каждого, кого телефон слышал с момента запуска или [clear]. */
     val lastHeard: StateFlow<Map<MemberId, Long>> = lastHeardState.asStateFlow()
 
     fun onHeard(member: MemberId) {
@@ -31,7 +31,7 @@ class PresenceTracker @Inject constructor(private val clock: Clock) {
         lastHeardState.update { it + (member to now) }
     }
 
-    /** Сообщение от участника было не раньше чем [HEARD_NOW_MS] назад. */
+    /** true, если сообщение от участника было не раньше чем [HEARD_NOW_MS] назад. */
     fun isHeardNow(member: MemberId): Boolean {
         val heardAt = lastHeardState.value[member] ?: return false
         return clock.elapsedMs() - heardAt <= HEARD_NOW_MS
@@ -42,7 +42,7 @@ class PresenceTracker @Inject constructor(private val clock: Clock) {
         lastHeardState.value = emptyMap()
     }
 
-    /** Кого слышал за последние [HEARD_AGO_WINDOW_MS] и сколько миллисекунд назад. */
+    /** Кого телефон слышал за последние [HEARD_AGO_WINDOW_MS] и сколько миллисекунд назад. */
     fun heardAgo(): Map<MemberId, Long> {
         val now = clock.elapsedMs()
         return lastHeardState.value

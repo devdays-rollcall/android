@@ -1,9 +1,9 @@
 package ru.pereklichka.domain.sync
 
 /**
- * Состояние движка для экрана диагностики. Публикует его [SyncEngine.diagnostics].
+ * Счётчики движка для экрана диагностики. Публикует их [SyncEngine.diagnostics], показывает `DiagnosticsScreen`.
  *
- * [running] ведёт сам движок, счётчики пополняют обработчики сообщений.
+ * [running] ведёт сам движок, остальные счётчики пополняют обработчики сообщений.
  */
 data class SyncDiagnostics(
     val running: Boolean = false,

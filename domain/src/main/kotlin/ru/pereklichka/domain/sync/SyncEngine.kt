@@ -22,16 +22,21 @@ import javax.inject.Singleton
 import kotlin.coroutines.ContinuationInterceptor
 
 /**
- * Движок синхронизации: ведёт сеанс с каждым соседом по правилам `03-sync-protocol.md`.
+ * Движок синхронизации: сверяет записи этого телефона с каждым соседом и досылает то, чего у соседа нет.
  *
- * Зависит только от [MeshStore] и [PeerTransport], поэтому в `MeshSimulationTest` работает поверх
- * `InMemoryMeshStore` и `InMemoryTransport` так же, как на телефоне. Запускает и останавливает его
- * `RouteService`; транспорт служба запускает сама.
+ * На каждое соединение ведёт сеанс по правилам `docs/03-sync-protocol.md`: шлёт сводку ([Hello]) при подключении
+ * и каждые 10 с, на сводку соседа отвечает одной [Delta], свои новые события и состояние рассылает сразу.
+ * Байты получает и отправляет через [PeerTransport], записи читает и применяет через [MeshStore], о каждом
+ * входящем сообщении сообщает [PresenceTracker]. Запускает и останавливает движок `RouteService`, он же
+ * запускает транспорт. В `MeshSimulationTest` тот же движок работает поверх
+ * [ru.pereklichka.domain.testing.InMemoryMeshStore] и [ru.pereklichka.domain.testing.InMemoryTransport].
  *
- * Все корутины движка выполняются по одной, на однопоточном представлении диспетчера вызывающего.
- * Поэтому гонок данных в состоянии сеансов (`peerKnown` и прочее) нет, и его можно держать в обычных коллекциях.
- * Но на каждом suspend-вызове (`store.apply`, `send`) может выполниться другой обработчик, так что проверку
- * и изменение состояния через такой вызов разносить нельзя. Блокировать поток обработчику тоже нельзя.
+ * Все корутины движка выполняются по одной, на однопоточном представлении диспетчера вызывающего, поэтому
+ * состояние сеансов (`peerKnown` и прочее) можно держать в обычных коллекциях. Но на каждом suspend-вызове
+ * (`store.apply`, `send`) может выполниться другой обработчик: проверку состояния и его изменение через такой
+ * вызов не разносить. Блокировать поток в обработчике нельзя.
+ *
+ * Задача: docs/team/olga-transport.md
  */
 @Singleton
 class SyncEngine @Inject constructor(
@@ -50,13 +55,15 @@ class SyncEngine @Inject constructor(
     private var session: Session? = null
 
     /**
-     * Запускает обмен для [group] в дочерней области [scope]. Служба передаёт область на `Dispatchers.Default`:
-     * движок кодирует и сжимает сообщения, на главном потоке этого делать нельзя. Транспорт служба запускает
-     * после движка, чтобы движок не пропустил подключения.
+     * Запускает обмен для [group] в дочерней области [scope]. Служба передаёт область на `Dispatchers.Default`,
+     * потому что движок кодирует и сжимает сообщения, а на главном потоке этого делать нельзя. Транспорт служба
+     * запускает после движка, иначе движок пропустит первые подключения.
      *
-     * Исключение в обработчике считается дефектом: оно завершает свою корутину и уходит в обработчик ошибок
-     * области службы, на Android без него приложение падает. Ожидаемые ошибки (неразборчивое сообщение,
-     * неудачная отправка) обработчики разбирают сами. Повторный запуск без [stop] запрещён.
+     * Исключение в обработчике считается ошибкой в коде: оно завершает свою корутину и уходит в обработчик
+     * ошибок области службы, а без него приложение на Android падает. Ожидаемые ошибки (неразборчивое
+     * сообщение, неудачная отправка) обработчики разбирают сами.
+     *
+     * @throws IllegalStateException если движок уже запущен и [stop] не вызывали.
      */
     fun start(scope: CoroutineScope, group: GroupInfo) {
         check(session?.scope?.isActive != true) { "SyncEngine уже запущен" }
@@ -71,9 +78,7 @@ class SyncEngine @Inject constructor(
         diagnosticsState.update { it.copy(running = false) }
     }
 
-    /**
-     * Один запуск движка. Всё, что относится к соседям, живёт здесь и пропадает вместе с ним при [stop].
-     */
+    /** Один запуск движка. Всё, что относится к соседям, живёт здесь и пропадает вместе с ним при [stop]. */
     private inner class Session(val group: GroupInfo, parent: CoroutineScope) {
 
         val scope = CoroutineScope(
@@ -83,7 +88,8 @@ class SyncEngine @Inject constructor(
         )
 
         // TODO(Ольга): состояние сеанса с каждым соседом: peerKnown, очередь отправки, момент последнего сообщения.
-        //  Сводка соседа заменяет peerKnown целиком, а не сливается с ним. docs/team/olga-transport.md
+        //  Сводка соседа заменяет peerKnown целиком, сливать их нельзя.
+        //  docs/team/olga-transport.md
 
         fun launch() {
             scope.launch {
@@ -108,21 +114,21 @@ class SyncEngine @Inject constructor(
 
         private suspend fun onConnected(peer: MemberId) {
             // TODO(Ольга): завести peerKnown пустым и отправить соседу Hello.
-            //  Первое сообщение от соседа тоже должно быть Hello своей группы. docs/team/olga-transport.md
+            //  Первое сообщение от соседа тоже должно быть Hello своей группы.
+            //  docs/team/olga-transport.md
             throw NotImplementedError("TODO(Ольга): завести peerKnown пустым и отправить соседу Hello.")
         }
 
         private suspend fun onDisconnected(peer: MemberId) {
             // TODO(Ольга): забыть сеанс соседа и остановить его очередь отправки.
-            //  После переподключения сеанс начинается заново с пустого peerKnown. docs/team/olga-transport.md
+            //  После переподключения сеанс начинается заново с пустого peerKnown.
+            //  docs/team/olga-transport.md
             throw NotImplementedError("TODO(Ольга): забыть сеанс соседа и остановить его очередь отправки.")
         }
 
         private suspend fun onReceived(peer: MemberId, bytes: ByteArray) {
             // TODO(Ольга): разобрать сообщение, отметить presence.onHeard(peer) и обработать Hello или Delta.
-            //  На Hello ответить одной Delta: события, новые состояния, одна порция точек, more. Delta применить
-            //  через store.apply(delta.toIncoming(clock)), новые события разослать остальным, на more ответить Hello.
-            //  Неразборчивое сообщение считать в диагностике, после config.maxCorruptInRow подряд рвать соединение.
+            //  На Hello ответить одной Delta, Delta применить через store.apply(delta.toIncoming(clock)).
             //  docs/team/olga-transport.md, docs/03-sync-protocol.md «Правила сеанса» и «Ответ на сводку»
             throw NotImplementedError(
                 "TODO(Ольга): разобрать сообщение, отметить presence.onHeard(peer) и обработать Hello или Delta.",
@@ -131,7 +137,8 @@ class SyncEngine @Inject constructor(
 
         private suspend fun onStoreChange(change: StoreChange) {
             // TODO(Ольга): своё новое событие или состояние сразу отправить соседям, у которых его нет по peerKnown.
-            //  Чужие состояния и все точки уходят только в ответ на сводку соседа. docs/03-sync-protocol.md «Что уходит сразу»
+            //  Чужие состояния и все точки уходят только в ответ на сводку соседа.
+            //  docs/team/olga-transport.md, docs/03-sync-protocol.md «Что уходит сразу»
             throw NotImplementedError(
                 "TODO(Ольга): своё новое событие или состояние сразу отправить соседям, у которых его нет по peerKnown.",
             )
@@ -139,7 +146,8 @@ class SyncEngine @Inject constructor(
 
         private suspend fun onHelloTimer() {
             // TODO(Ольга): отправить Hello каждому соседу, а молчащего дольше config.silentDisconnectMs отключить.
-            //  Hello собирается из store.summary() через Hello.of. docs/team/olga-transport.md
+            //  Hello собирается из store.summary() через Hello.of.
+            //  docs/team/olga-transport.md
             throw NotImplementedError(
                 "TODO(Ольга): отправить Hello каждому соседу, а молчащего дольше config.silentDisconnectMs отключить.",
             )

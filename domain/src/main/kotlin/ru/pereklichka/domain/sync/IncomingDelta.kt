@@ -5,7 +5,7 @@ import ru.pereklichka.domain.model.LocationPoint
 import ru.pereklichka.domain.model.MemberState
 import ru.pereklichka.domain.time.Stamped
 
-/** Записи от соседа с уже поставленной отметкой свежести. Получается из [Delta.toIncoming]. */
+/** Записи из Delta соседа с уже поставленной отметкой свежести. Получается из [Delta.toIncoming], уходит в [MeshStore.apply]. */
 data class IncomingDelta(
     val control: List<Stamped<ControlEvent>> = emptyList(),
     val states: List<Stamped<MemberState>> = emptyList(),
@@ -15,7 +15,7 @@ data class IncomingDelta(
 /**
  * Итог [MeshStore.apply]: сколько записей принято и почему остальные отброшены.
  *
- * Движок по [newControl] решает, рассылать ли события остальным соседям, а суммы показывает диагностика.
+ * По [newControl] движок решает, рассылать ли события остальным соседям, а суммы показывает диагностика.
  */
 data class ApplyResult(
     val newControl: Int = 0,
@@ -26,9 +26,8 @@ data class ApplyResult(
     /** Не встают в префикс: номер больше следующего или меньше единицы. Придут снова в правильном порядке. */
     val outOfOrder: Int = 0,
     /**
-     * Тот же автор и номер, но другой UUID, UUID уже занят другой записью или запись от моего имени новее моих.
-     * Оставлена первая.
-     * В исправной группе их не бывает, поэтому каждый случай стоит разобрать.
+     * Тот же автор и номер с другим UUID, UUID уже занят другой записью или запись от моего имени новее моих.
+     * Хранилище оставляет первую запись. В исправной группе конфликтов не бывает, каждый случай стоит разобрать.
      */
     val conflicts: Int = 0,
 ) {

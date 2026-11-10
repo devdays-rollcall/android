@@ -11,7 +11,8 @@ import ru.pereklichka.domain.model.ResolveKind
 
 /**
  * Своё событие до записи: всё, кроме id, автора, номера и времени, которые выдаёт хранилище.
- * Создаёт его `GroupActions` по действию человека. Какие поля нужны какому типу, написано в [ControlEvent].
+ * Создаёт его `GroupActions` по действию человека и передаёт в [MeshStore.appendOwnEvent].
+ * Какие поля нужны какому типу, написано в [ControlEvent].
  */
 data class ControlEventDraft(
     val type: EventType,
@@ -37,7 +38,7 @@ data class ControlEventDraft(
 }
 
 /**
- * Своё состояние до записи. Создаёт его `SelfStateProducer` раз в 15 секунд.
+ * Своё состояние до записи. Создаёт его `SelfStateProducer` раз в 15 секунд и передаёт в [MeshStore.putOwnState].
  * [heardAgoMs] берётся из `PresenceTracker.heardAgo()`.
  */
 data class MemberStateDraft(
@@ -46,8 +47,9 @@ data class MemberStateDraft(
     val heardAgoMs: Map<MemberId, Long>,
 ) {
     /**
-     * Готовое состояние. [nowElapsedMs] нужен, чтобы перевести момент фиксации по монотонным часам
-     * в возраст: часы получателя другие, и сам момент ему ничего не скажет.
+     * Готовое состояние.
+     * @param nowElapsedMs текущее `Clock.elapsedMs()`. По нему момент фиксации переводится в возраст, потому что
+     * монотонные часы получателя другие и сам момент ему ничего не скажет.
      */
     fun toState(member: MemberId, seq: Long, nowElapsedMs: Long): MemberState = MemberState(
         member = member,
