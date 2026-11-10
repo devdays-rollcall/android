@@ -8,6 +8,9 @@ import ru.pereklichka.domain.rules.GroupView
 /**
  * Список группы (ФТ-12). По каждому участнику: имя, статус текстом, когда слышали последний раз (`lastContact`,
  * «примерно», если `approximate`), расстояние и направление, заряд. Сверху баннеры `view.alarms` и `view.prompts`.
+ * Это главный экран, пока группа есть.
+ *
+ * Задача: docs/team/valentin-ui.md
  */
 @Composable
 fun GroupScreen(
@@ -21,7 +24,8 @@ fun GroupScreen(
     onDiagnostics: () -> Unit,
 ) {
     // TODO(Валентин): список участников со статусом текстом рядом с цветом, баннеры тревог и подсказок о близости,
-    //  кнопки «Перекличка» (руководитель), «Отойду», SOS, вход в диагностику из меню. docs/team/valentin-ui.md
+    //  кнопки «Перекличка» (руководитель), «Отойду», SOS, вход в диагностику из меню.
+    //  docs/team/valentin-ui.md
     StubScreen("${view.group.name}: ${view.route}") {
         if (view.alarms.isNotEmpty()) StubButton("Тревоги: ${view.alarms.size}", onAlarms)
         for (member in view.members) {

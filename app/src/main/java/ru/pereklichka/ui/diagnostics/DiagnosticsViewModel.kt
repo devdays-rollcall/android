@@ -35,7 +35,10 @@ data class DiagnosticsState(
     val sync: SyncDiagnostics = SyncDiagnostics(),
 )
 
-/** Состояния телефона, о смене которых система не сообщает: экран перечитывает их раз в 2 секунды. */
+/**
+ * Состояния телефона, о смене которых система не сообщает, поэтому экран перечитывает их раз в 2 секунды.
+ * Флаг «Не беспокоить» сюда добавит Валентин.
+ */
 data class SystemChecks(
     val bluetoothEnabled: Boolean = false,
     val playServicesAvailable: Boolean = false,
@@ -43,6 +46,7 @@ data class SystemChecks(
     val notificationsEnabled: Boolean = false,
 )
 
+/** Сколько записей в базе: события, точки (всего, к отправке, отклонённые) и состояния. */
 data class DatabaseCounts(
     val events: Int = 0,
     val points: Int = 0,
@@ -51,9 +55,15 @@ data class DatabaseCounts(
     val states: Int = 0,
 )
 
-/** Данные экрана диагностики. */
+/**
+ * Данные для [DiagnosticsScreen]: собирает группу, системные проверки, счётчики базы, соседей и счётчики
+ * `SyncEngine` в одно [DiagnosticsState] и передаёт настройки из экрана в `AppSettings`.
+ *
+ * Задача: docs/team/olga-transport.md
+ */
 // TODO(Ольга): добавить соседей с временем последнего сообщения и список блокировки (AppSettings.setBlocked).
-//  Проверка пересылки через посредника на одном столе держится на этом списке. docs/team/olga-transport.md
+//  На этом списке держится проверка пересылки через посредника на одном столе.
+//  docs/team/olga-transport.md
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,

@@ -25,11 +25,14 @@ import ru.pereklichka.status.GroupViewProvider
 import javax.inject.Inject
 
 /**
- * Состояние и действия для всех экранов группы. Экраны рисуют [view] и вызывают методы действий.
+ * Состояние и действия для всех экранов группы: экраны рисуют [view] и вызывают методы действий, а методы
+ * передают их в [GroupActions]. Один экземпляр на всю навигацию создаёт `AppNavHost`.
  *
  * В фейковом режиме (`DataModeModule`) [view] берётся из [FakeGroupViews], а кнопки ничего не пишут, потому что
  * `RoomMeshStore` ещё не готов. Создание группы и вступление при этом настоящие: они пишут группу в базу
  * и запускают службу, только событие JOINED пропускают.
+ *
+ * Задача: docs/team/valentin-ui.md (экраны вызывают эти методы)
  */
 @HiltViewModel
 class GroupViewModel @Inject constructor(
@@ -40,7 +43,7 @@ class GroupViewModel @Inject constructor(
     @FakeGroupData private val useFakeGroupData: Boolean,
 ) : ViewModel() {
 
-    /** null, пока группы нет или первый расчёт ещё не готов. */
+    /** Вид группы для экранов; null, пока группы нет или первый расчёт ещё не готов. */
     val view: StateFlow<GroupView?> =
         if (useFakeGroupData) MutableStateFlow(FakeGroupViews.leader) else viewProvider.view
 

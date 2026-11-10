@@ -2,7 +2,8 @@ package ru.pereklichka.ui.navigation
 
 import kotlinx.serialization.Serializable
 
-// Маршруты навигации. Экраны и их поля перечислены в docs/team/valentin-ui.md, раздел «Экраны».
+// Маршруты навигации для AppNavHost, по одному на экран. Что на каждом экране, написано в KDoc экрана
+// и в docs/team/valentin-ui.md.
 
 @Serializable
 object StartRoute

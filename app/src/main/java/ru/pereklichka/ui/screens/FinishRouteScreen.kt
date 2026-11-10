@@ -8,10 +8,13 @@ import ru.pereklichka.domain.rules.RouteState
 /**
  * Завершение маршрута (ФТ-9): подтверждение у руководителя. После завершения служба работает ещё 15 минут,
  * «Выключить» останавливает её сразу.
+ *
+ * Задача: docs/team/valentin-ui.md
  */
 @Composable
 fun FinishRouteScreen(view: GroupView, onFinish: () -> Unit, onStopService: () -> Unit) {
-    // TODO(Валентин): подтверждение завершения, «Выключить» после него. docs/team/valentin-ui.md
+    // TODO(Валентин): подтверждение завершения, «Выключить» после него.
+    //  docs/team/valentin-ui.md
     StubScreen("Завершение маршрута") {
         if (view.route == RouteState.FINISHED) {
             Text("Маршрут завершён")

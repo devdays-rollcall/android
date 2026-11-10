@@ -7,7 +7,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Контраст выше обычного: экраны читают на солнце. Статус никогда не передаётся одним цветом, рядом всегда текст.
+// Контраст выше обычного, потому что экраны читают на солнце. Статус никогда не передаётся одним цветом,
+// рядом всегда текст.
 private val LightColors = lightColorScheme(
     primary = Color(0xFF0B4F8A),
     onPrimary = Color.White,
@@ -30,7 +31,7 @@ private val DarkColors = darkColorScheme(
     onSurface = Color.White,
 )
 
-/** Тема приложения. Цвета статусов и тревог добавляет Валентин вместе с экранами. */
+/** Тема Material 3 для всех экранов, светлая или тёмная по настройке системы. Цвета статусов и тревог добавляет Валентин вместе с экранами. */
 @Composable
 fun PereklichkaTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors, content = content)

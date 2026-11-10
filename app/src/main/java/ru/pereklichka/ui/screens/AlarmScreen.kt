@@ -9,7 +9,9 @@ import ru.pereklichka.domain.rules.GroupView
 /**
  * Тревога (ФТ-8, 15, 17, 24): активные тревоги из `view.alarms` и кто их объявил. Кнопки снятия зависят от того,
  * кто смотрит: «Я в порядке» у самого человека, «Вижу, в порядке» у остальных, «Ложная тревога» у руководителя
- * и автора тревоги. Там же подсказки `view.prompts`.
+ * и автора тревоги. Там же подсказки о близости `view.prompts`.
+ *
+ * Задача: docs/team/valentin-ui.md
  */
 @Composable
 fun AlarmScreen(view: GroupView, onResolve: (target: MemberId, kind: ResolveKind) -> Unit) {

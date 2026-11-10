@@ -35,8 +35,11 @@ import ru.pereklichka.ui.screens.SosScreen
 import ru.pereklichka.ui.screens.StartScreen
 
 /**
- * Все экраны приложения. Один [GroupViewModel] на всю навигацию: экраны группы смотрят на один и тот же `GroupView`.
- * Первый экран зависит от того, есть ли активная группа.
+ * Граф навигации: все экраны приложения и переходы между ними. Его показывает `MainActivity`.
+ *
+ * Один [GroupViewModel] на всю навигацию, поэтому экраны группы смотрят на один и тот же `GroupView`. Первый экран
+ * зависит от того, была ли активная группа при запуске. При каждом возврате приложения на экран вызывается
+ * [GroupViewModel.ensureRouteServiceRunning], так служба оживает после убийства процесса или выдачи разрешений.
  */
 @Composable
 fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
@@ -129,7 +132,7 @@ private fun NavHostController.replaceStack(route: Any) {
     navigate(route) { popUpTo(graph.id) { inclusive = true } }
 }
 
-/** Экран группы рисуется, когда есть `GroupView`; до первого расчёта показывается ожидание. */
+/** Рисует экран группы, когда есть `GroupView`, а до первого расчёта показывает ожидание. */
 @Composable
 private fun WithView(view: GroupView?, content: @Composable (GroupView) -> Unit) {
     if (view == null) Loading() else content(view)

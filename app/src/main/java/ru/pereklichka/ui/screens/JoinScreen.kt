@@ -10,11 +10,16 @@ import ru.pereklichka.domain.model.QrPayload
 import ru.pereklichka.qr.QrParseResult
 import ru.pereklichka.qr.rememberQrScanner
 
-/** Вступление (ФТ-10): сканер QR и ввод имени. Работает в авиарежиме. */
+/**
+ * Вступление (ФТ-10): сканер QR и ввод имени. Работает в авиарежиме, сканеру `rememberQrScanner` интернет не нужен.
+ *
+ * Задача: docs/team/valentin-ui.md
+ */
 @Composable
 fun JoinScreen(onJoin: (qr: QrPayload, myName: String) -> Unit) {
     // TODO(Валентин): кнопка сканирования, понятное сообщение для чужого или битого кода (QrParseResult.Invalid.reason),
-    //  поле «Ваше имя» и «Вступить». docs/team/valentin-ui.md
+    //  поле «Ваше имя» и «Вступить».
+    //  docs/team/valentin-ui.md
     var scanned by remember { mutableStateOf<QrParseResult?>(null) }
     val scan = rememberQrScanner { scanned = it }
     StubScreen("Вступление") {

@@ -8,6 +8,8 @@ import ru.pereklichka.domain.rules.GroupView
 /**
  * Перекличка (ФТ-7, ФТ-13). У руководителя три списка из `view.rollcall`: ответили, рядом но молчат, не слышно.
  * У участника большая кнопка «Я здесь», пока его нет в `answered`.
+ *
+ * Задача: docs/team/valentin-ui.md
  */
 @Composable
 fun RollcallScreen(view: GroupView, onStartRollcall: () -> Unit, onAnswer: (EventId) -> Unit) {

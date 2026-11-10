@@ -8,6 +8,8 @@ import ru.pereklichka.domain.rules.GroupView
 /**
  * Карточка участника (ФТ-12, ФТ-15, ФТ-17): точность позиции, кто слышал последним (`lastHeardBy`),
  * «Объявить тревогу», «Вижу, в порядке» при активной тревоге о нём.
+ *
+ * Задача: docs/team/valentin-ui.md
  */
 @Composable
 fun MemberScreen(view: GroupView, memberId: MemberId, onRaiseAlarm: (MemberId) -> Unit, onSeenOk: (MemberId) -> Unit) {
