@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Перекличка</string>
+    <string name="service_channel_name">Работа на маршруте</string>
+    <string name="service_notification_title">Перекличка на связи</string>
+    <string name="service_notification_text">Обмен с группой и GPS работают в фоне</string>
+</resources>
