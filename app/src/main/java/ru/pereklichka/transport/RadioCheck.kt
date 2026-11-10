@@ -8,8 +8,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 /**
- * Проверки до старта Nearby. С конца 2026 года Nearby сам не включает Bluetooth, поэтому при выключенном радио
- * экран просит человека включить его. Без Google Play Services Nearby не работает вовсе.
+ * Проверяет, может ли Nearby работать: включён ли Bluetooth и есть ли Google Play Services. Вызывают
+ * [NearbyPeerTransport] перед стартом и диагностика. Nearby сам Bluetooth не включает, поэтому при выключенном
+ * радио интерфейс просит человека включить его. Без Google Play Services Nearby не работает вовсе.
  */
 class RadioCheck @Inject constructor(@ApplicationContext private val context: Context) {
 

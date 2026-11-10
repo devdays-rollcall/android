@@ -18,17 +18,22 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * [PeerTransport] поверх Nearby Connections: `P2P_CLUSTER`, serviceId с тегом группы, `member_id` как имя
- * устройства, `NON_DISRUPTIVE`. Кого подключать и когда, решает [ConnectionPolicy], радио проверяет [RadioCheck].
+ * Связь с соседями через Nearby Connections: находит телефоны своей группы (advertising и discovery), держит
+ * с ними соединения и передаёт байты движку. Hilt подставляет его везде, где нужен [PeerTransport]; запускает
+ * и останавливает его `RouteService`, события читает `SyncEngine`.
  *
- * Обратные вызовы Nearby приходят в главный поток: их нужно сразу перекладывать в [eventsChannel] и ничего
- * тяжёлого в них не делать. Подтверждения доставки обрабатываются здесь же, а не в движке.
+ * Параметры Nearby: `P2P_CLUSTER`, serviceId с тегом группы, `member_id` как имя устройства, `NON_DISRUPTIVE`.
+ * Кого подключать и когда, решает [ConnectionPolicy], радио проверяет [RadioCheck]. Обратные вызовы Nearby
+ * приходят в главный поток, поэтому их нужно сразу перекладывать в [eventsChannel] и ничего тяжёлого в них
+ * не делать. Подтверждения доставки обрабатываются здесь же, движок их не ждёт.
+ *
+ * Задача: docs/team/olga-transport.md
  */
 @Singleton
 class NearbyPeerTransport @Inject constructor(
     @ApplicationContext private val context: Context,
     private val radioCheck: RadioCheck,
-    /** Для отложенных запросов соединения, повторов и окон поиска: живёт дольше одного запуска транспорта. */
+    /** Область для отложенных запросов соединения, повторов и окон discovery, живёт дольше одного запуска транспорта. */
     @ApplicationScope private val scope: CoroutineScope,
 ) : PeerTransport {
 
@@ -39,16 +44,17 @@ class NearbyPeerTransport @Inject constructor(
     override val connectedPeers: StateFlow<Set<MemberId>> = peers.asStateFlow()
 
     override fun start(config: TransportConfig) {
-        // TODO(Ольга): проверить радио и включить рекламу и поиск по политике из 03.
-        //  Решения о соединениях через ConnectionPolicy, соединения принимать без кода; после перезапуска процесса
-        //  поднимать всё с нуля. docs/team/olga-transport.md
-        throw NotImplementedError("TODO(Ольга): проверить радио и включить рекламу и поиск по политике из 03.")
+        // TODO(Ольга): проверить радио и включить advertising и discovery по политике из 03.
+        //  Решения о соединениях через ConnectionPolicy, соединения принимать без кода, после перезапуска
+        //  процесса поднимать всё с нуля.
+        //  docs/team/olga-transport.md
+        throw NotImplementedError("TODO(Ольга): проверить радио и включить advertising и discovery по политике из 03.")
     }
 
     override fun stop() {
-        // TODO(Ольга): остановить рекламу и поиск, разорвать все соединения, очистить соответствие endpointId и member_id.
+        // TODO(Ольга): остановить advertising и discovery, разорвать все соединения, очистить соответствие endpointId и member_id.
         //  docs/team/olga-transport.md
-        throw NotImplementedError("TODO(Ольга): остановить рекламу и поиск, разорвать все соединения, очистить соответствие endpointId и member_id.")
+        throw NotImplementedError("TODO(Ольга): остановить advertising и discovery, разорвать все соединения, очистить соответствие endpointId и member_id.")
     }
 
     override suspend fun send(peer: MemberId, bytes: ByteArray): Boolean {
@@ -58,7 +64,9 @@ class NearbyPeerTransport @Inject constructor(
     }
 
     override fun disconnect(peer: MemberId) {
-        // TODO(Ольга): disconnectFromEndpoint для endpointId этого соседа и событие Disconnected. docs/team/olga-transport.md
+        // TODO(Ольга): disconnectFromEndpoint для endpointId этого соседа и событие Disconnected.
+        //  На своей стороне Nearby onDisconnected после этого не вызывает.
+        //  docs/team/olga-transport.md
         throw NotImplementedError("TODO(Ольга): disconnectFromEndpoint для endpointId этого соседа и событие Disconnected.")
     }
 }
