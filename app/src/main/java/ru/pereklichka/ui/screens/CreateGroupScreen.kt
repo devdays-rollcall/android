@@ -2,20 +2,22 @@ package ru.pereklichka.ui.screens
 
 import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ru.pereklichka.domain.sync.ControlEventDraft
 import ru.pereklichka.ui.components.AppScreen
 import ru.pereklichka.ui.components.BigButton
 import ru.pereklichka.ui.components.CardLabel
@@ -23,29 +25,24 @@ import ru.pereklichka.ui.components.HintText
 import ru.pereklichka.ui.components.InfoCard
 import ru.pereklichka.ui.components.LabeledField
 import ru.pereklichka.ui.theme.PereklichkaTheme
-import androidx.compose.foundation.layout.fillMaxWidth
+
 
 /**
  * Создание группы по макету («Новая группа»): поля «Название группы» и «Ваше имя», карточка о токене и «Создать группу».
- * Кнопка неактивна, пока хоть одно поле пустое. После создания сразу открывается экран QR (`LobbyScreen`).
+ * Кнопка неактивна, пока хоть одно поле пустое и пока группа создаётся ([creating]). Экран QR (`LobbyScreen`)
+ * открывает навигация, когда группа появилась в базе.
  *
- * [onCreate] пишет группу и запускает службу, поэтому разрешения выдаются раньше, со стартового экрана.
- * Повторное нажатие, пока группа создаётся, ничего не делает.
+ * [onCreate] пишет группу и запускает службу. Разрешения спрашивает стартовый экран, а если их так и не выдали,
+ * экран QR предупредит, что служба не запущена.
  *
  * Задача: docs/team/valentin-ui.md
  */
 @Composable
-fun CreateGroupScreen(onCreate: (groupName: String, myName: String) -> Unit, onBack: () -> Unit) {
+fun CreateGroupScreen(creating: Boolean, onCreate: (groupName: String, myName: String) -> Unit, onBack: () -> Unit) {
     var groupName by rememberSaveable { mutableStateOf("") }
     var myName by rememberSaveable { mutableStateOf("") }
-    var creating by rememberSaveable { mutableStateOf(false) }
     val ready = groupName.isNotBlank() && myName.isNotBlank() && !creating
-    val create = {
-        if (ready) {
-            creating = true
-            onCreate(groupName.trim(), myName.trim())
-        }
-    }
+    val create = { if (ready) onCreate(groupName.trim(), myName.trim()) }
 
     AppScreen(
         title = "Новая группа",
@@ -60,7 +57,13 @@ fun CreateGroupScreen(onCreate: (groupName: String, myName: String) -> Unit, onB
         },
     ) {
         LabeledField("Название группы", groupName, { groupName = it })
-        LabeledField("Ваше имя", myName, { myName = it }, imeAction = ImeAction.Done, onDone = create)
+        LabeledField(
+            "Ваше имя",
+            myName,
+            { myName = it.take(ControlEventDraft.MAX_NAME_LENGTH) },
+            imeAction = ImeAction.Done,
+            onDone = create,
+        )
         InfoCard {
             CardLabel("Токен группы создаст телефон")
             HintText("Интернет не нужен. Токен откроет карту группы на сайте.")
@@ -91,5 +94,5 @@ private fun OfflineChip() {
 @Preview(name = "Новая группа, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun CreateGroupPreview() {
-    PereklichkaTheme { CreateGroupScreen({ _, _ -> }, {}) }
+    PereklichkaTheme { CreateGroupScreen(creating = false, { _, _ -> }, {}) }
 }

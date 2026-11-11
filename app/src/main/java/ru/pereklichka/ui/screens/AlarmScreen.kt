@@ -232,3 +232,21 @@ private fun NoAlarms(innerPadding: PaddingValues, onClose: () -> Unit) {
     }
 }
 
+@Preview(name = "Тревога: руководитель")
+@Preview(name = "Тревога: руководитель, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun AlarmLeaderPreview() {
+    PereklichkaTheme { AlarmScreen(FakeGroupViews.leader, { _, _ -> }, {}, {}) }
+}
+
+@Preview(name = "Тревога: участник")
+@Composable
+private fun AlarmParticipantPreview() {
+    PereklichkaTheme { AlarmScreen(FakeGroupViews.participant, { _, _ -> }, {}, {}) }
+}
+
+@Preview(name = "Тревога: тревог нет")
+@Composable
+private fun NoAlarmsPreview() {
+    PereklichkaTheme { AlarmScreen(FakeGroupViews.participant.copy(alarms = emptyList()), { _, _ -> }, {}, {}) }
+}

@@ -13,12 +13,13 @@ import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.domain.time.Age
 
 /**
- * Выдуманная группа из пяти человек для фейкового режима (`DataModeModule`) и для превью, когда их добавят.
+ * Выдуманная группа из пяти человек для фейкового режима (`DataModeModule`) и для превью экранов.
  * В ней есть норма, отлучка, «Не слышно», активная тревога и перекличка в процессе. SOS, подсказок о близости,
- * «Сбора» и завершённого маршрута в ней нет.
+ * «Сбора» и завершённого маршрута в ней нет, превью получают их через `copy`.
  *
- * [leader] показывает группу с телефона руководителя, [participant] с телефона участника. [GroupViewModel]
- * в фейковом режиме всегда отдаёт [leader].
+ * [leader] показывает группу с телефона руководителя, [participant] с телефона участника. Участники в обоих
+ * упорядочены, как обещает `GroupView.members`: по тяжести статуса, внутри ступени я первым, остальные по имени.
+ * [GroupViewModel] в фейковом режиме отдаёт [leader], подставив в него группу из базы.
  */
 object FakeGroupViews {
 
@@ -57,7 +58,7 @@ object FakeGroupViews {
         me = nikita,
         iAmLeader = true,
         route = RouteState.ACTIVE,
-        members = members,
+        members = bySeverity(members),
         alarms = listOf(
             AlarmView(alarmAboutValentin, valentin, "Валентин", olga, "Ольга", isSos = false, Age(70_000, approximate = false)),
         ),
@@ -76,7 +77,24 @@ object FakeGroupViews {
         group = group.copy(me = daniil),
         me = daniil,
         iAmLeader = false,
-        members = members.map { it.copy(isMe = it.id == daniil) }.sortedBy { !it.isMe },
+        members = bySeverity(members.map { it.copy(isMe = it.id == daniil) }),
+    )
+
+    /** Порядок `GroupView.members`: SOS, тревога, «Не слышно», отлучка, остальные; внутри ступени я, потом по имени. */
+    private fun bySeverity(list: List<MemberView>): List<MemberView> = list.sortedWith(
+        compareBy<MemberView>(
+            {
+                when {
+                    it.hasSos -> 0
+                    it.hasActiveAlarm -> 1
+                    it.presence == Presence.LOST -> 2
+                    it.presence == Presence.AWAY -> 3
+                    else -> 4
+                }
+            },
+            { !it.isMe },
+            { it.name },
+        ),
     )
 
     private fun member(

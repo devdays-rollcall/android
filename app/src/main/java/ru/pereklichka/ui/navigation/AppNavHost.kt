@@ -1,7 +1,5 @@
 package ru.pereklichka.ui.navigation
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -11,10 +9,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -25,7 +25,6 @@ import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.notify.NotificationTarget
 import ru.pereklichka.permissions.PermissionsScreen
-import ru.pereklichka.permissions.RequiredPermissions
 import ru.pereklichka.ui.GroupViewModel
 import ru.pereklichka.ui.diagnostics.DiagnosticsScreen
 import ru.pereklichka.ui.screens.AlarmScreen
@@ -44,7 +43,9 @@ import ru.pereklichka.ui.screens.StartScreen
  * Граф навигации: все экраны приложения и переходы между ними. Его показывает `MainActivity`.
  *
  * Один [GroupViewModel] на всю навигацию, поэтому экраны группы смотрят на один и тот же `GroupView`. Первый экран
- * зависит от того, была ли активная группа при запуске. При каждом возврате приложения на экран вызывается
+ * зависит от того, была ли активная группа при запуске. Дальше навигация следит за [GroupViewModel.hasGroup]:
+ * когда группа появилась, экран создания или вступления сменяется экраном группы, а когда её стёрла «Новая группа»,
+ * приложение уходит на старт. При каждом возврате приложения на экран вызывается
  * [GroupViewModel.ensureRouteServiceRunning], так служба оживает после убийства процесса или выдачи разрешений.
  */
 @Composable
@@ -54,21 +55,12 @@ fun AppNavHost(
     viewModel: GroupViewModel = hiltViewModel(),
 ) {
     val hadGroupAtStart by viewModel.hadGroupAtStart.collectAsStateWithLifecycle()
+    val hasGroup by viewModel.hasGroup.collectAsStateWithLifecycle()
     val view by viewModel.view.collectAsStateWithLifecycle()
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
+    val serviceStarted by viewModel.serviceStarted.collectAsStateWithLifecycle()
+    val settingUp by viewModel.settingUp.collectAsStateWithLifecycle()
     val navController = rememberNavController()
-    val context = LocalContext.current
-    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        viewModel.ensureRouteServiceRunning()
-    }
-    fun requestLocation() {
-        if (RequiredPermissions.missing(context, RequiredPermissions.location()).isNotEmpty()) {
-            locationPermission.launch(RequiredPermissions.location().toTypedArray())
-        }
-    }
-    LaunchedEffect(hadGroupAtStart) {
-        if (hadGroupAtStart == true) requestLocation()
-    }
     LifecycleResumeEffect(Unit) {
         viewModel.ensureRouteServiceRunning()
         onPauseOrDispose { }
@@ -87,68 +79,87 @@ fun AppNavHost(
             NotificationTarget.Rollcall -> RollcallRoute
             is NotificationTarget.Member -> MemberRoute(target.id.value)
         }
-        navController.navigate(route) { launchSingleTop = true }
+        navController.open(route)
         onOpenHandled()
+    }
+
+    // Переход по состоянию, а не из корутины создания: после поворота экрана группа может появиться, когда
+    // экран создания уже пересоздан вместе с навигацией.
+    LaunchedEffect(hasGroup) {
+        val destination = navController.currentBackStackEntry?.destination ?: return@LaunchedEffect
+        when (hasGroup) {
+            true -> when {
+                destination.hasRoute<CreateGroupRoute>() -> navController.replaceStack(LobbyRoute)
+                destination.hasRoute<JoinRoute>() -> navController.replaceStack(GroupRoute)
+            }
+            false -> if (navController.inGroup()) navController.replaceStack(StartRoute)
+            null -> Unit
+        }
     }
 
     NavHost(navController, startDestination = startDestination) {
         composable<StartRoute> {
+            val go = onlyWhenResumed()
             StartScreen(
-                onCreateGroup = { navController.navigate(CreateGroupRoute) },
-                onJoinGroup = { navController.navigate(JoinRoute) },
-                onPermissions = { navController.navigate(PermissionsRoute) },
-                onDiagnostics = { navController.navigate(DiagnosticsRoute) },
+                onCreateGroup = { go { navController.open(CreateGroupRoute) } },
+                onJoinGroup = { go { navController.open(JoinRoute) } },
+                // Без проверки RESUMED: стартовый экран открывает разрешения сам, ещё до конца перехода на него,
+                // а второй копии экрана не будет и так из-за launchSingleTop.
+                onPermissions = { navController.open(PermissionsRoute) },
+                onDiagnostics = { go { navController.open(DiagnosticsRoute) } },
             )
         }
         composable<CreateGroupRoute> {
+            val go = onlyWhenResumed()
             CreateGroupScreen(
-                onCreate = { groupName, myName ->
-                    viewModel.createGroup(groupName, myName) {
-                        navController.replaceStack(LobbyRoute)
-                        requestLocation()
-                    }
-                },
-                onBack = { navController.popBackStack() },
+                creating = settingUp,
+                onCreate = viewModel::createGroup,
+                onBack = { go { navController.popBackStack() } },
             )
         }
         composable<JoinRoute> {
+            val go = onlyWhenResumed()
             JoinScreen(
-                onJoin = { qr, myName ->
-                    viewModel.joinGroup(qr, myName) {
-                        navController.replaceStack(GroupRoute)
-                        requestLocation()
-                    }
-                },
-                onBack = { navController.popBackStack() },
+                joining = settingUp,
+                onJoin = viewModel::joinGroup,
+                onBack = { go { navController.popBackStack() } },
             )
         }
         composable<LobbyRoute> {
+            val go = onlyWhenResumed()
             WithView(view) {
                 LobbyScreen(
                     it,
                     serverUrl = serverUrl,
-                    onStartRoute = { viewModel.startRoute(); navController.replaceStack(GroupRoute) },
-                    onOpenGroup = { navController.replaceStack(GroupRoute) },
+                    serviceStarted = serviceStarted,
+                    onStartRoute = { go { viewModel.startRoute(); navController.replaceStack(GroupRoute) } },
+                    onOpenGroup = { go { navController.replaceStack(GroupRoute) } },
+                    onPermissions = { go { navController.open(PermissionsRoute) } },
                 )
             }
         }
         composable<GroupRoute> {
+            val go = onlyWhenResumed()
             WithView(view) {
                 GroupScreen(
                     view = it,
-                    onMember = { member -> navController.navigate(MemberRoute(member.value)) },
-                    onRollcall = { navController.navigate(RollcallRoute) },
-                    onAway = { navController.navigate(AwayRoute) },
-                    onAlarms = { navController.navigate(AlarmRoute) },
-                    onSos = { navController.navigate(SosRoute) },
-                    onFinishRoute = { navController.navigate(FinishRouteRoute) },
-                    onDiagnostics = { navController.navigate(DiagnosticsRoute) },
+                    serviceStarted = serviceStarted,
+                    onMember = { member -> go { navController.open(MemberRoute(member.value)) } },
+                    onRollcall = { go { navController.open(RollcallRoute) } },
+                    onAway = { go { navController.open(AwayRoute) } },
+                    onAlarms = { go { navController.open(AlarmRoute) } },
+                    onSos = { go { navController.open(SosRoute) } },
+                    onFinishRoute = { go { navController.open(FinishRouteRoute) } },
+                    onDiagnostics = { go { navController.open(DiagnosticsRoute) } },
+                    onPermissions = { go { navController.open(PermissionsRoute) } },
+                    onLobby = { go { navController.open(LobbyRoute) } },
                     onStopService = viewModel::stopService,
-                    onLobby = { navController.navigate(LobbyRoute) { launchSingleTop = true } },
+                    onNewGroup = viewModel::leaveGroup,
                 )
             }
         }
         composable<MemberRoute> { entry ->
+            val go = onlyWhenResumed()
             val memberId = MemberId(entry.toRoute<MemberRoute>().memberId)
             WithView(view) {
                 MemberScreen(
@@ -156,67 +167,104 @@ fun AppNavHost(
                     memberId = memberId,
                     onRaiseAlarm = viewModel::raiseAlarm,
                     onSeenOk = { target -> viewModel.resolve(target, ResolveKind.SEEN_OK) },
-                    onBack = { navController.popBackStack() },
+                    onBack = { go { navController.popBackStack() } },
                 )
             }
         }
         composable<RollcallRoute> {
+            val go = onlyWhenResumed()
             WithView(view) {
                 RollcallScreen(
                     it,
                     onStartRollcall = viewModel::startRollcall,
                     onAnswer = viewModel::answerRollcall,
-                    onAway = { navController.navigate(AwayRoute) },
-                    onSos = { navController.navigate(SosRoute) },
-                    onBack = { navController.popBackStack() },
+                    onAway = { go { navController.open(AwayRoute) } },
+                    onSos = { go { navController.open(SosRoute) } },
+                    onBack = { go { navController.popBackStack() } },
                 )
             }
         }
         composable<AwayRoute> {
+            val go = onlyWhenResumed()
             WithView(view) {
                 AwayScreen(
                     it,
                     onAway = viewModel::announceAway,
                     onCancelAway = viewModel::cancelAway,
-                    onClose = { navController.popBackStack() },
+                    onClose = { go { navController.popBackStack() } },
                 )
             }
         }
         composable<AlarmRoute> {
+            val go = onlyWhenResumed()
             WithView(view) {
                 AlarmScreen(
                     it,
                     onResolve = viewModel::resolve,
-                    onMember = { member -> navController.navigate(MemberRoute(member.value)) { launchSingleTop = true } },
-                    onClose = { navController.popBackStack() },
+                    onMember = { member -> go { navController.open(MemberRoute(member.value)) } },
+                    onClose = { go { navController.popBackStack() } },
                 )
             }
         }
         composable<SosRoute> {
-            WithView(view) { SosScreen(it, onSos = viewModel::sos, onBack = { navController.popBackStack() }) }
+            val go = onlyWhenResumed()
+            WithView(view) {
+                SosScreen(
+                    it,
+                    onSos = viewModel::sos,
+                    onResendToServer = viewModel::resendSosToServer,
+                    onBack = { go { navController.popBackStack() } },
+                )
+            }
         }
         composable<FinishRouteRoute> {
+            val go = onlyWhenResumed()
             WithView(view) {
                 FinishRouteScreen(
                     it,
+                    serviceStarted = serviceStarted,
                     onFinish = viewModel::finishRoute,
                     onStopService = viewModel::stopService,
-                    onBack = { navController.popBackStack() },
+                    onNewGroup = viewModel::leaveGroup,
+                    onPermissions = { go { navController.open(PermissionsRoute) } },
+                    onBack = { go { navController.popBackStack() } },
                 )
             }
         }
         composable<PermissionsRoute> {
-            PermissionsScreen(onDone = { navController.popBackStack() })
+            val go = onlyWhenResumed()
+            PermissionsScreen(onDone = { go { viewModel.ensureRouteServiceRunning(); navController.popBackStack() } })
         }
         composable<DiagnosticsRoute> {
-            DiagnosticsScreen()
+            val go = onlyWhenResumed()
+            DiagnosticsScreen(onBack = { go { navController.popBackStack() } })
         }
     }
 }
 
-/** Переход без возврата назад: после создания группы или вступления кнопка «Назад» не ведёт на старт. */
+/**
+ * Нажатие срабатывает, только пока экран в RESUMED. Во время перехода экран уже не RESUMED, поэтому второе нажатие
+ * «Назад» не снимет ещё и экран под ним, а второе нажатие кнопки перехода не откроет экран дважды.
+ */
+@Composable
+private fun onlyWhenResumed(): (() -> Unit) -> Unit {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    return { action -> if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) action() }
+}
+
+/** Открывает экран поверх текущего. Если этот экран уже сверху, второй копии не будет. */
+private fun NavHostController.open(route: Any) {
+    navigate(route) { launchSingleTop = true }
+}
+
+/** Переход без возврата: после создания группы, вступления и «Новой группы» «Назад» не ведёт на прошлый экран. */
 private fun NavHostController.replaceStack(route: Any) {
     navigate(route) { popUpTo(graph.id) { inclusive = true } }
+}
+
+/** В стеке есть экраны группы, а со стёртой группой на них оставаться нельзя. */
+private fun NavHostController.inGroup(): Boolean = currentBackStack.value.any {
+    it.destination.hasRoute<GroupRoute>() || it.destination.hasRoute<LobbyRoute>()
 }
 
 /** Рисует экран группы, когда есть `GroupView`, а до первого расчёта показывает ожидание. */

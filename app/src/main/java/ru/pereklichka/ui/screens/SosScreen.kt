@@ -21,11 +21,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,8 +76,11 @@ private val ProgressWidth = 10.dp
  * После отправки: кнопка звонка в 112 (`ACTION_DIAL`, разрешение на звонки не нужно, вызов человек нажмёт сам)
  * и текст с координатами из моей позиции в `view.members`, который можно скопировать или зачитать диспетчеру.
  * Рядом прямо сказано, куда что дойдёт: звонок только при сотовой сети любого оператора, а сигнал SOS только
- * до телефонов группы, связанных цепочкой, и при интернете на сервер. Состояние отправки на сервер [serverStatus]
- * берётся из задачи WorkManager.
+ * до телефонов группы, связанных цепочкой, и при интернете на сервер. Состояние отправки на сервер [serverState]
+ * берётся из задачи WorkManager, и если отправка не удалась, [onResendToServer] ставит её снова.
+ *
+ * Отправлен ли SOS, экран берёт из вида (`hasSos` у меня), поэтому после снятия SOS снова видна кнопка удержания.
+ * Только что нажатая кнопка считается отправкой, пока вид не догнал её.
  *
  * Задача: docs/team/valentin-ui.md
  */
@@ -85,52 +88,66 @@ private val ProgressWidth = 10.dp
 fun SosScreen(
     view: GroupView,
     onSos: () -> Unit,
+    onResendToServer: () -> Unit,
     onBack: () -> Unit,
-    serverStatus: String? = rememberSosServerStatus(view),
+    serverState: WorkInfo.State? = rememberSosServerState(view),
 ) {
     val me = view.members.firstOrNull { it.isMe }
-    // В фейковом режиме действие ничего не пишет, поэтому запоминаем
-    var sentHere by rememberSaveable { mutableStateOf(false) }
-    val sent = sentHere || me?.hasSos == true
+    val hasSos = me?.hasSos == true
+    // Между удержанием и новым видом проходит до пары секунд, и без этой отметки на это время вернулась бы кнопка.
+    // В фейковом режиме вид SOS не покажет, и отметка держится, пока экран открыт.
+    var justSent by remember { mutableStateOf(false) }
+    LaunchedEffect(hasSos) { if (hasSos) justSent = false }
+    val sent = hasSos || justSent
+    // Что сигнал дошёл, телефон не знает. Известно только, слышит ли он сейчас кого-то из группы напрямую.
+    val someoneNear = view.members.any { !it.isMe && it.heardDirectlyNow }
 
     AppScreen(
         title = if (sent) "SOS отправлен" else "SOS",
-        subtitle = if (sent) "Группа получила сигнал тревоги" else null,
+        subtitle = when {
+            !sent -> null
+            someoneNear -> "Рядом есть телефоны группы, сигнал уходит им"
+            else -> "Рядом нет телефонов группы. Сигнал уйдёт, как только они появятся"
+        },
         onBack = onBack,
         bottom = { if (sent) Call112Button() },
     ) {
         if (sent) {
             CoordinatesCard(me)
-            serverStatus?.let { ServerStatusCard(it) }
+            serverState?.let { ServerStatusCard(it, onResendToServer) }
         } else {
-            HoldToSend(onSend = { sentHere = true; onSos() })
+            HoldToSend(onSend = { justSent = true; onSos() })
         }
         LimitsCard()
     }
 }
 
-/** Текст о том, где сейчас задача отправки SOS на сервер; null, пока SOS не отправляли. */
+/** Состояние задачи отправки SOS на сервер; null, пока SOS на сервер не отправляли. */
 @Composable
-private fun rememberSosServerStatus(view: GroupView): String? {
+private fun rememberSosServerState(view: GroupView): WorkInfo.State? {
     val context = LocalContext.current
     val work = remember(view.group.tag) {
         WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UploadScheduler.sosName(view.group.tag))
     }
     val workInfos by work.collectAsStateWithLifecycle(initialValue = emptyList())
-    return when (workInfos.lastOrNull()?.state) {
-        WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> "Ждёт интернета, отправится сама."
-        WorkInfo.State.RUNNING -> "Отправляем…"
-        WorkInfo.State.SUCCEEDED -> "Сервер принял SOS и разослал уведомление наблюдателям."
-        WorkInfo.State.FAILED -> "Не удалось отправить. Проверьте адрес сервера в настройках и отправьте SOS снова."
-        else -> null
-    }
+    return workInfos.lastOrNull()?.state
 }
 
 @Composable
-private fun ServerStatusCard(status: String) {
+private fun ServerStatusCard(state: WorkInfo.State, onResend: () -> Unit) {
+    val text = when (state) {
+        WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> "Ждёт интернета, отправится сама."
+        WorkInfo.State.RUNNING -> "Отправляем…"
+        WorkInfo.State.SUCCEEDED -> "Сервер принял SOS и разослал уведомление наблюдателям."
+        WorkInfo.State.FAILED, WorkInfo.State.CANCELLED ->
+            "Не удалось отправить. Проверьте адрес сервера в диагностике и отправьте ещё раз."
+    }
     InfoCard {
         CardLabel("Сервер")
-        Text(status, style = MaterialTheme.typography.bodyMedium)
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+        if (state == WorkInfo.State.FAILED || state == WorkInfo.State.CANCELLED) {
+            BigButtonFull("Отправить на сервер ещё раз", onResend, ButtonKind.SECONDARY)
+        }
     }
 }
 
@@ -268,14 +285,18 @@ private fun LimitsCard() {
 @Preview(name = "SOS: удержание, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun SosHoldPreview() {
-    PereklichkaTheme { SosScreen(FakeGroupViews.participant, {}, {}, serverStatus = null) }
+    PereklichkaTheme { SosScreen(FakeGroupViews.participant, {}, {}, {}, serverState = null) }
 }
 
-@Preview(name = "SOS: отправлен")
+@Preview(name = "SOS: отправлен, сервер не принял")
 @Composable
 private fun SosSentPreview() {
     val view = FakeGroupViews.participant
     PereklichkaTheme {
-        SosScreen(view.copy(members = view.members.map { if (it.isMe) it.copy(hasSos = true) else it }), {}, {}, serverStatus = "Ждёт интернета, отправится сама.")
+        SosScreen(
+            view.copy(members = view.members.map { if (it.isMe) it.copy(hasSos = true) else it }),
+            {}, {}, {},
+            serverState = WorkInfo.State.FAILED,
+        )
     }
 }

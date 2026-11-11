@@ -5,24 +5,19 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -76,7 +71,9 @@ fun AwayScreen(
     val me = view.members.firstOrNull { it.isMe }
     val awayRemainingMs = me?.awayRemainingMs
     val isAway = awayRemainingMs != null
-    var selected by rememberSaveable { mutableStateOf(if (isAway) null else DEFAULT_MINUTES) }
+    var picked by rememberSaveable { mutableStateOf<Int?>(null) }
+    // Без отлучки срок выбран всегда: если она кончилась, пока экран открыт, «Подтвердить» не закроет его впустую.
+    val selected = picked ?: if (isAway) null else DEFAULT_MINUTES
     AppScreen(
         title = if (isAway) "Вы отошли" else "Отлучусь на…",
         onBack = onClose,
@@ -102,7 +99,7 @@ fun AwayScreen(
         } else {
             HintText("Группа увидит, что вы отошли, и не станет тревожиться до конца срока")
         }
-        DurationTiles(selected, onSelect = { selected = it })
+        DurationTiles(selected, onSelect = { picked = it })
         selected?.let { minutes -> WhatOthersSee(me?.name, minutes) }
     }
 }
@@ -184,5 +181,22 @@ private fun AwayStatus(remainingMs: Long) {
             Text(remaining, style = MaterialTheme.typography.headlineSmall)
         }
     }
+}
+
+@Preview(name = "Отлучка: руководитель выбирает срок")
+@Preview(name = "Отлучка: руководитель выбирает срок, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun AwayLeaderPreview() {
+    PereklichkaTheme { AwayScreen(FakeGroupViews.leader, {}, {}, {}) }
+}
+
+@Preview(name = "Отлучка: участник уже отошёл")
+@Composable
+private fun AwayParticipantPreview() {
+    val view = FakeGroupViews.participant
+    val away = view.copy(
+        members = view.members.map { if (it.isMe) it.copy(presence = Presence.AWAY, awayRemainingMs = 6 * 60_000L) else it },
+    )
+    PereklichkaTheme { AwayScreen(away, {}, {}, {}) }
 }
 

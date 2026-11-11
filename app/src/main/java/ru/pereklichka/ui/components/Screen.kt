@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.sp
 import ru.pereklichka.ui.theme.spacing
 
 /** Боковой отступ экранов из макета. */
-val ScreenGutter: Dp = 20.dp
+private val ScreenGutter: Dp = 20.dp
 
 /**
  * Разметка экрана из макета (вариант 1): шапка со стрелкой «Назад» и заголовком, прокручиваемое содержимое
@@ -45,14 +45,16 @@ val ScreenGutter: Dp = 20.dp
 @Composable
 fun AppScreen(
     title: String,
-    modifier: Modifier = Modifier,
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
-    background: Color = MaterialTheme.colorScheme.background,
     bottom: @Composable ColumnScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(modifier.fillMaxSize(), color = background, contentColor = MaterialTheme.colorScheme.onBackground) {
+    Surface(
+        Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) {
         Column(Modifier.statusBarsPadding().navigationBarsPadding().imePadding()) {
             ScreenHeader(title, subtitle, onBack)
             Column(
@@ -73,7 +75,7 @@ fun AppScreen(
     }
 }
 
-/** Шапка: стрелка «Назад» (если есть) и заголовок 21 sp с подписью под ним. */
+/** Шапка: стрелка «Назад» (если есть) и заголовок 21 sp с подписью под ним. Её же рисует экран диагностики. */
 @Composable
 fun ScreenHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null) {
     Row(

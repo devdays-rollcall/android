@@ -1,6 +1,5 @@
 package ru.pereklichka.ui.components
 
-import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,14 +21,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.rules.MemberView
-import ru.pereklichka.domain.rules.Presence
-import ru.pereklichka.domain.time.Age
 import ru.pereklichka.ui.theme.AvatarColors
-import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.spacing
 
 private val AvatarSize = 40.dp

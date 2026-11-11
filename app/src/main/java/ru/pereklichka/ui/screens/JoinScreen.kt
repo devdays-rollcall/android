@@ -7,7 +7,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -16,6 +16,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.model.QrPayload
+import ru.pereklichka.domain.sync.ControlEventDraft
+import ru.pereklichka.qr.QrFormat
 import ru.pereklichka.qr.QrParseResult
 import ru.pereklichka.qr.rememberQrScanner
 import ru.pereklichka.ui.components.AppScreen
@@ -32,35 +34,48 @@ import ru.pereklichka.ui.theme.statusColors
 /**
  * Вступление: кнопка сканирования, карточка «Найдена группа» с токеном,
  * поле «Как вас зовут» и «Вступить». Для чужого или битого кода показывается `QrParseResult.Invalid.reason`
- * и предложение отсканировать ещё раз.
+ * и предложение отсканировать ещё раз. Пока идёт вступление ([joining]), кнопка неактивна, а к списку группы
+ * переводит навигация, когда группа появилась в базе.
  *
  * Работает в авиарежиме: сканер `rememberQrScanner` открывает камеру без интернета, а разбор кода делает `QrFormat`.
+ * Отсканированный код переживает поворот экрана: годный хранится строкой QR и после поворота разбирается заново.
  *
  * Задача: docs/team/valentin-ui.md
  */
 @Composable
-fun JoinScreen(onJoin: (qr: QrPayload, myName: String) -> Unit, onBack: () -> Unit) {
-    var scanned by remember { mutableStateOf<QrParseResult?>(null) }
+fun JoinScreen(joining: Boolean, onJoin: (qr: QrPayload, myName: String) -> Unit, onBack: () -> Unit) {
+    var scanned by rememberSaveable(stateSaver = ScanSaver) { mutableStateOf<QrParseResult?>(null) }
     val scan = rememberQrScanner { scanned = it }
-    JoinContent(scanned, scan, onJoin, onBack)
+    JoinContent(scanned, joining, scan, onJoin, onBack)
 }
+
+private const val VALID = "valid"
+private const val INVALID = "invalid"
+
+private val ScanSaver = Saver<QrParseResult?, List<String>>(
+    save = { result ->
+        when (result) {
+            null -> null
+            is QrParseResult.Valid -> listOf(VALID, QrFormat.encode(result.payload))
+            is QrParseResult.Invalid -> listOf(INVALID, result.reason)
+        }
+    },
+    restore = { (kind, text) -> if (kind == VALID) QrFormat.parse(text) else QrParseResult.Invalid(text) },
+)
 
 @Composable
 private fun JoinContent(
     scanned: QrParseResult?,
+    joining: Boolean,
     onScan: () -> Unit,
     onJoin: (qr: QrPayload, myName: String) -> Unit,
     onBack: () -> Unit,
 ) {
     var myName by rememberSaveable { mutableStateOf("") }
-    var joining by rememberSaveable { mutableStateOf(false) }
     val valid = scanned as? QrParseResult.Valid
     val ready = valid != null && myName.isNotBlank() && !joining
     val join = {
-        if (ready && valid != null) {
-            joining = true
-            onJoin(valid.payload, myName.trim())
-        }
+        if (ready && valid != null) onJoin(valid.payload, myName.trim())
     }
 
     AppScreen(
@@ -100,7 +115,13 @@ private fun JoinContent(
                     Text(scanned.payload.groupName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     HintText("Токен ${scanned.payload.token}")
                 }
-                LabeledField("Как вас зовут", myName, { myName = it }, imeAction = ImeAction.Done, onDone = join)
+                LabeledField(
+                    "Как вас зовут",
+                    myName,
+                    { myName = it.take(ControlEventDraft.MAX_NAME_LENGTH) },
+                    imeAction = ImeAction.Done,
+                    onDone = join,
+                )
                 HintText("Имя увидит вся группа в списке и на карте")
             }
         }
@@ -110,7 +131,7 @@ private fun JoinContent(
 @Preview(name = "Вступление: до сканирования")
 @Composable
 private fun JoinEmptyPreview() {
-    PereklichkaTheme { JoinContent(null, {}, { _, _ -> }, {}) }
+    PereklichkaTheme { JoinContent(null, joining = false, {}, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Вступление: группа найдена")
@@ -118,11 +139,11 @@ private fun JoinEmptyPreview() {
 @Composable
 private fun JoinValidPreview() {
     val payload = QrPayload("ЛДГ-7К4-М92", "Поход на Ладогу", MemberId("8c1e5b0a-3f2d-4c6e-9a7b-1d2e3f4a5b6c"))
-    PereklichkaTheme { JoinContent(QrParseResult.Valid(payload), {}, { _, _ -> }, {}) }
+    PereklichkaTheme { JoinContent(QrParseResult.Valid(payload), joining = false, {}, { _, _ -> }, {}) }
 }
 
 @Preview(name = "Вступление: чужой код")
 @Composable
 private fun JoinInvalidPreview() {
-    PereklichkaTheme { JoinContent(QrParseResult.Invalid("Код не от Переклички"), {}, { _, _ -> }, {}) }
+    PereklichkaTheme { JoinContent(QrParseResult.Invalid("Код не от Переклички"), joining = false, {}, { _, _ -> }, {}) }
 }

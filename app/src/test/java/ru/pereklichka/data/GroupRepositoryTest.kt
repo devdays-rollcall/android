@@ -15,7 +15,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
-/** Создание группы и вступление: новый `member_id`, повторное вступление и очистка данных при смене группы. */
+/** Создание группы и вступление: новый `member_id`, повторное вступление, очистка данных при смене группы и выходе. */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class GroupRepositoryTest {
@@ -60,6 +60,17 @@ class GroupRepositoryTest {
 
         assertNotEquals(joined.me, other.me)
         assertEquals(qr.leaderId, other.leaderId)
+        assertEquals(0, db.locationDao().unsent(10).size)
+    }
+
+    @Test
+    fun `выход из группы стирает группу и её данные`() = runTest {
+        repository.join(qr)
+        db.locationDao().insertAll(listOf(point()))
+
+        repository.leaveGroup()
+
+        assertNull(repository.activeGroup())
         assertEquals(0, db.locationDao().unsent(10).size)
     }
 

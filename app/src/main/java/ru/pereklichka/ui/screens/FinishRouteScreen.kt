@@ -31,58 +31,57 @@ import ru.pereklichka.ui.components.AppScreen
 import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.ButtonKind
 import ru.pereklichka.ui.components.CardLabel
-import ru.pereklichka.ui.components.HintText
 import ru.pereklichka.ui.components.InfoCard
 import ru.pereklichka.ui.components.StatusChip
 import ru.pereklichka.ui.components.StatusInfo
 import ru.pereklichka.ui.components.StatusKind
+import ru.pereklichka.ui.components.WarningBanner
+import ru.pereklichka.ui.components.rememberPermissionWarning
 import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.spacing
 import ru.pereklichka.ui.theme.statusColors
 
 /**
- * Завершение маршрута: сводка группы (на связи, отошли, не слышно), идущая
- * перекличка, «Список группы» и «Завершить маршрут» у руководителя с подтверждением.
+ * Завершение маршрута у руководителя: сводка группы (на связи, отошли, не слышно), идущая перекличка
+ * и «Список группы». Открывается из меню экрана группы, пока маршрут идёт.
  *
- * После завершения служба работает ещё 15 минут, чтобы завершение дошло до всех, и у всех появляется «Выключить»:
- * она останавливает службу сразу.
- *
+ * Пока маршрут идёт, внизу «Завершить маршрут» с подтверждением, а если служба не запущена или не хватает
+ * разрешений, сверху предупреждение со входом на экран разрешений. После завершения внизу то же, что на экране
+ * группы ([FinishedActions]): «Выключить», пока служба может работать, и «Новая группа».
  */
 @Composable
-fun FinishRouteScreen(view: GroupView, onFinish: () -> Unit, onStopService: () -> Unit, onBack: () -> Unit) {
+fun FinishRouteScreen(
+    view: GroupView,
+    serviceStarted: Boolean?,
+    onFinish: () -> Unit,
+    onStopService: () -> Unit,
+    onNewGroup: () -> Unit,
+    onPermissions: () -> Unit,
+    onBack: () -> Unit,
+) {
     var confirm by rememberSaveable { mutableStateOf(false) }
     val finished = view.route == RouteState.FINISHED
 
     AppScreen(
         title = view.group.name,
-        subtitle = when (view.route) {
-            RouteState.LOBBY -> "Маршрут ещё не начался"
-            RouteState.ACTIVE -> "Маршрут идёт"
-            RouteState.FINISHED -> "Маршрут завершён"
-        },
+        subtitle = if (finished) "Маршрут завершён" else "Маршрут идёт",
         onBack = onBack,
         bottom = {
-            when {
-                finished -> BigButtonFull("Выключить", onStopService)
-                view.iAmLeader && view.route == RouteState.ACTIVE ->
-                    BigButtonFull("Завершить маршрут", { confirm = true }, ButtonKind.DANGER_OUTLINED)
+            if (finished) {
+                FinishedActions(view, serviceStarted, onStopService, onNewGroup)
+            } else {
+                BigButtonFull("Завершить маршрут", { confirm = true }, ButtonKind.DANGER_OUTLINED)
             }
         },
     ) {
-        SummaryCard(view)
+        if (!finished) rememberPermissionWarning(serviceStarted)?.let { WarningBanner(it, onPermissions) }
+        SummaryCard(view, serviceStarted)
         view.rollcall?.let { rollcall ->
             val total = rollcall.answered.size + rollcall.silentNearby.size + rollcall.notHeard.size
             InfoCard {
                 CardLabel("Идёт перекличка")
                 Text("Ответили ${rollcall.answered.size} из $total", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             }
-        }
-        when {
-            finished -> HintText(
-                "Приложение ещё 15 минут передаёт завершение остальным и потом выключится само. " +
-                    "«Выключить» остановит его сразу.",
-            )
-            !view.iAmLeader -> HintText("Завершить маршрут может только руководитель.")
         }
         BigButtonFull("Список группы", onBack, ButtonKind.SECONDARY)
     }
@@ -104,24 +103,71 @@ fun FinishRouteScreen(view: GroupView, onFinish: () -> Unit, onStopService: () -
     }
 }
 
-/** Карточка «Приложение работает в фоне»: состояние маршрута и три счётчика участников, кроме меня. */
+/**
+ * Низ экрана после завершения маршрута, общий для списка группы и экрана завершения. Если службу не выключали
+ * ([serviceStarted] не false), она ещё 15 минут после завершения передаёт его остальным, и «Выключить» останавливает
+ * её сразу, а группа остаётся на телефоне. «Новая группа» после подтверждения стирает группу и ведёт на старт.
+ */
 @Composable
-private fun SummaryCard(view: GroupView) {
+internal fun FinishedActions(view: GroupView, serviceStarted: Boolean?, onStopService: () -> Unit, onNewGroup: () -> Unit) {
+    var confirmNewGroup by rememberSaveable { mutableStateOf(false) }
+    val stopped = serviceStarted == false
+    Text(
+        if (stopped) {
+            "Маршрут завершён, приложение выключено."
+        } else {
+            "Маршрут завершён. 15 минут после завершения приложение передаёт это остальным и выключается само."
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(vertical = MaterialTheme.spacing.s),
+    )
+    if (!stopped) BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY)
+    BigButtonFull("Новая группа", { confirmNewGroup = true })
+
+    if (confirmNewGroup) {
+        AlertDialog(
+            onDismissRequest = { confirmNewGroup = false },
+            title = { Text("Начать новую группу?") },
+            text = {
+                Text(
+                    "Группа «${view.group.name}» с её списком и треком сотрётся с этого телефона. Точки трека, " +
+                        "которые ещё не ушли на сервер, уже не отправятся.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmNewGroup = false; onNewGroup() }) {
+                    Text("Стереть", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmNewGroup = false }) { Text("Отмена") } },
+        )
+    }
+}
+
+/**
+ * Сводка: работает ли приложение в фоне (после завершения вместо этого «Маршрут завершён») и три счётчика
+ * участников, кроме меня.
+ */
+@Composable
+private fun SummaryCard(view: GroupView, serviceStarted: Boolean?) {
     val others = view.members.filterNot { it.isMe }
     val colors = MaterialTheme.statusColors
+    val finished = view.route == RouteState.FINISHED
     InfoCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (view.route == RouteState.FINISHED) "Маршрут завершён" else "Приложение работает в фоне",
+                if (finished) "Маршрут завершён" else "Приложение в фоне",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
             StatusChip(
-                when (view.route) {
-                    RouteState.ACTIVE -> StatusInfo(StatusKind.OK, "Идёт")
-                    RouteState.LOBBY -> StatusInfo(StatusKind.AWAY, "Сбор")
-                    RouteState.FINISHED -> StatusInfo(StatusKind.LOST, "Завершён")
+                when {
+                    finished -> StatusInfo(StatusKind.LOST, "Завершён")
+                    serviceStarted == false -> StatusInfo(StatusKind.ALARM, "Не работает")
+                    else -> StatusInfo(StatusKind.OK, "Работает")
                 },
             )
         }
@@ -148,13 +194,16 @@ private fun Counter(count: Int, label: String, color: Color, modifier: Modifier 
 @Preview(name = "Завершение: руководитель, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun FinishLeaderPreview() {
-    PereklichkaTheme { FinishRouteScreen(FakeGroupViews.leader, {}, {}, {}) }
+    PereklichkaTheme { FinishRouteScreen(FakeGroupViews.leader, serviceStarted = true, {}, {}, {}, {}, {}) }
 }
 
 @Preview(name = "Завершение: маршрут завершён")
 @Composable
 private fun FinishDonePreview() {
     PereklichkaTheme {
-        FinishRouteScreen(FakeGroupViews.participant.copy(route = RouteState.FINISHED, rollcall = null), {}, {}, {})
+        FinishRouteScreen(
+            FakeGroupViews.leader.copy(route = RouteState.FINISHED, rollcall = null),
+            serviceStarted = true, {}, {}, {}, {}, {},
+        )
     }
 }

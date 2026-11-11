@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.pereklichka.data.AppSettings
@@ -60,7 +61,7 @@ import javax.inject.Inject
  * Для активной группы служба поднимает [RouteSession] с движком, транспортом, своим состоянием, монитором
  * уведомлений, треком, wake lock и отправкой на сервер. В «Сборе» телефон уже обменивается данными
  * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт ещё [SyncConfig.exchangeAfterFinishMs],
- * чтобы завершение дошло до всех.
+ * чтобы завершение дошло до всех. «Новая группа» ([leave]) останавливает службу и стирает группу.
  *
  * Если система убила процесс посреди маршрута, она возвращает службу сама (START_STICKY), а после перезагрузки
  * её поднимает [BootReceiver]. Оба пути идут через [restartRoute].
@@ -91,6 +92,7 @@ class RouteService : Service() {
     private var route: RouteSession? = null
     private var trackingJob: kotlinx.coroutines.Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var leaving: kotlinx.coroutines.Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -100,6 +102,7 @@ class RouteService : Service() {
             null, ACTION_RESTART -> restartRoute()
             ACTION_START -> startRoute()
             ACTION_STOP -> stopRoute()
+            ACTION_LEAVE -> leaveGroup()
         }
         return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
     }
@@ -121,6 +124,8 @@ class RouteService : Service() {
         ServiceCompat.startForeground(this, ServiceNotification.ID, ServiceNotification.build(this), types)
         // Человек открыл приложение, и служба снова пишет трек: напоминание после перезапуска больше не нужно.
         if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0) RouteNotFinishedNotification.cancel(this)
+        // Пока стирается старая группа, новый сеанс поднимать нельзя: он прочитал бы её из базы.
+        if (leaving?.isActive == true) return
         if (useFakeGroupData) {
             if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION == 0 || trackingJob?.isActive == true) return
             registerNetworkCallback()
@@ -183,6 +188,23 @@ class RouteService : Service() {
         stopComponents()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /**
+     * «Новая группа»: сеанс останавливается здесь же, на главном потоке, и только после того, как все его корутины
+     * закончились, таблицы стираются. Иначе движок старой группы успел бы записать Delta соседей в очищенную базу.
+     */
+    private fun leaveGroup() {
+        val session = route
+        val tracking = trackingJob
+        stopComponents()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        leaving = serviceScope.launch {
+            session?.join()
+            tracking?.join()
+            groupRepository.leaveGroup()
+            stopSelf()
+        }
     }
 
     private fun stopComponents() {
@@ -253,6 +275,9 @@ class RouteService : Service() {
             powerTools.releaseWakeLock()
         }
 
+        /** Ждёт, пока после [stop] закончатся корутины сеанса, в том числе запись в базу. */
+        suspend fun join() = scope.coroutineContext.job.join()
+
         /** true для outsider, см. `TransportConfig.isOutsider`. */
         private fun isOutsider(member: MemberId): Boolean {
             val lastContact = viewProvider.view.value?.members?.firstOrNull { it.id == member }?.lastContact
@@ -265,6 +290,7 @@ class RouteService : Service() {
         private const val ACTION_START = "ru.pereklichka.action.START_ROUTE"
         private const val ACTION_STOP = "ru.pereklichka.action.STOP_ROUTE"
         private const val ACTION_RESTART = "ru.pereklichka.action.RESTART_ROUTE"
+        private const val ACTION_LEAVE = "ru.pereklichka.action.LEAVE_GROUP"
 
         /**
          * Запускает службу для активной группы. Вызывать, только пока приложение на экране. Повторный вызов
@@ -292,6 +318,15 @@ class RouteService : Service() {
         /** Останавливает службу: кнопка «Выключить» после завершения маршрута. */
         fun stop(context: Context) {
             context.startService(Intent(context, RouteService::class.java).setAction(ACTION_STOP))
+        }
+
+        /**
+         * Останавливает службу и стирает группу со всеми данными: кнопка «Новая группа» после завершения маршрута.
+         * Стирание всегда идёт через службу, даже если она не работает, чтобы оно не обогнало остановку сеанса.
+         * Вызывать, пока приложение на экране.
+         */
+        fun leave(context: Context) {
+            context.startService(Intent(context, RouteService::class.java).setAction(ACTION_LEAVE))
         }
 
         /**

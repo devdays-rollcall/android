@@ -34,8 +34,8 @@ private val BackChevron: ImageVector = ImageVector.Builder(
 
 /** Кнопка «Назад» в шапке экрана: зона нажатия 48 dp, описание для TalkBack. */
 @Composable
-fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onBackground) {
-    IconButton(onClick = onClick, modifier = modifier) {
+fun BackButton(onClick: () -> Unit, tint: Color = MaterialTheme.colorScheme.onBackground) {
+    IconButton(onClick = onClick) {
         Icon(
             imageVector = BackChevron,
             contentDescription = "Назад",

@@ -14,15 +14,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Создаёт активную группу, вступает в неё и отдаёт её остальным частям приложения.
+ * Создаёт активную группу, вступает в неё, отдаёт её остальным частям приложения и стирает при выходе.
  *
- * Смена группы очищает все таблицы, а повторное вступление в ту же группу ничего не меняет. После очистки телефон
+ * Смена группы и выход ([leaveGroup]) очищают все таблицы, а повторное вступление в ту же группу ничего не меняет. После очистки телефон
  * нумерует свои записи с единицы, поэтому `member_id` новый для каждой группы: под старым id соседи увидели бы
  * на тех же номерах другие записи и отбросили бы их как конфликт.
  *
  * Менять группу можно, только пока служба не работает для другой группы, иначе движок старой группы успеет
  * записать чужие Delta в чистые таблицы. Интерфейс это соблюдает: создание и вступление доступны лишь без
- * активной группы.
+ * активной группы, а [leaveGroup] вызывает только `RouteService` после остановки сеанса.
  */
 @Singleton
 class GroupRepository @Inject constructor(
@@ -53,12 +53,19 @@ class GroupRepository @Inject constructor(
         )
     }
 
+    /** Стирает группу со всеми событиями, точками и состояниями одной транзакцией: «Новая группа» после маршрута. */
+    suspend fun leaveGroup() = db.withTransaction { deleteAll() }
+
     private suspend fun replaceActiveGroup(group: GroupInfo): GroupInfo = db.withTransaction {
+        deleteAll()
+        db.groupDao().insert(group.toEntity())
+        group
+    }
+
+    private suspend fun deleteAll() {
         db.controlEventDao().deleteAll()
         db.locationDao().deleteAll()
         db.memberStateDao().deleteAll()
         db.groupDao().deleteAll()
-        db.groupDao().insert(group.toEntity())
-        group
     }
 }

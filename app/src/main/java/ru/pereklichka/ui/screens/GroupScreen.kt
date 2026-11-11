@@ -27,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -45,20 +44,27 @@ import ru.pereklichka.ui.components.ButtonKind
 import ru.pereklichka.ui.components.MemberRow
 import ru.pereklichka.ui.components.MoreAlarmsBanner
 import ru.pereklichka.ui.components.PhoneWarning
-import ru.pereklichka.ui.components.WarningBanner
-import ru.pereklichka.ui.components.rememberPhoneWarnings
 import ru.pereklichka.ui.components.PromptBanner
 import ru.pereklichka.ui.components.RollcallBanner
+import ru.pereklichka.ui.components.WarningBanner
+import ru.pereklichka.ui.components.rememberPhoneWarnings
 import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.spacing
 
 private const val MAX_ALARM_BANNERS = 3
 
 /**
- * Список группы. По каждому участнику: имя, статус текстом, когда слышали последний раз (`lastContact`,
- * «примерно», если `approximate`), расстояние и направление, заряд. Сверху баннеры `view.alarms` и `view.prompts`.
- * Это главный экран, пока группа есть.
+ * Список группы, главный экран, пока группа есть. По каждому участнику: имя, статус текстом, когда слышали
+ * последний раз (`lastContact`, «примерно», если `approximate`), расстояние и направление, заряд.
  *
+ * Над списком баннеры тревог `view.alarms`, предупреждения [warnings] о телефоне и подсказки `view.prompts`.
+ * Предупреждение о том, что служба не запущена ([serviceStarted] равен false) или не хватает разрешений,
+ * открывает экран разрешений, остальные открывают системные настройки.
+ *
+ * Нижняя панель зависит от состояния маршрута. В «Сборе» руководитель видит «QR и «Выходим»». Пока маршрут идёт,
+ * у всех «Отойду» и SOS, а у руководителя ещё «Перекличка». После завершения у всех «Выключить», пока служба
+ * может работать, и «Новая группа». В меню диагностика, разрешения, у руководителя «QR группы» в любом состоянии
+ * и «Завершить маршрут», пока маршрут идёт.
  */
 @Composable
 fun GroupScreen(
@@ -70,16 +76,19 @@ fun GroupScreen(
     onSos: () -> Unit,
     onFinishRoute: () -> Unit,
     onDiagnostics: () -> Unit,
+    onPermissions: () -> Unit,
+    onLobby: () -> Unit,
     onStopService: () -> Unit,
-    onLobby: () -> Unit = {},
-    warnings: List<PhoneWarning> = rememberPhoneWarnings(view),
+    onNewGroup: () -> Unit,
+    serviceStarted: Boolean? = null,
+    warnings: List<PhoneWarning> = rememberPhoneWarnings(view, serviceStarted),
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { GroupTopBar(view, onFinishRoute, onDiagnostics) },
-        bottomBar = { GroupBottomBar(view, onRollcall, onAway, onSos, onStopService, onLobby) },
+        topBar = { GroupTopBar(view, onFinishRoute, onDiagnostics, onPermissions, onLobby) },
+        bottomBar = { GroupBottomBar(view, serviceStarted, onRollcall, onAway, onSos, onLobby, onStopService, onNewGroup) },
     ) { innerPadding ->
-        GroupList(view, warnings, innerPadding, onMember, onRollcall, onAlarms)
+        GroupList(view, warnings, innerPadding, onMember, onRollcall, onAlarms, onPermissions)
     }
 }
 
@@ -89,6 +98,8 @@ private fun GroupTopBar(
     view: GroupView,
     onFinishRoute: () -> Unit,
     onDiagnostics: () -> Unit,
+    onPermissions: () -> Unit,
+    onLobby: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     TopAppBar(
@@ -110,10 +121,12 @@ private fun GroupTopBar(
                     modifier = Modifier.semantics { contentDescription = "Меню" },
                 ) { Text("⋮", style = MaterialTheme.typography.titleLarge) }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Диагностика") },
-                        onClick = { menuOpen = false; onDiagnostics() },
-                    )
+                    // Участник вступает по QR с телефона руководителя в любом состоянии маршрута, не только в «Сборе».
+                    if (view.iAmLeader) {
+                        DropdownMenuItem(text = { Text("QR группы") }, onClick = { menuOpen = false; onLobby() })
+                    }
+                    DropdownMenuItem(text = { Text("Разрешения") }, onClick = { menuOpen = false; onPermissions() })
+                    DropdownMenuItem(text = { Text("Диагностика") }, onClick = { menuOpen = false; onDiagnostics() })
                     // Завершить маршрут может только руководитель и только пока маршрут идёт.
                     if (view.iAmLeader && view.route == RouteState.ACTIVE) {
                         DropdownMenuItem(
@@ -142,6 +155,7 @@ private fun GroupList(
     onMember: (MemberId) -> Unit,
     onRollcall: () -> Unit,
     onAlarms: () -> Unit,
+    onPermissions: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     val alone = view.members.none { !it.isMe }
@@ -163,7 +177,10 @@ private fun GroupList(
             item(key = "alarms-more") { MoreAlarmsBanner(view.alarms.size - MAX_ALARM_BANNERS, onAlarms) }
         }
         items(warnings, key = { "warning-${it.name}" }) { warning ->
-            WarningBanner(warning, onClick = { context.startActivity(warning.settingsIntent(context)) })
+            WarningBanner(warning, onClick = {
+                val intent = warning.settingsIntent(context)
+                if (intent == null) onPermissions() else context.startActivity(intent)
+            })
         }
         items(view.prompts, key = { "prompt-${it.member.value}" }) { prompt ->
             PromptBanner(prompt, onClick = { onMember(prompt.member) })
@@ -179,7 +196,11 @@ private fun GroupList(
         if (alone && view.route != RouteState.FINISHED) {
             item(key = "empty") {
                 Text(
-                    text = "Пока никого нет. Покажите QR-код участникам.",
+                    text = if (view.iAmLeader) {
+                        "Пока никого нет. Покажите QR-код участникам."
+                    } else {
+                        "Пока никого не слышно. Список заполнится, когда телефон найдёт группу."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -190,15 +211,16 @@ private fun GroupList(
     }
 }
 
-/** Нижняя панель: набор кнопок зависит от состояния маршрута и роли. */
 @Composable
 private fun GroupBottomBar(
     view: GroupView,
+    serviceStarted: Boolean?,
     onRollcall: () -> Unit,
     onAway: () -> Unit,
     onSos: () -> Unit,
-    onStopService: () -> Unit,
     onLobby: () -> Unit,
+    onStopService: () -> Unit,
+    onNewGroup: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -209,11 +231,7 @@ private fun GroupBottomBar(
             verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
             when (view.route) {
-                RouteState.FINISHED -> {
-                    // Служба работает ещё 15 минут, чтобы завершение дошло до всех. «Выключить» останавливает её сразу.
-                    Hint("Маршрут завершён. Приложение ещё 15 минут передаёт это остальным")
-                    BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY)
-                }
+                RouteState.FINISHED -> FinishedActions(view, serviceStarted, onStopService, onNewGroup)
                 RouteState.LOBBY -> {
                     Hint("Маршрут ещё не начался")
                     // После перезапуска приложение открывается на этом экране, и без кнопки руководитель
@@ -248,20 +266,26 @@ private fun Hint(text: String) {
 @Composable
 private fun GroupLeaderPreview() {
     PereklichkaTheme {
-        GroupScreen(FakeGroupViews.leader, {}, {}, {}, {}, {}, {}, {}, {}, warnings = listOf(PhoneWarning.BLUETOOTH_OFF))
+        GroupScreen(
+            FakeGroupViews.leader, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+            warnings = listOf(PhoneWarning.SERVICE_NOT_STARTED, PhoneWarning.BLUETOOTH_OFF),
+        )
     }
 }
 
 @Preview(name = "Группа: участник")
 @Composable
 private fun GroupParticipantPreview() {
-    PereklichkaTheme { GroupScreen(FakeGroupViews.participant, {}, {}, {}, {}, {}, {}, {}, {}) }
+    PereklichkaTheme { GroupScreen(FakeGroupViews.participant, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) }
 }
 
 @Preview(name = "Группа: маршрут завершён")
 @Composable
 private fun GroupFinishedPreview() {
     PereklichkaTheme {
-        GroupScreen(FakeGroupViews.participant.copy(route = RouteState.FINISHED, alarms = emptyList(), rollcall = null), {}, {}, {}, {}, {}, {}, {}, {})
+        GroupScreen(
+            FakeGroupViews.participant.copy(route = RouteState.FINISHED, alarms = emptyList(), rollcall = null),
+            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+        )
     }
 }
