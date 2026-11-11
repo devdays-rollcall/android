@@ -12,6 +12,7 @@ import org.robolectric.annotation.Config
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.GroupToken
+import ru.pereklichka.data.RoomMeshStore
 import ru.pereklichka.data.inMemoryDatabase
 import ru.pereklichka.domain.model.ControlEvent
 import ru.pereklichka.domain.model.EventType
@@ -21,6 +22,7 @@ import ru.pereklichka.domain.model.QrPayload
 import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.sync.ControlEventDraft
+import ru.pereklichka.domain.sync.MeshStore
 import ru.pereklichka.domain.testing.FakeClock
 import ru.pereklichka.domain.testing.InMemoryMeshStore
 import ru.pereklichka.service.OwnLocation
@@ -51,6 +53,30 @@ class GroupActionsTest {
         actions.startRollcall()
 
         assertEquals(listOf(EventType.ROUTE_STARTED, EventType.ROLLCALL), ownEvents(store, group).map { it.type })
+    }
+
+    @Test
+    fun `создание группы пишет JOINED руководителя с именем`() = runTest {
+        val store = RoomMeshStore(db, repository, clock)
+        val actions = actionsOver(store)
+
+        val group = actions.createGroup("Поход", " Аня ")
+
+        assertEquals(group, repository.activeGroup())
+        assertEquals(listOf(EventType.JOINED to "Аня"), ownEvents(store, group).map { it.type to it.name })
+    }
+
+    @Test
+    fun `без JOINED группа не создаётся`() = runTest {
+        val roomStore = RoomMeshStore(db, repository, clock)
+        val failing = object : MeshStore by roomStore {
+            override suspend fun appendOwnEvent(draft: ControlEventDraft): ControlEvent = error("процесс умер")
+        }
+        val actions = actionsOver(failing)
+
+        assertFailsWith<IllegalStateException> { actions.createGroup("Поход", "Аня") }
+
+        assertEquals(null, repository.activeGroup())
     }
 
     @Test
@@ -120,6 +146,10 @@ class GroupActionsTest {
 
     private fun TestScope.actionsFor(group: GroupInfo): Pair<GroupActions, InMemoryMeshStore> {
         val store = InMemoryMeshStore(group, clock)
+        return actionsOver(store) to store
+    }
+
+    private fun TestScope.actionsOver(store: MeshStore): GroupActions {
         viewProvider = GroupViewProvider(
             store = store,
             presence = PresenceTracker(clock),
@@ -128,9 +158,9 @@ class GroupActionsTest {
             clock = clock,
             scope = backgroundScope,
         )
-        return GroupActions(repository, store, viewProvider) to store
+        return GroupActions(repository, store, viewProvider, db)
     }
 
-    private suspend fun ownEvents(store: InMemoryMeshStore, group: GroupInfo): List<ControlEvent> =
+    private suspend fun ownEvents(store: MeshStore, group: GroupInfo): List<ControlEvent> =
         store.controlEvents(group.me, afterSeq = 0, limit = 100).map { it.value }
 }
