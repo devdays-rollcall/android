@@ -188,14 +188,13 @@ class NearbyPeerTransport @Inject constructor(
         val payload = Payload.fromBytes(bytes)
         val result = CompletableDeferred<Boolean>()
         synchronized(lock) { pendingSends[payload.id] = result }
-        connections.sendPayload(endpointId, payload)
-            .addOnFailureListener {
-                synchronized(lock) { pendingSends.remove(payload.id) }
-                result.complete(false)
-            }
-        val delivered = withTimeoutOrNull(SEND_TIMEOUT_MS) { result.await() }
-        if (delivered == null) synchronized(lock) { pendingSends.remove(payload.id) }
-        return delivered == true
+        try {
+            connections.sendPayload(endpointId, payload)
+                .addOnFailureListener { result.complete(false) }
+            return withTimeoutOrNull(SEND_TIMEOUT_MS) { result.await() } == true
+        } finally {
+            synchronized(lock) { pendingSends.remove(payload.id) }
+        }
     }
 
     override fun disconnect(peer: MemberId) {
@@ -405,9 +404,12 @@ class NearbyPeerTransport @Inject constructor(
     /** true, если с [member] можно соединиться по [ConnectionPolicy] и текущему списку блокировки. */
     private fun mayConnect(member: MemberId): Boolean {
         val cfg = config ?: return false
+        // Устанавливаемые соединения занимают слот: без них несколько одновременных
+        // запросов проходили бы мимо лимита и упирались бы в отказ Nearby.
+        val connecting = synchronized(lock) { pendingMembers.values.toSet() }
         return ConnectionPolicy.mayConnect(
             peer = member,
-            connected = peers.value,
+            connected = peers.value + connecting,
             blocked = cfg.blocked.value,
             isOutsider = cfg.isOutsider(member),
         )

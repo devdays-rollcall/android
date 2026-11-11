@@ -125,11 +125,12 @@ class SyncEngine @Inject constructor(
             var handshakeDone = false
 
             /**
-             * Delta, пришедшие до первого Hello: в сети сообщения могут переставляться, поэтому
-             * ответ на наше Hello может обогнать сам Hello. Держатся до проверки Hello, размер
-             * ограничен [MAX_PENDING_BEFORE_HELLO].
+             * Delta, пришедшие до первого Hello, и их форма для `apply`: в сети сообщения могут
+             * переставляться, поэтому ответ на наше Hello может обогнать сам Hello. Возраст записей
+             * в [IncomingDelta] считается при приёме, а не при применении. Размер ограничен
+             * [MAX_PENDING_BEFORE_HELLO].
              */
-            val pendingBeforeHello = mutableListOf<Delta>()
+            val pendingBeforeHello = mutableListOf<Pair<Delta, IncomingDelta>>()
 
             /** Срочные: Hello, свои новые события и состояние, ретранслируемые события. */
             val urgent = Channel<MeshMessage>(Channel.UNLIMITED)
@@ -252,11 +253,11 @@ class SyncEngine @Inject constructor(
                     onHello(session, message)
                     val queued = session.pendingBeforeHello.toList()
                     session.pendingBeforeHello.clear()
-                    queued.forEach { onDelta(session, it) }
+                    queued.forEach { (delta, incoming) -> onDelta(session, delta, incoming) }
                 }
                 message is Hello -> transport.disconnect(session.peer)
-                else -> {
-                    session.pendingBeforeHello.add(message as Delta)
+                message is Delta -> {
+                    session.pendingBeforeHello.add(message to message.toIncoming(clock))
                     if (session.pendingBeforeHello.size > MAX_PENDING_BEFORE_HELLO) transport.disconnect(session.peer)
                 }
             }
@@ -276,8 +277,12 @@ class SyncEngine @Inject constructor(
             session.enqueueNormal(composeDeltaReply(session))
         }
 
-        private suspend fun onDelta(session: PeerSession, delta: Delta) {
-            val result = store.apply(delta.toIncoming(clock))
+        private suspend fun onDelta(
+            session: PeerSession,
+            delta: Delta,
+            incoming: IncomingDelta = delta.toIncoming(clock),
+        ) {
+            val result = store.apply(incoming)
             diagnosticsState.update { it.copy(applied = it.applied + result) }
             session.markKnown(delta)
             if (delta.more) session.enqueueUrgent(hello())

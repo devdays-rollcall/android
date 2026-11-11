@@ -70,7 +70,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             Line("Движок", if (state.sync.running) "работает" else "остановлен")
             Line("Соседи", state.connectedPeers.joinToString().ifEmpty { "нет" })
             state.heardAgo.entries.sortedBy { it.key.value }.forEach { (member, ago) ->
-                Line(member.value, "${ago / 1000} с назад")
+                Line(state.memberNames[member] ?: member.value, "${ago / 1000} с назад")
             }
             Line("Сообщений отправлено и получено", "${state.sync.sentMessages} / ${state.sync.receivedMessages}")
             Line("Неразборчивых", state.sync.corruptMessages.toString())
@@ -80,7 +80,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             if (state.members.isEmpty()) Line("Участники", "нет")
             state.members.forEach { member ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(member.value, Modifier.weight(1f))
+                    Text(state.memberNames[member] ?: member.value, Modifier.weight(1f))
                     Switch(
                         checked = member in state.blocked,
                         onCheckedChange = { viewModel.setBlocked(member, it) },

@@ -41,6 +41,8 @@ data class DiagnosticsState(
     val members: List<MemberId> = emptyList(),
     /** Заблокированные участники: им не подключаемся и их сообщения отбрасываем. */
     val blocked: Set<MemberId> = emptySet(),
+    /** Имена участников из состояния группы; у тех, чей JOINED ещё не дошёл, имени нет. */
+    val memberNames: Map<MemberId, String> = emptyMap(),
 )
 
 /** Системные флаги для раздела «Телефон». ViewModel перечитывает их раз в 2 секунды, это проще, чем подписываться на рассылку о каждом. */
@@ -112,9 +114,13 @@ class DiagnosticsViewModel @Inject constructor(
         combine(transport.connectedPeers, engine.diagnostics, heardAgo, ::Triple),
         combine(settings.blockedMembers, viewProvider.view, ::Pair),
     ) { (group, system, dbCounts), (peers, sync, heard), (blocked, view) ->
+        val names = view?.members?.associate { it.id to it.name }.orEmpty()
+        // Себя в список блокировки не выводим: GroupView.members включает свой телефон.
         val roster = (view?.members?.map { it.id }.orEmpty() + heard.keys + blocked)
-            .distinct().sortedBy { it.value }
-        DiagnosticsState(group, system, dbCounts, peers, sync, heard, roster, blocked)
+            .distinct()
+            .filter { it != group?.me }
+            .sortedBy { names[it] ?: it.value }
+        DiagnosticsState(group, system, dbCounts, peers, sync, heard, roster, blocked, names)
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DiagnosticsState())
 
