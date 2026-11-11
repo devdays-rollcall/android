@@ -4,6 +4,9 @@
     <string name="service_channel_name">Работа на маршруте</string>
     <string name="service_notification_title">Перекличка на связи</string>
     <string name="service_notification_text">Обмен с группой и GPS работают в фоне</string>
+    <string name="route_not_finished_channel">Маршрут не завершён</string>
+    <string name="route_not_finished_title">Маршрут не завершён</string>
+    <string name="route_not_finished_text">Откройте приложение, чтобы продолжить обмен и запись трека</string>
     <string name="channel_alarms">Тревоги</string>
     <string name="channel_alarms_description">Тревоги и SOS участников группы. Звучат как будильник</string>
     <string name="channel_members">Участники</string>

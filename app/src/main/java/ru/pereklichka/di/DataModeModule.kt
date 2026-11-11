@@ -6,14 +6,10 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 
 /**
- * Переключатель фейковых данных. Пока он true, экраны показывают `FakeGroupViews` и их кнопки ничего не пишут,
- * а `RouteService` не запускает обмен и пишет только свой трек для сервера. Так по экранам можно ходить,
- * пока не готовы `RoomMeshStore`, `SyncEngine` и Nearby. Создание группы и вступление работают и в этом режиме.
- *
- * Когда части готовы, здесь ставят false: экраны получат настоящий `GroupView`, а служба запустит всё.
- * Любая оставшаяся заглушка с `NotImplementedError` тогда уронит приложение.
- *
- * Задача: docs/team/techlead.md
+ * Переключатель фейковых данных, в приложении он false. С true экраны показывают `FakeGroupViews`, кнопки
+ * ничего не пишут и SOS не уходит на сервер, а `RouteService` не запускает обмен и пишет только свой трек
+ * для сервера. Создание группы и вступление работают в обоих режимах. Режим оставлен запасным на случай,
+ * если настоящие данные откажут на демо.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -21,5 +17,5 @@ object DataModeModule {
 
     @Provides
     @FakeGroupData
-    fun useFakeGroupData(): Boolean = true
+    fun useFakeGroupData(): Boolean = false
 }

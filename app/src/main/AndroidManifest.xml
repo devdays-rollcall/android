@@ -71,10 +71,8 @@
             android:exported="false"
             android:foregroundServiceType="location|connectedDevice" />
 
-        <!-- Выключен, пока BootReceiver не готов: заглушка падала бы при каждой загрузке телефона. -->
         <receiver
             android:name=".service.BootReceiver"
-            android:enabled="false"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

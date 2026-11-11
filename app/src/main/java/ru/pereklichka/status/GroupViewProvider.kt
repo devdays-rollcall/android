@@ -6,14 +6,18 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.withTimeoutOrNull
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.di.ApplicationScope
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.rules.GroupCalculator
 import ru.pereklichka.domain.rules.GroupView
+import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.domain.rules.Thresholds
 import ru.pereklichka.domain.sync.MeshStore
 import ru.pereklichka.domain.time.Clock
@@ -60,6 +64,13 @@ class GroupViewProvider @Inject constructor(
         initialValue = null,
     )
 
+    /**
+     * Состояние маршрута по первому готовому расчёту. null, если за [FIRST_VIEW_TIMEOUT_MS] вид не появился:
+     * группы нет или база не ответила. Нужен запуску без экрана, где на [view] ещё никто не подписан, и такой
+     * запуск при null считает маршрут незавершённым, потому что лишний обмен безопаснее пропавшего.
+     */
+    suspend fun awaitRoute(): RouteState? = withTimeoutOrNull(FIRST_VIEW_TIMEOUT_MS) { view.filterNotNull().first().route }
+
     private fun refreshTicks() = flow {
         while (true) {
             emit(Unit)
@@ -72,5 +83,8 @@ class GroupViewProvider @Inject constructor(
 
         /** Сколько миллисекунд держать расчёт без подписчиков, чтобы поворот экрана не запускал его с нуля. */
         const val STOP_TIMEOUT_MS = 5_000L
+
+        /** Первый расчёт после старта процесса читает базу, на это хватает доли секунды. */
+        const val FIRST_VIEW_TIMEOUT_MS = 5_000L
     }
 }

@@ -39,8 +39,8 @@ object RequiredPermissions {
         listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
 
     /**
-     * «Разрешить всегда»: с ним служба после перезапуска поднимается и с типом location. Сейчас его не
-     * спрашивают. Если начнут, запрашивать его нужно отдельно и после [location].
+     * «Разрешить всегда»: с ним служба после перезапуска поднимается и с типом location. Запрашивается
+     * отдельно и после [location], до Android 10 его нет.
      */
     fun backgroundLocation(sdk: Int = Build.VERSION.SDK_INT): List<String> =
         if (sdk >= Build.VERSION_CODES.Q) listOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION) else emptyList()

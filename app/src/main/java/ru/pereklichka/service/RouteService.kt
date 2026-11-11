@@ -2,7 +2,6 @@ package ru.pereklichka.service
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -12,7 +11,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
@@ -64,7 +62,8 @@ import javax.inject.Inject
  * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт ещё [SyncConfig.exchangeAfterFinishMs],
  * чтобы завершение дошло до всех.
  *
- * Задача: docs/team/vasilisa-service-storage.md (перезапуск после убийства процесса)
+ * Если система убила процесс посреди маршрута, она возвращает службу сама (START_STICKY), а после перезагрузки
+ * её поднимает [BootReceiver]. Оба пути идут через [restartRoute].
  */
 @AndroidEntryPoint
 class RouteService : Service() {
@@ -96,20 +95,12 @@ class RouteService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) {
-            // TODO(Василиса): безопасный перезапуск после убийства процесса.
-            //  startForeground только с типом connectedDevice (location, если выдано «Разрешить всегда»),
-            //  перехватить ForegroundServiceStartNotAllowedException и показать «Маршрут не завершён».
-            //  docs/team/vasilisa-service-storage.md
-            handleRestart()
-            return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
-        }
-        when (intent.action) {
+        when (intent?.action) {
+            // Пустой интент приходит, когда система возвращает службу после убийства процесса (START_STICKY).
+            null, ACTION_RESTART -> restartRoute()
             ACTION_START -> startRoute()
             ACTION_STOP -> stopRoute()
         }
-        // В фейковом режиме перезапускать нечего. Без фейкового режима система вернёт службу с пустым интентом
-        // после убийства процесса, и ветка перезапуска выше должна быть готова.
         return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
     }
 
@@ -128,6 +119,8 @@ class RouteService : Service() {
             return
         }
         ServiceCompat.startForeground(this, ServiceNotification.ID, ServiceNotification.build(this), types)
+        // Человек открыл приложение, и служба снова пишет трек: напоминание после перезапуска больше не нужно.
+        if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0) RouteNotFinishedNotification.cancel(this)
         if (useFakeGroupData) {
             if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION == 0 || trackingJob?.isActive == true) return
             registerNetworkCallback()
@@ -144,6 +137,45 @@ class RouteService : Service() {
             if (route?.group == group) return@launch
             route?.stop()
             route = RouteSession(group).also { it.start() }
+        }
+    }
+
+    /**
+     * Поднимает маршрут без человека у экрана: после убийства процесса и после перезагрузки ([restart]).
+     * `startForeground` вызывается сразу, до чтения базы: службу, запущенную через `startForegroundService`,
+     * система убивает, если та не вышла на передний план за несколько секунд. Из фона тип location доступен
+     * только с «Разрешить всегда», без него обмен идёт, а трек стоит, пока человек не откроет приложение.
+     */
+    private fun restartRoute() {
+        if (useFakeGroupData || route != null) return
+        val types = foregroundServiceTypes(this, fromBackground = true)
+        if (!enterForeground(types)) {
+            RouteNotFinishedNotification.show(this)
+            stopSelf()
+            return
+        }
+        serviceScope.launch {
+            val group = groupRepository.activeGroup()
+            if (group == null || viewProvider.awaitRoute() == RouteState.FINISHED) return@launch stopRoute()
+            if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION == 0) RouteNotFinishedNotification.show(this@RouteService)
+            registerNetworkCallback()
+            if (route == null) route = RouteSession(group).also { it.start() }
+        }
+    }
+
+    /**
+     * false, если на передний план выйти нельзя: нет разрешений ни на один тип или Android 12 и новее
+     * запретил запуск из фона (`ForegroundServiceStartNotAllowedException`, бывает при автоматическом перезапуске).
+     */
+    private fun enterForeground(types: Int): Boolean {
+        if (types == 0) return false
+        return try {
+            ServiceCompat.startForeground(this, ServiceNotification.ID, ServiceNotification.build(this), types)
+            true
+        } catch (e: IllegalStateException) {
+            // ForegroundServiceStartNotAllowedException наследует IllegalStateException и есть только с Android 12.
+            Log.w(TAG, "Служба не вышла на передний план после перезапуска", e)
+            false
         }
     }
 
@@ -232,6 +264,7 @@ class RouteService : Service() {
         private const val TAG = "RouteService"
         private const val ACTION_START = "ru.pereklichka.action.START_ROUTE"
         private const val ACTION_STOP = "ru.pereklichka.action.STOP_ROUTE"
+        private const val ACTION_RESTART = "ru.pereklichka.action.RESTART_ROUTE"
 
         /**
          * Запускает службу для активной группы. Вызывать, только пока приложение на экране. Повторный вызов
@@ -244,6 +277,18 @@ class RouteService : Service() {
             return true
         }
 
+        /**
+         * Поднимает службу из фона после перезагрузки, только с типом connectedDevice (и location при «Разрешить
+         * всегда»). Если нет разрешений на обмен, службу не запускает и показывает «Маршрут не завершён».
+         */
+        fun restart(context: Context) {
+            if (foregroundServiceTypes(context, fromBackground = true) == 0) {
+                RouteNotFinishedNotification.show(context)
+                return
+            }
+            ContextCompat.startForegroundService(context, Intent(context, RouteService::class.java).setAction(ACTION_RESTART))
+        }
+
         /** Останавливает службу: кнопка «Выключить» после завершения маршрута. */
         fun stop(context: Context) {
             context.startService(Intent(context, RouteService::class.java).setAction(ACTION_STOP))
@@ -252,91 +297,21 @@ class RouteService : Service() {
         /**
          * Типы службы по выданным разрешениям, 0 если нельзя ни один: без разрешения Android 14 роняет запуск
          * службы с этим типом. До Android 10 `ServiceCompat.startForeground` типы не передаёт, поэтому константы
-         * новых версий здесь безопасны.
+         * новых версий здесь безопасны. [fromBackground] нужен запуску без экрана: тогда тип location требует
+         * ещё и «Разрешить всегда».
          */
         @SuppressLint("InlinedApi")
-        private fun foregroundServiceTypes(context: Context): Int {
+        private fun foregroundServiceTypes(context: Context, fromBackground: Boolean = false): Int {
             var types = 0
             if (RequiredPermissions.allGranted(context, RequiredPermissions.exchange())) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             }
             // Тип location берётся только с точной геолокацией: по приблизительной трек не записать.
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (fine && (!fromBackground || RequiredPermissions.allGranted(context, RequiredPermissions.backgroundLocation()))) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             }
             return types
         }
     }
-    private fun handleRestart() {
-        serviceScope.launch {
-            // 2.1. Активная группа
-            val group = groupRepository.activeGroup()
-            if (group == null) {
-                stopSelf()
-                return@launch
-            }
-
-            // 2.2. Маршрут уже завершён?
-            val routeState = viewProvider.view.value?.route
-            if (routeState == RouteState.FINISHED) {
-                stopSelf()
-                return@launch
-            }
-
-            // 2.3. Типы службы для перезапуска
-            val types = restartServiceTypes()
-            if (types == 0) {
-                // ни exchange, ни backgroundLocation — startForeground нельзя
-                RouteNotFinishedNotification.show(this@RouteService)
-                stopSelf()
-                return@launch
-            }
-
-            // 2.4. startForeground с перехватом
-            try {
-                ServiceCompat.startForeground(
-                    this@RouteService,
-                    ServiceNotification.ID,
-                    ServiceNotification.build(this@RouteService),
-                    types,
-                )
-            } catch (e: Exception) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    e is ForegroundServiceStartNotAllowedException
-                ) {
-                    RouteNotFinishedNotification.show(this@RouteService)
-                    stopSelf()
-                    return@launch
-                }
-                throw e
-            }
-
-            // 2.5. Без location — трек не пишется, но обмен работает
-            val hasLocationType = types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0
-            if (!hasLocationType) {
-                RouteNotFinishedNotification.show(this@RouteService)
-            }
-
-            // 2.6. Поднять RouteSession, как в startRoute
-            registerNetworkCallback()
-            if (route?.group == group) return@launch
-            route?.stop()
-            route = RouteSession(group).also { it.start() }
-        }
-    }
-
-    @SuppressLint("InlinedApi")
-    private fun restartServiceTypes(): Int {
-        var types = 0
-        // connectedDevice — только если есть разрешения на обмен
-        if (RequiredPermissions.allGranted(this, RequiredPermissions.exchange())) {
-            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        }
-        // location — только если выдано «Разрешить всегда»
-        if (RequiredPermissions.allGranted(this, RequiredPermissions.backgroundLocation())) {
-            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        }
-        return types
-    }
-
 }
