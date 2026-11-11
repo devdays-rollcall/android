@@ -20,10 +20,10 @@ class PresenceTrackerTest {
         tracker.onHeard(bob)
 
         nowMs += PresenceTracker.HEARD_NOW_MS
-        assertTrue(tracker.isHeardNow(bob))
+        assertTrue(isHeardNow(bob))
 
         nowMs += 1
-        assertFalse(tracker.isHeardNow(bob))
+        assertFalse(isHeardNow(bob))
     }
 
     @Test
@@ -33,12 +33,12 @@ class PresenceTrackerTest {
         tracker.onHeard(bob)
         nowMs += 25_000
 
-        assertTrue(tracker.isHeardNow(bob))
+        assertTrue(isHeardNow(bob))
     }
 
     @Test
     fun `того, кого не слышали, нет`() {
-        assertFalse(tracker.isHeardNow(bob))
+        assertFalse(isHeardNow(bob))
         assertEquals(emptyMap(), tracker.heardAgo())
     }
 
@@ -56,10 +56,13 @@ class PresenceTrackerTest {
     }
 
     @Test
-    fun `lastHeard хранит момент по монотонным часам`() {
+    fun `давность считается по монотонным часам`() {
         nowMs = 7_000
         tracker.onHeard(bob)
+        nowMs = 9_500
 
-        assertEquals(mapOf(bob to 7_000L), tracker.lastHeard.value)
+        assertEquals(mapOf(bob to 2_500L), tracker.heardAgo())
     }
+
+    private fun isHeardNow(member: MemberId) = PresenceTracker.isHeardNow(tracker.heardAgo()[member])
 }

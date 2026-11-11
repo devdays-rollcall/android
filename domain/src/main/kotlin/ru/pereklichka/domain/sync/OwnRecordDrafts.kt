@@ -22,7 +22,10 @@ data class ControlEventDraft(
     val durationMs: Long? = null,
     val resolveKind: ResolveKind? = null,
 ) {
-    /** Готовое событие. Вызывает хранилище внутри транзакции, где выдан [seq]. */
+    /**
+     * Готовое событие. Вызывает хранилище внутри транзакции, где выдан [seq]. У имени отрезаются пробелы
+     * по краям, и оно укорачивается до [MAX_NAME_LENGTH] символов.
+     */
     fun toEvent(id: EventId, author: MemberId, seq: Long, createdAtWallMs: Long): ControlEvent = ControlEvent(
         id = id,
         author = author,
@@ -31,10 +34,27 @@ data class ControlEventDraft(
         type = type,
         target = target,
         refs = refs,
-        name = name,
+        name = name?.let(::limitName),
         durationMs = durationMs,
         resolveKind = resolveKind,
     )
+
+    companion object {
+        /**
+         * Предел длины имени участника в JOINED, символов. С ним событие всегда влезает в одно сообщение
+         * между телефонами. Запись, которая не влезает, движок не отправляет, и поток событий автора
+         * у соседей на ней останавливается.
+         */
+        const val MAX_NAME_LENGTH: Int = 40
+
+        private fun limitName(name: String): String {
+            val trimmed = name.trim()
+            if (trimmed.length <= MAX_NAME_LENGTH) return trimmed
+            // Не разрезать суррогатную пару: половина эмодзи в JSON превратилась бы в мусор.
+            val end = if (trimmed[MAX_NAME_LENGTH - 1].isHighSurrogate()) MAX_NAME_LENGTH - 1 else MAX_NAME_LENGTH
+            return trimmed.substring(0, end).trimEnd()
+        }
+    }
 }
 
 /**
