@@ -58,6 +58,19 @@ class GroupCalculatorTest {
     }
 
     @Test
+    fun `в списке сначала SOS, потом тревога, «Не слышно», отлучка и остальные`() {
+        val history = History().apply {
+            joinAll(ageMs = 60 * 60_000)
+            event(a, EventType.SOS)
+            state(b, ageMs = 1_000)
+            event(leader, EventType.ALARM, target = b)
+            event(d, EventType.AWAY, ageMs = 60_000, durationMs = 10 * 60_000)
+        }
+
+        assertEquals(listOf(a, b, c, d, leader), compute(history).members.map { it.id })
+    }
+
+    @Test
     fun `участник становится «Не слышно» после порога`() {
         val history = History().apply {
             joinAll(ageMs = 60 * 60_000)

@@ -18,7 +18,10 @@ data class GroupView(
     val me: MemberId,
     val iAmLeader: Boolean,
     val route: RouteState,
-    /** Все участники из событий JOINED, я первым, остальные по имени. */
+    /**
+     * Все участники из событий JOINED по тяжести: SOS, тревога, «Не слышно», отлучка, остальные. Внутри каждой
+     * ступени я первым, остальные по имени.
+     */
     val members: List<MemberView>,
     /** Только активные тревоги. */
     val alarms: List<AlarmView>,

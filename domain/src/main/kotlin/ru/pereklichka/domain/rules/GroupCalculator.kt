@@ -58,10 +58,22 @@ class GroupCalculator(private val thresholds: Thresholds) {
             .associate { it.value.author to (it.value.name ?: it.value.author.value) }
         private val alarms: List<AlarmView> = activeAlarms(events.map { it.value }, group.leaderId).map(::alarmView)
 
+        /**
+         * Место участника в списке: кому нужна помощь, стоит выше. В большой группе пропавший иначе уходил бы
+         * под нижнюю панель экрана и был виден только после прокрутки.
+         */
+        private fun severity(member: MemberView): Int = when {
+            member.hasSos -> 0
+            member.hasActiveAlarm -> 1
+            member.presence == Presence.LOST -> 2
+            member.presence == Presence.AWAY -> 3
+            else -> 4
+        }
+
         fun groupView(): GroupView {
             val members = names.keys
                 .map(::memberView)
-                .sortedWith(compareBy({ !it.isMe }, { it.name }, { it.id.value }))
+                .sortedWith(compareBy(::severity, { !it.isMe }, { it.name }, { it.id.value }))
             return GroupView(
                 group = group,
                 me = me,
