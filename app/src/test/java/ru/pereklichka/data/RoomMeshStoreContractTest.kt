@@ -21,7 +21,7 @@ import ru.pereklichka.domain.time.Clock
  * Тест-спецификация для Василисы: сними `@Ignore`, когда `RoomMeshStore` готов, и добейся зелёного.
  * Задача: docs/team/vasilisa-service-storage.md
  */
-@Ignore("включи, когда сделаешь RoomMeshStore")
+//@Ignore("включи, когда сделаешь RoomMeshStore")
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class RoomMeshStoreContractTest : MeshStoreContractTest() {

@@ -32,6 +32,12 @@ interface ControlEventDao {
     @Query("SELECT author, MAX(seq) AS maxSeq FROM control_event GROUP BY author")
     suspend fun maxSeqByAuthor(): List<AuthorMaxSeq>
 
+    @Query("SELECT * FROM control_event WHERE author = :author")
+    suspend fun findByAuthor(author: String): List<ControlEventEntity>
+
+    @Query("SELECT author, MAX(seq) AS maxSeq FROM control_event WHERE author = :author GROUP BY author")
+    suspend fun findMaxSeqByAuthor(author: String): AuthorMaxSeq?
+
     @Query("SELECT * FROM control_event WHERE author = :author AND seq > :afterSeq ORDER BY seq LIMIT :limit")
     suspend fun range(author: String, afterSeq: Long, limit: Int): List<ControlEventEntity>
 
@@ -59,6 +65,12 @@ interface LocationDao {
 
     @Query("SELECT author, MAX(seq) AS maxSeq FROM location_point GROUP BY author")
     suspend fun maxSeqByAuthor(): List<AuthorMaxSeq>
+
+    @Query("SELECT * FROM location_point WHERE author = :author")
+    suspend fun findByAuthor(author: String): List<LocationPointEntity>
+
+    @Query("SELECT author, MAX(seq) AS maxSeq FROM location_point WHERE author = :author GROUP BY author")
+    suspend fun findMaxSeqByAuthor(author: String): AuthorMaxSeq?
 
     @Query("SELECT * FROM location_point WHERE author = :author AND seq > :afterSeq ORDER BY seq LIMIT :limit")
     suspend fun range(author: String, afterSeq: Long, limit: Int): List<LocationPointEntity>
