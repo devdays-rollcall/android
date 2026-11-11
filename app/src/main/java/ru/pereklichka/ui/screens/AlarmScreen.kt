@@ -1,7 +1,7 @@
 package ru.pereklichka.ui.screens
 
 import android.content.res.Configuration
-import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +32,7 @@ import ru.pereklichka.domain.rules.AlarmView
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.NearbyPrompt
 import ru.pereklichka.ui.FakeGroupViews
+import ru.pereklichka.ui.components.BackButton
 import ru.pereklichka.ui.components.BigButton
 import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.ButtonKind
@@ -45,8 +46,10 @@ import ru.pereklichka.ui.theme.statusColors
  * кто смотрит: «Я в порядке» у самого человека, «Вижу, в порядке» у остальных, «Ложная тревога» у руководителя
  * и автора тревоги. Там же подсказки о близости `view.prompts`.
  *
- * Тревогу нельзя пропустить: пока есть хоть одна активная тревога, экран красный и «Назад» не работает.
- * Когда тревог не остаётся, экран показывает это и кнопку [onClose].
+ * Пока есть хоть одна активная тревога, экран красный. Уйти с него можно, не снимая тревогу: руководителю
+ * нужны перекличка, карточка пропавшего и SOS, а пропустить тревогу не дадут красный баннер на экране группы
+ * и уведомление. Нажатие на карточку тревоги открывает экран участника ([onMember]). Когда тревог не остаётся,
+ * экран показывает это и кнопку [onClose].
  *
  * Задача: docs/team/valentin-ui.md
  */
@@ -54,26 +57,25 @@ import ru.pereklichka.ui.theme.statusColors
 fun AlarmScreen(
     view: GroupView,
     onResolve: (target: MemberId, kind: ResolveKind) -> Unit,
+    onMember: (MemberId) -> Unit,
     onClose: () -> Unit,
 ) {
     val active = view.alarms.isNotEmpty()
-    // Системный «Назад» не закрывает экран, пока тревога активна. Выйти можно, только сняв все тревоги.
-    BackHandler(enabled = active) {}
 
     val background = if (active) MaterialTheme.statusColors.alarm.container else MaterialTheme.colorScheme.background
     val content = if (active) MaterialTheme.statusColors.alarm.content else MaterialTheme.colorScheme.onBackground
     Scaffold(
         containerColor = background,
         contentColor = content,
-        topBar = { AlarmTopBar(view, background, content) },
+        topBar = { AlarmTopBar(view, background, content, onClose) },
     ) { innerPadding ->
-        if (active) AlarmList(view, innerPadding, onResolve) else NoAlarms(innerPadding, onClose)
+        if (active) AlarmList(view, innerPadding, onResolve, onMember) else NoAlarms(innerPadding, onClose)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AlarmTopBar(view: GroupView, background: Color, content: Color) {
+private fun AlarmTopBar(view: GroupView, background: Color, content: Color, onClose: () -> Unit) {
     val title = when (view.alarms.size) {
         0 -> "Тревог нет"
         1 -> "Тревога"
@@ -86,6 +88,7 @@ private fun AlarmTopBar(view: GroupView, background: Color, content: Color) {
                 Text(view.group.name, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
         },
+        navigationIcon = { BackButton(onClose, tint = content) },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = background,
             titleContentColor = content,
@@ -98,6 +101,7 @@ private fun AlarmList(
     view: GroupView,
     innerPadding: PaddingValues,
     onResolve: (target: MemberId, kind: ResolveKind) -> Unit,
+    onMember: (MemberId) -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     LazyColumn(
@@ -115,14 +119,22 @@ private fun AlarmList(
             PromptCard(prompt, onSeenOk = { onResolve(prompt.member, ResolveKind.SEEN_OK) })
         }
         items(view.alarms, key = { "alarm-${it.id.value}" }) { alarm ->
-            AlarmCard(view, alarm, onResolve)
+            AlarmCard(view, alarm, onResolve, onOpen = { onMember(alarm.target) })
         }
     }
 }
 
-/** Белая карточка на красном фоне: кто, кем объявлена, когда, и кнопки снятия по роли смотрящего. */
+/**
+ * Белая карточка на красном фоне: кто, кем объявлена, когда, и кнопки снятия по роли смотрящего. Нажатие на заголовок
+ * открывает экран участника с последней позицией и тем, кто слышал его последним.
+ */
 @Composable
-private fun AlarmCard(view: GroupView, alarm: AlarmView, onResolve: (target: MemberId, kind: ResolveKind) -> Unit) {
+private fun AlarmCard(
+    view: GroupView,
+    alarm: AlarmView,
+    onResolve: (target: MemberId, kind: ResolveKind) -> Unit,
+    onOpen: () -> Unit,
+) {
     val spacing = MaterialTheme.spacing
     val aboutMe = alarm.target == view.me
     val title = when {
@@ -142,7 +154,10 @@ private fun AlarmCard(view: GroupView, alarm: AlarmView, onResolve: (target: Mem
 
     Card {
         Column(
-            Modifier.semantics(mergeDescendants = true) { contentDescription = "$title. $subtitle" },
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = "Открыть карточку участника", onClick = onOpen)
+                .semantics(mergeDescendants = true) { contentDescription = "$title. $subtitle" },
             verticalArrangement = Arrangement.spacedBy(spacing.xs),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

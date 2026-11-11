@@ -191,7 +191,14 @@ fun AppNavHost(
             }
         }
         composable<AlarmRoute> {
-            WithView(view) { AlarmScreen(it, onResolve = viewModel::resolve, onClose = { navController.popBackStack() }) }
+            WithView(view) {
+                AlarmScreen(
+                    it,
+                    onResolve = viewModel::resolve,
+                    onMember = { member -> navController.navigate(MemberRoute(member.value)) { launchSingleTop = true } },
+                    onClose = { navController.popBackStack() },
+                )
+            }
         }
         composable<SosRoute> {
             WithView(view) { SosScreen(it, onSos = viewModel::sos, onBack = { navController.popBackStack() }) }
