@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -32,9 +34,9 @@ import javax.inject.Inject
  * Состояние и действия для всех экранов группы: экраны рисуют [view] и вызывают методы действий, а методы
  * передают их в [GroupActions]. Один экземпляр на всю навигацию создаёт `AppNavHost`.
  *
- * В фейковом режиме (`DataModeModule`) [view] берётся из [FakeGroupViews].
- * Создание группы и вступление при этом настоящие: они пишут группу в базу и запускают службу, только событие
- * JOINED пропускают.
+ * В фейковом режиме (`DataModeModule`) [view] берётся из [FakeGroupViews], а действия и отправка SOS на сервер
+ * ничего не делают. Создание группы, вступление и «Новая группа» при этом настоящие: они пишут группу в базу
+ * или стирают её и управляют службой, только событие JOINED пропускают.
  *
  * Задача: docs/team/valentin-ui.md (экраны вызывают эти методы)
  */
@@ -70,6 +72,27 @@ class GroupViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
     /**
+     * Есть ли активная группа сейчас; null, пока база не ответила. По нему навигация уходит с экранов создания
+     * и вступления, когда группа появилась, и на старт, когда «Новая группа» её стёрла.
+     */
+    val hasGroup: StateFlow<Boolean?> = repository.activeGroup.map { it != null }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
+
+    private val serviceStartedState = MutableStateFlow<Boolean?>(null)
+
+    /**
+     * Запущена ли служба по последнему вызову [RouteService.start]. false, если запуск не удался из-за разрешений
+     * или службу остановили «Выключить» и «Новая группа»; null, пока службу в этом процессе не запускали.
+     * Что служба сама выключилась через 15 минут после завершения маршрута, здесь не видно.
+     */
+    val serviceStarted: StateFlow<Boolean?> = serviceStartedState.asStateFlow()
+
+    private val settingUpState = MutableStateFlow(false)
+
+    /** Группа создаётся или идёт вступление: кнопка экрана неактивна, пока навигация не уведёт дальше. */
+    val settingUp: StateFlow<Boolean> = settingUpState.asStateFlow()
+
+    /**
      * Поднимает службу, когда приложение на экране: после убийства процесса, принудительной остановки или выдачи
      * разрешений. Для той же группы служба ничего не перезапускает. После завершения маршрута служба не поднимается:
      * она сама работает 15 минут после ROUTE_FINISHED или её останавливает «Выключить». Вид ждём из потока, потому что
@@ -79,23 +102,31 @@ class GroupViewModel @Inject constructor(
         viewModelScope.launch {
             if (repository.activeGroup() == null) return@launch
             if (view.filterNotNull().first().route == RouteState.FINISHED) return@launch
-            RouteService.start(context)
+            serviceStartedState.value = RouteService.start(context)
         }
     }
 
-    fun createGroup(groupName: String, myName: String, onCreated: () -> Unit) {
-        viewModelScope.launch {
-            if (useFakeGroupData) repository.createGroup(groupName) else actions.createGroup(groupName, myName)
-            RouteService.start(context)
-            onCreated()
-        }
+    /** Пишет новую группу и запускает службу. На экран QR переводит навигация, когда [hasGroup] станет true. */
+    fun createGroup(groupName: String, myName: String) = setUpGroup {
+        if (useFakeGroupData) repository.createGroup(groupName) else actions.createGroup(groupName, myName)
     }
 
-    fun joinGroup(qr: QrPayload, myName: String, onJoined: () -> Unit) {
+    /** Вступает по QR и запускает службу. К списку группы переводит навигация, когда [hasGroup] станет true. */
+    fun joinGroup(qr: QrPayload, myName: String) = setUpGroup {
+        if (useFakeGroupData) repository.join(qr) else actions.joinGroup(qr, myName)
+    }
+
+    private fun setUpGroup(write: suspend () -> Unit) {
+        if (settingUpState.value) return
+        settingUpState.value = true
+        serviceStartedState.value = null
         viewModelScope.launch {
-            if (useFakeGroupData) repository.join(qr) else actions.joinGroup(qr, myName)
-            RouteService.start(context)
-            onJoined()
+            try {
+                write()
+                serviceStartedState.value = RouteService.start(context)
+            } finally {
+                settingUpState.value = false
+            }
         }
     }
 
@@ -103,8 +134,17 @@ class GroupViewModel @Inject constructor(
 
     fun finishRoute() = act { actions.finishRoute() }
 
-    /** «Выключить» после завершения маршрута, не дожидаясь 15 минут. */
-    fun stopService() = RouteService.stop(context)
+    /** «Выключить» после завершения маршрута, не дожидаясь 15 минут. Группа остаётся на телефоне. */
+    fun stopService() {
+        serviceStartedState.value = false
+        RouteService.stop(context)
+    }
+
+    /** «Новая группа»: служба останавливается и стирает группу, а навигация по [hasGroup] уходит на старт. */
+    fun leaveGroup() {
+        serviceStartedState.value = false
+        RouteService.leave(context)
+    }
 
     fun startRollcall() = act { actions.startRollcall() }
 
@@ -119,10 +159,15 @@ class GroupViewModel @Inject constructor(
     /** SOS уходит и в mesh к телефонам группы, и на сервер мониторинга, когда появится сеть. */
     fun sos() {
         act { actions.sos() }
-        viewModelScope.launch {
-            val group = repository.activeGroup() ?: return@launch
-            uploadScheduler.sendSos(group, settings.serverUrl.value)
-        }
+        act { sendSosToServer() }
+    }
+
+    /** «Отправить на сервер ещё раз», если прошлая отправка SOS на сервер не удалась. В mesh SOS уже ушёл. */
+    fun resendSosToServer() = act { sendSosToServer() }
+
+    private suspend fun sendSosToServer() {
+        val group = repository.activeGroup() ?: return
+        uploadScheduler.sendSos(group, settings.serverUrl.value)
     }
 
     fun resolve(target: MemberId, kind: ResolveKind) = act { actions.resolve(target, kind) }

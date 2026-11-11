@@ -26,11 +26,10 @@ private fun Banner(
     title: String,
     subtitle: String?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) { contentDescription = listOfNotNull(title, subtitle).joinToString(". ") },
         shape = MaterialTheme.shapes.medium,
@@ -46,7 +45,7 @@ private fun Banner(
 
 /** Активная тревога или SOS: сплошной красный блок, нажатие открывает экран тревог. */
 @Composable
-fun AlarmBanner(alarm: AlarmView, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun AlarmBanner(alarm: AlarmView, onClick: () -> Unit) {
     val color = MaterialTheme.statusColors.alarm
     Banner(
         container = color.container,
@@ -54,20 +53,19 @@ fun AlarmBanner(alarm: AlarmView, onClick: () -> Unit, modifier: Modifier = Modi
         title = if (alarm.isSos) "SOS: ${alarm.targetName}" else "Тревога: ${alarm.targetName}",
         subtitle = if (alarm.isSos) formatAge(alarm.age) else "Объявил(а) ${alarm.raisedByName} · ${formatAge(alarm.age)}",
         onClick = onClick,
-        modifier = modifier,
     )
 }
 
 /** «Ещё N тревог» под тремя показанными. */
 @Composable
-fun MoreAlarmsBanner(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun MoreAlarmsBanner(count: Int, onClick: () -> Unit) {
     val color = MaterialTheme.statusColors.lost
-    Banner(color.container, color.content, "Ещё $count: открыть все тревоги", null, onClick, modifier)
+    Banner(color.container, color.content, "Ещё $count: открыть все тревоги", null, onClick)
 }
 
 /** Телефон участника, о котором объявлена тревога, рядом. Подтверждает человек на карточке участника. */
 @Composable
-fun PromptBanner(prompt: NearbyPrompt, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun PromptBanner(prompt: NearbyPrompt, onClick: () -> Unit) {
     val color = MaterialTheme.statusColors.away
     Banner(
         container = color.container,
@@ -75,20 +73,22 @@ fun PromptBanner(prompt: NearbyPrompt, onClick: () -> Unit, modifier: Modifier =
         title = "Рядом телефон участника ${prompt.name}. Вы видите этого человека?",
         subtitle = "Откройте карточку, чтобы подтвердить, что он в порядке",
         onClick = onClick,
-        modifier = modifier,
     )
 }
 
-/** Предупреждение о телефоне: выключен Bluetooth, уведомления или включена полная тишина. Нажатие открывает настройки. */
+/**
+ * Предупреждение о телефоне: служба не запущена, не хватает разрешений, выключен Bluetooth или уведомления, включена
+ * полная тишина. Нажатие открывает экран, где это исправляется.
+ */
 @Composable
-fun WarningBanner(warning: PhoneWarning, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val color = MaterialTheme.statusColors.away
-    Banner(color.container, color.content, warning.title, warning.subtitle, onClick, modifier)
+fun WarningBanner(warning: PhoneWarning, onClick: () -> Unit) {
+    val color = if (warning == PhoneWarning.SERVICE_NOT_STARTED) MaterialTheme.statusColors.lost else MaterialTheme.statusColors.away
+    Banner(color.container, color.content, warning.title, warning.subtitle, onClick)
 }
 
 /** Идёт перекличка: руководитель видит, сколько ответило, участник видит, сколько осталось времени. */
 @Composable
-fun RollcallBanner(rollcall: RollcallView, iAmLeader: Boolean, iAnswered: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun RollcallBanner(rollcall: RollcallView, iAmLeader: Boolean, iAnswered: Boolean, onClick: () -> Unit) {
     val color = MaterialTheme.statusColors.ok
     val total = rollcall.answered.size + rollcall.silentNearby.size + rollcall.notHeard.size
     val (title, subtitle) = when {
@@ -96,5 +96,5 @@ fun RollcallBanner(rollcall: RollcallView, iAmLeader: Boolean, iAnswered: Boolea
         iAnswered -> "Вы ответили на перекличку" to formatRemaining(rollcall.remainingMs)
         else -> "Идёт перекличка: нажмите «Я здесь»" to formatRemaining(rollcall.remainingMs)
     }
-    Banner(color.container, color.content, title, subtitle, onClick, modifier)
+    Banner(color.container, color.content, title, subtitle, onClick)
 }

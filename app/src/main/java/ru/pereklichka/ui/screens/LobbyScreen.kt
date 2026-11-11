@@ -34,7 +34,9 @@ import ru.pereklichka.ui.components.ButtonKind
 import ru.pereklichka.ui.components.CardLabel
 import ru.pereklichka.ui.components.HintText
 import ru.pereklichka.ui.components.InfoCard
+import ru.pereklichka.ui.components.WarningBanner
 import ru.pereklichka.ui.components.plural
+import ru.pereklichka.ui.components.rememberPermissionWarning
 import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.spacing
 
@@ -51,10 +53,20 @@ private val QrInk = Color(0xFF1B1F1D)
  * QR чёрный на белом даже в тёмной теме: так его считают с полуметра на солнце. «Передать токен» отправляет
  * через `ACTION_SEND` название группы, токен и [serverUrl] (пока у сайта карты нет своего адреса).
  *
+ * Если служба не запустилась ([serviceStarted] равен false) или не хватает разрешений, над QR предупреждение
+ * со входом на экран разрешений: без службы телефоны участников не найдут этот.
+ *
  * Задача: docs/team/valentin-ui.md
  */
 @Composable
-fun LobbyScreen(view: GroupView, serverUrl: String, onStartRoute: () -> Unit, onOpenGroup: () -> Unit) {
+fun LobbyScreen(
+    view: GroupView,
+    serverUrl: String,
+    serviceStarted: Boolean?,
+    onStartRoute: () -> Unit,
+    onOpenGroup: () -> Unit,
+    onPermissions: () -> Unit,
+) {
     val context = LocalContext.current
     val qrText = remember(view.group) {
         QrFormat.encode(QrPayload(view.group.token, view.group.name, view.group.leaderId))
@@ -91,6 +103,7 @@ fun LobbyScreen(view: GroupView, serverUrl: String, onStartRoute: () -> Unit, on
             }
         },
     ) {
+        rememberPermissionWarning(serviceStarted)?.let { WarningBanner(it, onPermissions) }
         InfoCard(container = Color.White) {
             Column(
                 Modifier.fillMaxWidth(),
@@ -136,6 +149,6 @@ fun LobbyScreen(view: GroupView, serverUrl: String, onStartRoute: () -> Unit, on
 @Composable
 private fun LobbyPreview() {
     PereklichkaTheme {
-        LobbyScreen(FakeGroupViews.leader.copy(route = RouteState.LOBBY), "http://192.168.1.20:8080", {}, {})
+        LobbyScreen(FakeGroupViews.leader.copy(route = RouteState.LOBBY), "http://192.168.1.20:8080", true, {}, {}, {})
     }
 }

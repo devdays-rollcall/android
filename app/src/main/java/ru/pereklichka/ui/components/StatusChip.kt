@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -15,7 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -25,16 +22,15 @@ import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.spacing
 import ru.pereklichka.ui.theme.statusColors
 
-
 /** Какой статус показывать: тревога, «Не слышно», отлучка или норма. */
 enum class StatusKind { ALARM, LOST, AWAY, OK }
 
-/** Статус для показа: вид (от него зависят цвет и иконка) и текст. */
+/** Статус для показа: вид (от него зависит цвет) и текст. */
 data class StatusInfo(val kind: StatusKind, val text: String)
 
 /**
  * Выбирает статус участника. Приоритет: SOS, тревога, «Не слышно», отлучка, иначе норма. Чистая функция без Compose,
- * поэтому проверяется обычным юнит-тестом.
+ * её проверяет `StatusOfTest`.
  */
 fun statusOf(member: MemberView): StatusInfo = when {
     member.hasSos -> StatusInfo(StatusKind.ALARM, "SOS")
@@ -48,7 +44,7 @@ fun statusOf(member: MemberView): StatusInfo = when {
     else -> StatusInfo(StatusKind.OK, "Норма")
 }
 
-/** Плашка статуса участника: иконка и текст на цветном фоне. Цвет всегда дублируется текстом и формой иконки. */
+/** Плашка статуса участника: текст на цветном фоне. Цвет всегда дублируется текстом, тревога ещё и жирным. */
 @Composable
 fun StatusChip(member: MemberView, modifier: Modifier = Modifier) {
     StatusChip(statusOf(member), modifier)

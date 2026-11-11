@@ -118,7 +118,7 @@ private fun StatusCard(member: MemberView) {
             if (!member.isMe) {
                 BigValue(
                     "До последней точки",
-                    formatPlace(member.distanceM, member.bearingDeg) ?: "нет позиции",
+                    formatPlace(member) ?: "нет позиции",
                     Modifier.weight(1f),
                 )
             }

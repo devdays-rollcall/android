@@ -18,7 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ru.pereklichka.ui.components.ScreenHeader
 
 /**
  * Диагностика для прогонов на телефонах: кто я, в какой группе, работает ли радио и фон, сколько записей в базе,
@@ -35,19 +36,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * Задача: docs/team/olga-transport.md
  */
 @Composable
-fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
+fun DiagnosticsScreen(onBack: () -> Unit, viewModel: DiagnosticsViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val demoMode by viewModel.demoMode.collectAsStateWithLifecycle()
     val uploadError by viewModel.uploadError.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var editedUrl by remember(serverUrl) { mutableStateOf(serverUrl) }
+    var editedUrl by rememberSaveable(serverUrl) { mutableStateOf(serverUrl) }
 
     Surface(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Шапка уезжает вместе со списком: экран служебный, и места под строки так больше.
+            ScreenHeader("Диагностика", onBack = onBack)
             Section("Группа")
             Line("member_id", state.group?.me?.value ?: "нет группы")
             Line("Группа", state.group?.let { "${it.name}, тег ${it.tag}" } ?: "нет")
