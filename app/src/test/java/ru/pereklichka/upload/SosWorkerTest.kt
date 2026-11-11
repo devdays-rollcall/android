@@ -16,7 +16,13 @@ import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import ru.pereklichka.data.GroupRepository
+import ru.pereklichka.data.db.toEntity
+import ru.pereklichka.data.inMemoryDatabase
 import ru.pereklichka.di.NetworkModule
+import ru.pereklichka.domain.model.GroupInfo
+import ru.pereklichka.domain.model.MemberId
+import ru.pereklichka.domain.testing.FakeClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -26,12 +32,20 @@ import kotlin.test.assertTrue
 class SosWorkerTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val server = MockWebServer()
+    private val db = inMemoryDatabase()
+    private val repository = GroupRepository(db, FakeClock { 0 })
 
     @Before
-    fun start() = server.start()
+    fun start() = runTest {
+        server.start()
+        db.groupDao().insert(group("test-token").toEntity())
+    }
 
     @After
-    fun close() = server.close()
+    fun close() {
+        server.close()
+        db.close()
+    }
 
     @Test
     fun `notified alert completes`() = runTest {
@@ -69,14 +83,32 @@ class SosWorkerTest {
         assertEquals(ListenableWorker.Result.retry(), runWorker())
     }
 
+    @Test
+    fun `captive portal page retries`() = runTest {
+        server.enqueue(MockResponse.Builder().code(200).body("<html>Войдите в сеть</html>").build())
+        assertEquals(ListenableWorker.Result.retry(), runWorker())
+    }
+
+    @Test
+    fun `replaced group completes without sending`() = runTest {
+        db.groupDao().deleteAll()
+        db.groupDao().insert(group("other-token").toEntity())
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+        assertEquals(0, server.requestCount)
+    }
+
     private suspend fun runWorker(): ListenableWorker.Result {
         val worker = TestListenableWorkerBuilder<SosWorker>(context)
             .setInputData(workDataOf(SosWorker.TOKEN to "test-token", SosWorker.MEMBER to "member", SosWorker.URL to server.url("/").toString()))
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
-                    SosWorker(appContext, workerParameters, NetworkModule.eventsApi(NetworkModule.okHttpClient()))
+                    SosWorker(appContext, workerParameters, NetworkModule.eventsApi(NetworkModule.okHttpClient()), repository)
             })
             .build()
         return worker.doWork()
     }
+
+    private fun group(token: String) =
+        GroupInfo(tag = "tag-$token", token = token, name = "Поход", leaderId = MemberId("member"), me = MemberId("member"), createdAtWallMs = 0)
 }

@@ -9,20 +9,20 @@
 Пути сокращены: `domain/...` значит `domain/src/main/kotlin/ru/pereklichka/domain/...`, а `app/...` значит `app/src/main/java/ru/pereklichka/...`. Тесты лежат так же, только в `src/test`.
 
 - `docs/server/openapi.yaml`: контракт `POST /api/v1/events`, по нему сделаны DTO. Если меняешь сервер, этот файл и DTO меняются вместе с ним.
-- `app/.../upload/UploadDtos.kt`: `EventBatchDto`, `EventInputDto`, `LocationDataDto`, `AcceptedDto` и `ErrorResponseDto` поле в поле по контракту. `LocationPoint.toEventInput()` уже переводит `recordedAtMs` в `recorded_at` формата RFC 3339 с `Z`.
+- `app/.../upload/UploadDtos.kt`: `EventBatchDto`, `EventInputDto`, `LocationDataDto` и `AcceptedDto` поле в поле по контракту. `LocationPoint.toEventInput()` уже переводит `recordedAtMs` в `recorded_at` формата RFC 3339 с `Z`.
 - `app/.../upload/EventsApi.kt`: `postEvents(url, authorization, batch)` на Retrofit, `eventsUrl(serverUrl)` и `bearer(token)`. `app/.../di/NetworkModule.kt` настраивает OkHttp с таймаутами и JSON с `explicitNulls = false`.
-- `app/.../upload/UploadScheduler.kt`: разовая задача `uploadNow()` (уникальная, с `NetworkType.CONNECTED` и экспоненциальной паузой от 10 с) и периодическая раз в 15 минут, это минимум WorkManager. `uploadNow()` заменяет прежнюю задачу (`ExistingWorkPolicy.REPLACE`), даже если она уже идёт: запуск прерывается посреди пачки, и это нужно переживать без потерь. Его вызывают `RouteService`, когда появляется сеть с интернетом и когда маршрут завершён, и кнопка «Отправить на сервер сейчас» в диагностике.
+- `app/.../upload/UploadScheduler.kt`: разовая задача (уникальная, с `NetworkType.CONNECTED` и экспоненциальной паузой от 10 с) и периодическая раз в 15 минут, это минимум WorkManager. `uploadNow()` оставляет уже поставленную задачу как есть (`ExistingWorkPolicy.KEEP`), его вызывают `TrackRecorder` на каждую точку и `RouteService`, когда маршрут завершён. `restartUpload()` заменяет прежнюю задачу (`ExistingWorkPolicy.REPLACE`), даже если она ждёт паузы после сбоя или уже идёт: запуск прерывается посреди пачки, и это нужно переживать без потерь. Его вызывают `RouteService`, когда появляется сеть с интернетом, и кнопка «Отправить на сервер сейчас» в диагностике.
 - Экран диагностики (`app/.../ui/diagnostics/DiagnosticsScreen.kt`): поле «Адрес сервера» с кнопкой «Сохранить адрес» и строка «Ошибка отправки» уже есть. Адрес хранится в `AppSettings.serverUrl`.
 - `app/.../data/db/Daos.kt`: `LocationDao.unsent(limit)` отдаёт неотправленные точки без пометки `rejected` по порядку (автор, номер), есть `markUploaded(ids)` и `markRejected(ids)`.
 - `domain/.../model/LocationPoint.kt`: `hasValidValues()` проверяет диапазоны из `openapi.yaml`.
 - `app/.../upload/UploadStatus.kt`: последняя ошибка отправки для диагностики (`reportError`, `clearError`).
-- `app/.../upload/UploadWorker.kt`: заготовка `CoroutineWorker` с `@HiltWorker`, все зависимости уже внедрены. Токен группы и `member_id` этого телефона (`token`, `me`) даёт `groupRepository.activeGroup()`, состояние маршрута `viewProvider.view.filterNotNull().first().route`.
+- `app/.../upload/UploadWorker.kt`: заготовка `CoroutineWorker` с `@HiltWorker`, все зависимости уже внедрены. Токен группы и `member_id` этого телефона (`token`, `me`) даёт `groupRepository.activeGroup()`, состояние маршрута `viewProvider.awaitRoute()`, который отдаёт null, если вид не посчитался за 5 с.
 - `app/src/main/res/xml/network_security_config.xml`: HTTP без TLS разрешён для всех адресов, потому что адрес сервера вводится во время работы. Без этого Android 9 и новее не пустил бы запросы к серверу по HTTP.
 
 ## Что сделать
 
-- [ ] `app/.../upload/UploadWorker.kt`, метод `doWork()`: отправка пачками, пока не позеленеет `UploadWorkerTest`.
-  - Сначала `groupRepository.activeGroup()` и адрес сервера. Если группы нет или адрес пустой, верни `Result.success()`: без группы `viewProvider.view` остаётся null, и `filterNotNull().first()` ждал бы вечно.
+- [x] `app/.../upload/UploadWorker.kt`, метод `doWork()`: отправка пачками, пока не позеленеет `UploadWorkerTest`.
+  - Сначала `groupRepository.activeGroup()` и адрес сервера. Если группы нет или адрес пустой, верни `Result.success()`: без группы отправлять нечего и не от чьего имени.
   - В цикле бери до 200 точек из `locationDao.unsent(200)`. Точки, которые не прошли `hasValidValues()`, помечай `rejected` и не отправляй. Остальные собирай в `EventBatchDto` с `sender_id`, равным `member_id` этого телефона, и отправляй с `Authorization: Bearer <токен>`.
   - На 202 пометь отправленными ровно точки этой пачки (`markUploaded`) и бери следующую пачку. После успешной отправки вызови `uploadStatus.clearError()`.
   - Нет сети, таймаут, 503 и другие 5xx дают `Result.retry()`, WorkManager повторит задачу с растущей паузой.

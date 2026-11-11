@@ -194,11 +194,11 @@ class RouteService : Service() {
         networkCallback = null
     }
 
-    /** Подписывается на появление сети с интернетом: тогда точки сразу уходят на сервер через `UploadScheduler.uploadNow`. */
+    /** Подписывается на появление сети с интернетом: тогда точки сразу уходят на сервер через `UploadScheduler.restartUpload`. */
     private fun registerNetworkCallback() {
         if (networkCallback != null) return
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) = uploadScheduler.uploadNow()
+            override fun onAvailable(network: Network) = uploadScheduler.restartUpload()
         }
         val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
         getSystemService(ConnectivityManager::class.java).registerNetworkCallback(request, callback)
