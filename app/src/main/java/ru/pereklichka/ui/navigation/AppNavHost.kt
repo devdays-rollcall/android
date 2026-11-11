@@ -145,6 +145,7 @@ fun AppNavHost(
                     onFinishRoute = { navController.navigate(FinishRouteRoute) },
                     onDiagnostics = { navController.navigate(DiagnosticsRoute) },
                     onStopService = viewModel::stopService,
+                    onLobby = { navController.navigate(LobbyRoute) { launchSingleTop = true } },
                     trackingEnabled = trackingEnabled,
                     onToggleTracking = {
                         if (trackingEnabled) viewModel.stopService() else {

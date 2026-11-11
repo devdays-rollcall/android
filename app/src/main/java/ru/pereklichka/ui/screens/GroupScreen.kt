@@ -73,12 +73,13 @@ fun GroupScreen(
     onStopService: () -> Unit,
     trackingEnabled: Boolean,
     onToggleTracking: () -> Unit,
+    onLobby: () -> Unit = {},
     warnings: List<PhoneWarning> = rememberPhoneWarnings(view),
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { GroupTopBar(view, trackingEnabled, onToggleTracking, onFinishRoute, onDiagnostics) },
-        bottomBar = { GroupBottomBar(view, onRollcall, onAway, onSos, onStopService) },
+        bottomBar = { GroupBottomBar(view, onRollcall, onAway, onSos, onStopService, onLobby) },
     ) { innerPadding ->
         GroupList(view, warnings, innerPadding, onMember, onRollcall, onAlarms)
     }
@@ -205,6 +206,7 @@ private fun GroupBottomBar(
     onAway: () -> Unit,
     onSos: () -> Unit,
     onStopService: () -> Unit,
+    onLobby: () -> Unit,
 ) {
     val spacing = MaterialTheme.spacing
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -220,7 +222,12 @@ private fun GroupBottomBar(
                     Hint("Маршрут завершён. Приложение ещё 15 минут передаёт это остальным")
                     BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY)
                 }
-                RouteState.LOBBY -> Hint("Маршрут ещё не начался")
+                RouteState.LOBBY -> {
+                    Hint("Маршрут ещё не начался")
+                    // После перезапуска приложение открывается на этом экране, и без кнопки руководитель
+                    // не вернулся бы к QR и «Выходим».
+                    if (view.iAmLeader) BigButtonFull("QR и «Выходим»", onLobby)
+                }
                 RouteState.ACTIVE -> {
                     if (view.iAmLeader) BigButtonFull("Перекличка", onRollcall)
                     Row(horizontalArrangement = Arrangement.spacedBy(spacing.s)) {
