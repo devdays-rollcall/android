@@ -2,6 +2,15 @@ openapi: 3.0.3
 info:
   title: Group Tracking API
   version: 1.0.0
+  description: |
+    API принимает события участников туристической группы и возвращает их историю.
+    Одно устройство может отправлять свои события и события других участников,
+    полученные через p2p. События передаются в JSON.
+
+    Ключ группы передается в заголовке `Authorization: Bearer <group_token>`.
+    Он создается на устройстве лидера из 32 криптографически случайных байтов
+    и кодируется в base64url без padding. Один и тот же ключ используют все
+    устройства группы. Ключ просмотра позволяет читать события и управлять предупреждениями.
 servers:
   - url: /
 security:
@@ -11,15 +20,47 @@ paths:
     post:
       operationId: postEvents
       summary: Accept a batch of events
+      description: |
+        Проверяет всю пачку и публикует ее в очередь. Максимум: 500 событий
+        и 1 МиБ на тело запроса. Пустой массив `events` допустим и служит
+        heartbeat отправителя.
+
+        Ответ 202 означает, что очередь подтвердила прием пачки. Worker сохраняет
+        события асинхронно, поэтому они могут появиться в GET позже. Необработанные
+        сообщения удаляются из очереди через 24 часа.
+
+        Группа создается при обработке первого запроса worker. До этого GET
+        может вернуть 404, даже если POST уже ответил 202.
+
+        При повторной отправке сохраняйте исходные ID и содержимое событий.
+        События с тем же ID в одной группе не создают повторных записей. Если
+        содержимое повторного события отличается, первая запись сохраняется,
+        а конфликт попадает в журнал worker; ответ 202 его не отражает.
       requestBody:
         required: true
+        description: Пачка событий одного отправителя. События могут принадлежать разным участникам группы.
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/EventBatch'
+            example:
+              sender_id: c9c7458e-3d19-4e20-ae5d-dbc3ec6f4af1
+              events:
+                - id: d8a6b9f0-32b1-4b1d-a186-a86f2e401a11
+                  member_id: 3d783127-6f1d-454d-b99f-dd41f88f51dd
+                  type: location
+                  recorded_at: '2026-11-09T12:00:00Z'
+                  data:
+                    latitude: 43.3499
+                    longitude: 42.4453
+                    accuracy_m: 8.5
+                    altitude_m: 1564.2
+                    speed_mps: 1.4
+                    bearing_deg: 92.0
+                    battery_percent: 78
       responses:
         '202':
-          description: Entire batch accepted by the queue
+          description: Очередь подтвердила прием всей пачки; запись в базу выполняется асинхронно.
           content:
             application/json:
               schema:
@@ -36,10 +77,21 @@ paths:
           $ref: '#/components/responses/Unavailable'
     get:
       operationId: getEvents
-      summary: Read stored events for the group
+      summary: Read stored events with a group or read-only token
+      description: |
+        Возвращает сохраненные события группы в порядке их записи в базу,
+        не по времени измерения. Для построения маршрута сортируйте точки
+        каждого участника по `recorded_at`.
+
+        Для следующей страницы передайте `next_cursor` предыдущего ответа
+        в параметре `cursor`. Когда `next_cursor` равен null, страниц больше нет.
+      security:
+        - groupToken: []
+        - viewToken: []
       parameters:
         - name: limit
           in: query
+          description: Максимальное число событий на странице.
           schema:
             type: integer
             minimum: 1
@@ -47,11 +99,12 @@ paths:
             default: 500
         - name: cursor
           in: query
+          description: Непрозрачный `next_cursor` из предыдущего ответа. В первом запросе не передается.
           schema:
             type: string
       responses:
         '200':
-          description: A page of stored events
+          description: Страница сохраненных событий; для существующей группы массив может быть пустым.
           content:
             application/json:
               schema:
@@ -64,166 +117,276 @@ paths:
           $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /api/v1/alert:
+    post:
+      operationId: raiseAlert
+      summary: Activate a warning and notify the group observers
+      description: |
+        Включает общее предупреждение группы и отправляет уведомление через ntfy.
+        Используется и для SOS. Поле notified подтверждает приём сообщения ntfy,
+        но не доставку на каждый телефон. Группа должна существовать на сервере.
+      security:
+        - groupToken: []
+        - viewToken: []
+      responses:
+        '200':
+          description: Предупреждение включено; notified означает, что ntfy принял сообщение.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/share-links:
+    post:
+      operationId: createShareLink
+      summary: Create a read-only token for an existing group
+      description: |
+        Создает отдельный случайный ключ просмотра для существующей группы.
+        Требуется ключ группы. Ключ просмотра нельзя использовать для отправки
+        событий или создания других ключей. Срок действия и отзыв не предусмотрены.
+      responses:
+        '201':
+          description: Создан ключ просмотра, начинающийся с `view_`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
 components:
   securitySchemes:
     groupToken:
       type: http
       scheme: bearer
+      description: |
+        Ключ группы дает право читать и отправлять события, а также создавать
+        ключи просмотра. Передавайте его только в заголовке Authorization.
+    viewToken:
+      type: http
+      scheme: bearer
+      description: Ключ с префиксом `view_`, созданный сервером для чтения событий группы.
   responses:
     BadRequest:
-      description: Invalid request
+      description: Некорректный JSON, формат пачки, `limit` или `cursor`.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
-      description: Missing or invalid group token
+      description: Ключ отсутствует, имеет неверный формат или не подходит для этой операции.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     TooLarge:
-      description: Request body is too large
+      description: Тело запроса превышает 1 МиБ.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     InvalidEvent:
-      description: Event validation failed
+      description: Некорректное событие; вся пачка отклонена.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     NotFound:
-      description: Group not found
+      description: Группа или ключ просмотра не найдены.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Unavailable:
-      description: Required component is unavailable
+      description: Очередь или хранилище недоступны. Запрос можно повторить после восстановления.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    ShareToken:
+      type: object
+      description: Отдельный ключ просмотра, созданный сервером для группы.
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Ключ просмотра с префиксом `view_`. Его можно передать получателю ссылки.
     EventBatch:
       type: object
+      description: События, переданные одним устройством за один HTTP-запрос.
       required: [sender_id, events]
       properties:
         sender_id:
           type: string
           format: uuid
+          description: UUID устройства, выполняющего HTTP-запрос. Может отличаться от `member_id` события.
         events:
           type: array
           maxItems: 500
+          description: События участников. Пустой массив означает heartbeat отправителя.
           items:
             $ref: '#/components/schemas/EventInput'
+    AlertResult:
+      type: object
+      required: [notified]
+      properties:
+        notified:
+          type: boolean
+          description: Сервис ntfy подтвердил приём уведомления.
     EventInput:
       type: object
+      description: Событие, созданное устройством участника и передаваемое на сервер.
       required: [id, member_id, type, recorded_at, data]
       properties:
         id:
           type: string
           format: uuid
+          description: UUIDv4 события. Создается один раз и сохраняется при p2p-передаче и повторной отправке.
         member_id:
           type: string
           format: uuid
+          description: UUIDv4 участника, создавшего событие. Сохраняется на устройстве и не меняется в группе.
         type:
           type: string
           enum: [location]
+          description: Тип события. Сейчас поддерживается только `location` — измерение местоположения.
         recorded_at:
           type: string
           format: date-time
+          description: Время измерения на устройстве в формате RFC 3339 с часовым поясом.
+          example: '2026-11-09T12:00:00Z'
         data:
           $ref: '#/components/schemas/LocationData'
     EventOutput:
       type: object
+      description: Сохраненное событие с временем приема сервером.
       required: [id, member_id, type, recorded_at, received_at, data]
       properties:
         id:
           type: string
           format: uuid
+          description: Исходный UUID события, заданный устройством.
         member_id:
           type: string
           format: uuid
+          description: UUID участника, создавшего событие.
         type:
           type: string
           enum: [location]
+          description: Тип события; сейчас поддерживается `location`.
         recorded_at:
           type: string
           format: date-time
+          description: Время измерения на устройстве в формате RFC 3339.
         received_at:
           type: string
           format: date-time
+          description: Время приема HTTP-запроса сервером, в формате RFC 3339.
         data:
           $ref: '#/components/schemas/LocationData'
     LocationData:
       type: object
+      description: |
+        Координаты и дополнительные показания для события `location`.
+        Необязательные измерения можно пропустить; не передавайте null и не
+        подставляйте 0 вместо отсутствующего значения. Дополнительные поля
+        сохраняются сервером.
       required: [latitude, longitude]
       additionalProperties: true
       properties:
         latitude:
           type: number
           format: double
+          description: Широта в десятичных градусах; северная широта положительная.
+          example: 43.3499
           minimum: -90
           maximum: 90
         longitude:
           type: number
           format: double
+          description: Долгота в десятичных градусах; восточная долгота положительная.
+          example: 42.4453
           minimum: -180
           maximum: 180
         accuracy_m:
           type: number
           format: double
+          description: Горизонтальная точность местоположения в метрах.
+          example: 8.5
           minimum: 0
         altitude_m:
           type: number
           format: double
+          description: Высота в метрах.
+          example: 1564.2
         speed_mps:
           type: number
           format: double
+          description: Скорость движения в метрах в секунду.
+          example: 1.4
           minimum: 0
         bearing_deg:
           type: number
           format: double
+          description: Направление движения в градусах по часовой стрелке от севера; 0 — север, 90 — восток.
+          example: 92.0
           minimum: 0
           maximum: 360
           exclusiveMaximum: true
         battery_percent:
           type: integer
+          description: Уровень заряда батареи устройства участника в процентах.
+          example: 78
           minimum: 0
           maximum: 100
     Accepted:
       type: object
+      description: Подтверждение приема пачки в очередь.
       required: [accepted]
       properties:
         accepted:
           type: integer
+          description: Число событий в принятой пачке, включая возможные дубликаты; для heartbeat равно 0.
           minimum: 0
           maximum: 500
     EventPage:
       type: object
+      description: Страница событий группы и указатель следующей страницы.
       required: [events, next_cursor]
       properties:
         events:
           type: array
+          description: События в порядке сохранения в базе, не по `recorded_at`.
           items:
             $ref: '#/components/schemas/EventOutput'
         next_cursor:
           type: string
           nullable: true
+          description: Курсор для следующего запроса; null означает, что следующей страницы нет.
     ErrorResponse:
       type: object
+      description: Ошибка обработки HTTP-запроса.
       required: [error]
       properties:
         error:
           $ref: '#/components/schemas/ErrorDetail'
     ErrorDetail:
       type: object
+      description: Машинный код ошибки и текстовое описание.
       required: [code, message]
       properties:
         code:
           type: string
+          description: Машинный код ошибки, например `invalid_token` или `invalid_event`.
         message:
           type: string
+          description: Текстовое описание причины ошибки.

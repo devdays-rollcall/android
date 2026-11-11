@@ -5,9 +5,6 @@ import kotlinx.serialization.Serializable
 import ru.pereklichka.domain.model.LocationPoint
 import java.time.Instant
 
-// Тела запросов и ответов POST /api/v1/events поле в поле по docs/server/openapi.yaml.
-// Схемы GET (EventOutput, EventPage) телефону не нужны и здесь не описаны.
-
 /**
  * `EventBatch`: пачка не больше 500 событий (`UploadWorker` шлёт по 200), [senderId] равен `member_id` этого телефона.
  * Пустую пачку телефон шлёт как heartbeat, пока идёт маршрут: по ней сервер знает, что телефон на связи,
@@ -55,6 +52,28 @@ data class LocationDataDto(
 /** `Accepted`: тело ответа 202, сервер принял всю пачку. */
 @Serializable
 data class AcceptedDto(val accepted: Int)
+
+@Serializable
+data class EventOutputDto(
+    val id: String,
+    @SerialName("member_id") val memberId: String,
+    val type: EventTypeDto,
+    @SerialName("recorded_at") val recordedAt: String,
+    @SerialName("received_at") val receivedAt: String,
+    val data: LocationDataDto,
+)
+
+@Serializable
+data class EventPageDto(
+    val events: List<EventOutputDto>,
+    @SerialName("next_cursor") val nextCursor: String?,
+)
+
+@Serializable
+data class AlertResultDto(val notified: Boolean)
+
+@Serializable
+data class ShareTokenDto(val token: String)
 
 /** `ErrorResponse`: тело ответов 400, 401, 413, 422 и 503. */
 @Serializable

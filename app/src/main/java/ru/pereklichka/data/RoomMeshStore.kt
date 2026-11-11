@@ -1,10 +1,13 @@
 package ru.pereklichka.data
 
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import ru.pereklichka.data.db.AppDatabase
+import ru.pereklichka.data.db.toEntity
 import ru.pereklichka.domain.model.ControlEvent
+import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.Fix
 import ru.pereklichka.domain.model.GroupSnapshot
 import ru.pereklichka.domain.model.LocationPoint
@@ -17,6 +20,7 @@ import ru.pereklichka.domain.sync.MemberStateDraft
 import ru.pereklichka.domain.sync.MeshStore
 import ru.pereklichka.domain.sync.StoreChange
 import ru.pereklichka.domain.sync.SyncSummary
+import ru.pereklichka.domain.sync.toLocationPoint
 import ru.pereklichka.domain.time.Clock
 import ru.pereklichka.domain.time.Stamped
 import javax.inject.Inject
@@ -86,10 +90,15 @@ class RoomMeshStore @Inject constructor(
     }
 
     override suspend fun appendOwnLocation(fix: Fix, batteryPercent: Int?): LocationPoint {
-        // TODO(Василиса): своя точка с номером MAX(seq) + 1 в той же транзакции, затем OWN_LOCATION в changesFlow.
-        //  Готовую точку даёт fix.toLocationPoint.
-        //  docs/team/vasilisa-service-storage.md
-        throw NotImplementedError("TODO(Василиса): своя точка с номером MAX(seq) + 1 в той же транзакции, затем OWN_LOCATION в changesFlow.")
+        val point = db.withTransaction {
+            val group = checkNotNull(groupRepository.activeGroup())
+            val seq = (db.locationDao().maxSeq(group.me.value) ?: 0) + 1
+            fix.toLocationPoint(EventId.random(), group.me, seq, batteryPercent).also {
+                db.locationDao().insertAll(listOf(it.toEntity()))
+            }
+        }
+        changesFlow.emit(StoreChange.OWN_LOCATION)
+        return point
     }
 
     override suspend fun putOwnState(draft: MemberStateDraft): MemberState {
