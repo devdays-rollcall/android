@@ -10,7 +10,9 @@ import kotlinx.coroutines.test.runTest
 import ru.pereklichka.domain.model.ControlEvent
 import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.EventType
+import ru.pereklichka.domain.model.Fix
 import ru.pereklichka.domain.model.GroupInfo
+import ru.pereklichka.domain.model.LatLon
 import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.testing.FakeClock
@@ -254,5 +256,46 @@ class SyncEngineSessionTest {
         val sentSeqs = received.filterIsInstance<Delta>().flatMap { it.control }.map { it.event.seq }.toSet()
         assertEquals(events.map { it.seq }.toSet(), sentSeqs, "Все события должны дойти, пусть и частями")
         assertTrue(received.filterIsInstance<Delta>().size > 1, "Delta должна была разделиться")
+    }
+
+    @Test
+    fun `Delta из одного события, одного состояния и одной точки делится по записям и доходит целиком`() = runTest {
+        // Те же записи в отдельном хранилище нужны, чтобы измерить их размер до запуска движка с лимитом.
+        val fix = Fix(LatLon(43.35, 42.44), 5.0, null, null, null, timeUtcMs = 0, elapsedRealtimeMs = 0)
+        val clock = FakeClock { testScheduler.currentTime }
+        val probe = InMemoryMeshStore(group, clock)
+        probe.appendOwnEvent(ControlEventDraft(EventType.ALARM, target = peer))
+        probe.putOwnState(MemberStateDraft(fix, batteryPercent = 80, heardAgoMs = emptyMap()))
+        probe.appendOwnLocation(fix, batteryPercent = 80)
+        val event = probe.controlEvents(me, afterSeq = 0, limit = 1).single().toWire(clock)
+        val state = probe.statesNewerThan(emptyMap()).single().toWire(clock)
+        val point = probe.locations(me, afterSeq = 0, limit = 1).single()
+
+        // Лимит пропускает любую запись по отдельности, но не все три вместе.
+        val codec = MeshCodec(SyncConfig())
+        val limit = listOf(Delta(control = listOf(event)), Delta(states = listOf(state)), Delta(locations = listOf(point)))
+            .maxOf { codec.encode(it)!!.size } + 8
+        val all = Delta(control = listOf(event), states = listOf(state), locations = listOf(point))
+        assertTrue(codec.encode(all)!!.size > limit, "Все три записи влезли в лимит, сценарий ничего не проверит")
+
+        // Записи создаются до подключения, поэтому сразу никуда не уходят и все три попадают в ответ на сводку.
+        val rig = rig(SyncConfig(maxMessageBytes = limit))
+        rig.store.appendOwnEvent(ControlEventDraft(EventType.ALARM, target = peer))
+        rig.store.putOwnState(MemberStateDraft(fix, batteryPercent = 80, heardAgoMs = emptyMap()))
+        rig.store.appendOwnLocation(fix, batteryPercent = 80)
+        val received = observePeer(rig)
+        network(rig).connect(me, peer)
+        runCurrent()
+
+        rig.transport.onReceived(peer, rig.peerHello())
+        runCurrent()
+        advanceTimeBy(500)
+
+        val deltas = received.filterIsInstance<Delta>()
+        assertEquals(1, deltas.sumOf { it.control.size }, "Событие должно дойти один раз")
+        assertEquals(1, deltas.sumOf { it.states.size }, "Состояние должно дойти один раз")
+        assertEquals(1, deltas.sumOf { it.locations.size }, "Точка должна дойти один раз")
+        assertTrue(deltas.none { it.control.isEmpty() && it.states.isEmpty() && it.locations.isEmpty() }, "Пустых частей быть не должно")
+        assertEquals(0, rig.engine.diagnostics.value.failedSends)
     }
 }

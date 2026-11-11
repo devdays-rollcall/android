@@ -15,7 +15,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Запуск и остановка движка. Поведение сеанса проверяет `MeshSimulationTest`. */
+/** Запуск и остановка движка. Поведение сеанса проверяют `SyncEngineSessionTest` и `MeshSimulationTest`. */
 class SyncEngineLifecycleTest {
 
     private val me = MemberId("me")

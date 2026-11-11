@@ -20,6 +20,7 @@ import ru.pereklichka.domain.time.ageNow
  * - состав группы даёт событие JOINED, руководитель берётся из [ru.pereklichka.domain.model.GroupInfo];
  * - маршрут ACTIVE после ROUTE_STARTED руководителя и FINISHED после его ROUTE_FINISHED;
  * - участник «Не слышно» (LOST), если он не в отлучке, а контакта не было или он старше [Thresholds.lostAfterMs];
+ *   себя телефон «Не слышно» не считает, а отлучку показывает по моим событиям AWAY, как у всех;
  * - какие тревоги активны, решает [activeAlarms].
  *
  * Расчёт идёт с нуля при каждом вызове: состояния между вызовами нет, полей «статус» в базе тоже нет.
@@ -53,9 +54,11 @@ class GroupCalculator(private val thresholds: Thresholds) {
             .filter { it.value.type != EventType.UNKNOWN }
             .distinctBy { it.value.id }
         private val eventsById = events.associateBy { it.value.id }
+        // Имя из JOINED с наибольшим номером у автора: порядок событий в снимке произвольный.
         private val names: Map<MemberId, String> = events
             .filter { it.value.type == EventType.JOINED }
-            .associate { it.value.author to (it.value.name ?: it.value.author.value) }
+            .groupBy { it.value.author }
+            .mapValues { (author, joined) -> joined.maxBy { it.value.seq }.value.name ?: author.value }
         private val alarms: List<AlarmView> = activeAlarms(events.map { it.value }, group.leaderId).map(::alarmView)
 
         /**
@@ -100,8 +103,8 @@ class GroupCalculator(private val thresholds: Thresholds) {
             val contact = if (isMe) null else lastContact(id)
             val awayRemainingMs = awayRemainingMs(id)
             val presence = when {
-                isMe -> Presence.OK
                 awayRemainingMs != null -> Presence.AWAY
+                isMe -> Presence.OK
                 contact == null || contact.age.ms > thresholds.lostAfterMs -> Presence.LOST
                 else -> Presence.OK
             }
@@ -111,7 +114,8 @@ class GroupCalculator(private val thresholds: Thresholds) {
                 val stateAge = state.ageNow(clock)
                 Age(stateAge.ms + (state.value.fixAgeMs ?: 0), stateAge.approximate)
             }
-            val origin = myFix?.position
+            // Расстояние и направление до самого себя смысла не имеют.
+            val origin = myFix?.position?.takeIf { !isMe }
             return MemberView(
                 id = id,
                 name = nameOf(id),
@@ -207,10 +211,7 @@ class GroupCalculator(private val thresholds: Thresholds) {
             )
         }
 
-        private fun isHeardDirectlyNow(id: MemberId): Boolean {
-            val heardAgoMs = heardAgo[id] ?: return false
-            return heardAgoMs <= PresenceTracker.HEARD_NOW_MS
-        }
+        private fun isHeardDirectlyNow(id: MemberId): Boolean = PresenceTracker.isHeardNow(heardAgo[id])
 
         // Тревога может прийти раньше JOINED её цели, тогда вместо имени показываем id.
         private fun nameOf(id: MemberId): String = names[id] ?: id.value

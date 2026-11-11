@@ -23,6 +23,7 @@ import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.time.Clock
 import ru.pereklichka.domain.time.Stamped
 import ru.pereklichka.domain.time.ageNow
+import java.util.logging.Logger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.ContinuationInterceptor
@@ -32,8 +33,8 @@ import kotlin.coroutines.ContinuationInterceptor
  *
  * На каждое соединение движок ведёт сеанс по правилам `docs/03-sync-protocol.md`. При подключении и каждые 10 с
  * он шлёт сводку ([Hello]), на сводку соседа отвечает одной [Delta], а свои новые события и состояние рассылает
- * сразу. Байты идут через [PeerTransport], записи через [MeshStore], и о каждом входящем сообщении узнаёт
- * [PresenceTracker]. Запускает и останавливает движок `RouteService`. В `MeshSimulationTest` тот же движок
+ * сразу. Байты идут через [PeerTransport], записи через [MeshStore], и о каждом разобранном входящем сообщении
+ * узнаёт [PresenceTracker]. Запускает и останавливает движок `RouteService`. В `MeshSimulationTest` тот же движок
  * работает поверх [ru.pereklichka.domain.testing.InMemoryMeshStore] и [ru.pereklichka.domain.testing.InMemoryTransport].
  *
  * Корутины движка идут на `limitedParallelism(1)` от диспетчера вызывающего. Параллельно они не выполняются,
@@ -41,8 +42,6 @@ import kotlin.coroutines.ContinuationInterceptor
  * коллекциях. Но на каждом suspend-вызове (`store.apply`, `send`) может выполниться другой обработчик. Если
  * проверить состояние, вызвать `send` и потом менять состояние по старой проверке, к этому моменту оно уже могло
  * измениться. Блокировать поток в обработчике нельзя.
- *
- * Задача: docs/team/olga-transport.md
  */
 @Singleton
 class SyncEngine @Inject constructor(
@@ -64,8 +63,9 @@ class SyncEngine @Inject constructor(
      * Запускает обмен для [group] в дочерней области [scope]. Служба передаёт область на `Dispatchers.Default`,
      * потому что движок кодирует и сжимает сообщения, а на главном потоке этого делать нельзя. Транспорт служба
      * запускает после движка, но подписка движка всё равно может начаться чуть позже. События транспорта
-     * в обеих реализациях дождутся её в буфере `Channel.UNLIMITED`. У `store.changes` буфера нет, поэтому
-     * самое первое своё состояние движок может пропустить; соседи получат его со следующей сводкой.
+     * в обеих реализациях дождутся её в буфере `Channel.UNLIMITED`. А `store.changes` в обоих хранилищах это
+     * `SharedFlow` без replay, и изменение, случившееся до подписки, теряется. Своё событие или состояние,
+     * записанное в этот момент, движок сразу не разошлёт; соседи получат его в ответ на следующую сводку.
      *
      * Исключение в обработчике считается ошибкой в коде. Обработчика исключений у области службы нет, поэтому
      * такое исключение роняет приложение. Ожидаемые ошибки (неразборчивое сообщение, неудачная отправка)
@@ -406,7 +406,7 @@ class SyncEngine @Inject constructor(
             val peerState: Stamped<MemberState>? = stateOf(session.peer)
             fun peerHearsDirectly(author: MemberId): Boolean {
                 val heardAgo = peerState?.value?.heardAgoMs?.get(author) ?: return false
-                return peerState.ageNow(clock).ms + heardAgo <= PresenceTracker.HEARD_NOW_MS
+                return PresenceTracker.isHeardNow(peerState.ageNow(clock).ms + heardAgo)
             }
 
             val others = my.locations.keys.filter { it != group.me }.sortedBy { it.value }
@@ -438,6 +438,11 @@ class SyncEngine @Inject constructor(
          * Кодирует сообщение и передаёт транспорту. Delta, не влезшая в `config.maxMessageBytes`,
          * делится пополам, и флаг `more` остаётся только в последней половине. По итогу отправленные
          * записи отмечаются в `peerKnown` — даже при `send` = false, потерю исправит сводка соседа.
+         *
+         * Одна запись, которая не влезает сама по себе, не отправляется, пишется в лог и считается
+         * в `failedSends`. В `peerKnown` она не отмечается, поэтому поток её автора у этого соседа на ней
+         * останавливается. Свои записи до такого размера не дорастают: имя в JOINED ограничено
+         * [ControlEventDraft.MAX_NAME_LENGTH], остальные поля короткие.
          */
         private suspend fun sendMessage(session: PeerSession, message: MeshMessage) {
             val pending = ArrayDeque<MeshMessage>()
@@ -451,6 +456,10 @@ class SyncEngine @Inject constructor(
                         pending.addFirst(secondHalf)
                         pending.addFirst(firstHalf)
                     } else {
+                        logger.warning(
+                            "Не влезает в ${config.maxMessageBytes} байт, соседу ${session.peer} не отправлено: " +
+                                current.describe(),
+                        )
                         countSend(ok = false)
                     }
                     continue
@@ -476,15 +485,37 @@ class SyncEngine @Inject constructor(
         /** Сколько Delta от одного соседа держим в буфере до первого Hello; дальше сосед считается сломанным. */
         const val MAX_PENDING_BEFORE_HELLO = 16
 
+        val logger: Logger = Logger.getLogger("SyncEngine")
+
         fun Delta.recordCount(): Int = control.size + states.size + locations.size
 
-        /** Делит записи Delta пополам: в первой половине `more` сбрасывается, во второй сохраняется. */
+        /**
+         * Делит записи Delta пополам по их общему числу: первая половина берёт записи по порядку из событий,
+         * затем из состояний и точек, вторая получает остальное. При двух записях и больше обе половины строго
+         * меньше исходной, а записи одного автора остаются по возрастанию номера. В первой половине `more`
+         * сбрасывается, во второй сохраняется.
+         */
         fun Delta.halved(): Pair<Delta, Delta> {
-            fun <T> List<T>.split(): Pair<List<T>, List<T>> = subList(0, size / 2) to subList(size / 2, size)
-            val (c1, c2) = control.split()
-            val (s1, s2) = states.split()
-            val (l1, l2) = locations.split()
-            return Delta(c1, s1, l1, more = false) to Delta(c2, s2, l2, more = more)
+            val half = recordCount() / 2
+            val control1 = control.take(half)
+            val states1 = states.take(half - control1.size)
+            val locations1 = locations.take(half - control1.size - states1.size)
+            return Delta(control1, states1, locations1, more = false) to Delta(
+                control = control.drop(control1.size),
+                states = states.drop(states1.size),
+                locations = locations.drop(locations1.size),
+                more = more,
+            )
+        }
+
+        /** Описание сообщения для лога: тип, автор и номер первой записи каждого вида. */
+        fun MeshMessage.describe(): String = when (this) {
+            is Hello -> "Hello"
+            is Delta -> listOfNotNull(
+                control.firstOrNull()?.event?.let { "событие ${it.type} ${it.author}#${it.seq}" },
+                states.firstOrNull()?.state?.let { "состояние ${it.member}#${it.seq}" },
+                locations.firstOrNull()?.let { "точка ${it.author}#${it.seq}" },
+            ).joinToString().ifEmpty { "пустая Delta" }
         }
     }
 

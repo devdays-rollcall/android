@@ -94,10 +94,48 @@ class GroupCalculatorTest {
     }
 
     @Test
-    fun `себя телефон всегда считает «Норма»`() {
+    fun `себя телефон не считает «Не слышно»`() {
         val history = History().apply { joinAll(ageMs = 60 * 60_000) }
 
         assertEquals(Presence.OK, presenceOf(leader, compute(history)))
+    }
+
+    @Test
+    fun `своя отлучка видна в своей строке`() {
+        val history = History().apply {
+            joinAll(ageMs = 60 * 60_000)
+            event(leader, EventType.AWAY, ageMs = 60_000, durationMs = 10 * 60_000)
+        }
+
+        val mine = compute(history).members.single { it.isMe }
+        assertEquals(Presence.AWAY, mine.presence)
+        assertEquals(9 * 60_000L, mine.awayRemainingMs)
+    }
+
+    @Test
+    fun `у своей строки нет расстояния и направления до себя`() {
+        val history = History().apply {
+            joinAll()
+            state(leader, ageMs = 10_000, position = LatLon(43.01, 42.0))
+        }
+        val myFix = Fix(LatLon(43.0, 42.0), 5.0, null, null, null, timeUtcMs = 0, elapsedRealtimeMs = clock.elapsedMs())
+
+        val mine = compute(history, myFix = myFix).members.single { it.isMe }
+        assertEquals(LatLon(43.01, 42.0), mine.position)
+        assertNull(mine.distanceM)
+        assertNull(mine.bearingDeg)
+    }
+
+    @Test
+    fun `имя берётся из JOINED с наибольшим номером при любом порядке событий`() {
+        val history = History().apply {
+            joinAll()
+            event(a, EventType.JOINED, name = "Новое имя")
+        }
+
+        assertEquals("Новое имя", compute(history).members.single { it.id == a }.name)
+        history.events.reverse()
+        assertEquals("Новое имя", compute(history).members.single { it.id == a }.name)
     }
 
     @Test
