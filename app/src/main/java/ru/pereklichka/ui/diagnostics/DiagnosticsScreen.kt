@@ -64,6 +64,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             }
             Button(onClick = { viewModel.powerTools.openAutostartSettings(context) }) { Text("Автозапуск (Xiaomi, Honor)") }
             Line("Уведомления", yesNo(state.system.notificationsEnabled))
+            Line("Полная тишина в «Не беспокоить»", if (state.system.totalSilence) "да, тревогу не будет слышно" else "нет")
 
             Section("Обмен")
             Line("Движок", if (state.sync.running) "работает" else "остановлен")

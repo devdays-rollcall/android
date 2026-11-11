@@ -1,7 +1,6 @@
 package ru.pereklichka.ui.diagnostics
 
 import android.content.Context
-import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,6 +19,7 @@ import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.sync.PeerTransport
 import ru.pereklichka.domain.sync.SyncDiagnostics
 import ru.pereklichka.domain.sync.SyncEngine
+import ru.pereklichka.notify.PhoneChecks
 import ru.pereklichka.service.PowerTools
 import ru.pereklichka.transport.RadioCheck
 import ru.pereklichka.upload.UploadScheduler
@@ -41,6 +41,8 @@ data class SystemChecks(
     val playServicesAvailable: Boolean = false,
     val ignoringBatteryOptimizations: Boolean = false,
     val notificationsEnabled: Boolean = false,
+    /** «Не беспокоить» в режиме полной тишины: тревога не прозвучит, даже как будильник. */
+    val totalSilence: Boolean = false,
 )
 
 /** Сколько записей в базе: события, точки (всего, к отправке, отклонённые) и состояния. */
@@ -114,7 +116,8 @@ class DiagnosticsViewModel @Inject constructor(
         bluetoothEnabled = radioCheck.isBluetoothEnabled(),
         playServicesAvailable = radioCheck.isPlayServicesAvailable(),
         ignoringBatteryOptimizations = powerTools.isIgnoringBatteryOptimizations(),
-        notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),
+        notificationsEnabled = PhoneChecks.notificationsEnabled(context),
+        totalSilence = PhoneChecks.totalSilence(context),
     )
 
     private companion object {

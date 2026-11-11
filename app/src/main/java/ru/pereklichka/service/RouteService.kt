@@ -2,6 +2,7 @@ package ru.pereklichka.service
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -11,6 +12,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
@@ -21,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
@@ -59,8 +62,7 @@ import javax.inject.Inject
  * Для активной группы служба поднимает [RouteSession] с движком, транспортом, своим состоянием, монитором
  * уведомлений, треком, wake lock и отправкой на сервер. В «Сборе» телефон уже обменивается данными
  * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт ещё [SyncConfig.exchangeAfterFinishMs],
- * чтобы завершение дошло до всех. В фейковом режиме (`DataModeModule`) служба показывает уведомление
- * и больше ничего не запускает.
+ * чтобы завершение дошло до всех.
  *
  * Задача: docs/team/vasilisa-service-storage.md (перезапуск после убийства процесса)
  */
@@ -88,6 +90,7 @@ class RouteService : Service() {
     // Запуск и остановка частей идут на главном потоке, поэтому полям ниже синхронизация не нужна.
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var route: RouteSession? = null
+    private var trackingJob: kotlinx.coroutines.Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -98,7 +101,8 @@ class RouteService : Service() {
             //  startForeground только с типом connectedDevice (location, если выдано «Разрешить всегда»),
             //  перехватить ForegroundServiceStartNotAllowedException и показать «Маршрут не завершён».
             //  docs/team/vasilisa-service-storage.md
-            throw NotImplementedError("TODO(Василиса): безопасный перезапуск после убийства процесса.")
+            handleRestart()
+            return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
         }
         when (intent.action) {
             ACTION_START -> startRoute()
@@ -124,7 +128,14 @@ class RouteService : Service() {
             return
         }
         ServiceCompat.startForeground(this, ServiceNotification.ID, ServiceNotification.build(this), types)
-        if (useFakeGroupData) return
+        if (useFakeGroupData) {
+            if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION == 0 || trackingJob?.isActive == true) return
+            registerNetworkCallback()
+            uploadScheduler.schedulePeriodic()
+            uploadScheduler.uploadNow()
+            trackingJob = serviceScope.launch { trackRecorder.run(MutableStateFlow(RouteState.ACTIVE), uploadScheduler::uploadNow) }
+            return
+        }
 
         registerNetworkCallback()
         serviceScope.launch {
@@ -143,6 +154,8 @@ class RouteService : Service() {
     }
 
     private fun stopComponents() {
+        trackingJob?.cancel()
+        trackingJob = null
         route?.stop()
         route = null
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
@@ -192,7 +205,7 @@ class RouteService : Service() {
                 .stateIn(scope, SharingStarted.Eagerly, RouteState.LOBBY)
             scope.launch { selfStateProducer.run() }
             scope.launch { statusMonitor.run(group) }
-            scope.launch { trackRecorder.run(routeState) }
+            scope.launch { trackRecorder.run(routeState, uploadScheduler::uploadNow) }
             scope.launch {
                 routeState.first { it == RouteState.FINISHED }
                 uploadScheduler.uploadNow()
@@ -254,4 +267,76 @@ class RouteService : Service() {
             return types
         }
     }
+    private fun handleRestart() {
+        serviceScope.launch {
+            // 2.1. Активная группа
+            val group = groupRepository.activeGroup()
+            if (group == null) {
+                stopSelf()
+                return@launch
+            }
+
+            // 2.2. Маршрут уже завершён?
+            val routeState = viewProvider.view.value?.route
+            if (routeState == RouteState.FINISHED) {
+                stopSelf()
+                return@launch
+            }
+
+            // 2.3. Типы службы для перезапуска
+            val types = restartServiceTypes()
+            if (types == 0) {
+                // ни exchange, ни backgroundLocation — startForeground нельзя
+                RouteNotFinishedNotification.show(this@RouteService)
+                stopSelf()
+                return@launch
+            }
+
+            // 2.4. startForeground с перехватом
+            try {
+                ServiceCompat.startForeground(
+                    this@RouteService,
+                    ServiceNotification.ID,
+                    ServiceNotification.build(this@RouteService),
+                    types,
+                )
+            } catch (e: Exception) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    e is ForegroundServiceStartNotAllowedException
+                ) {
+                    RouteNotFinishedNotification.show(this@RouteService)
+                    stopSelf()
+                    return@launch
+                }
+                throw e
+            }
+
+            // 2.5. Без location — трек не пишется, но обмен работает
+            val hasLocationType = types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0
+            if (!hasLocationType) {
+                RouteNotFinishedNotification.show(this@RouteService)
+            }
+
+            // 2.6. Поднять RouteSession, как в startRoute
+            registerNetworkCallback()
+            if (route?.group == group) return@launch
+            route?.stop()
+            route = RouteSession(group).also { it.start() }
+        }
+    }
+
+    @SuppressLint("InlinedApi")
+    private fun restartServiceTypes(): Int {
+        var types = 0
+        // connectedDevice — только если есть разрешения на обмен
+        if (RequiredPermissions.allGranted(this, RequiredPermissions.exchange())) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        }
+        // location — только если выдано «Разрешить всегда»
+        if (RequiredPermissions.allGranted(this, RequiredPermissions.backgroundLocation())) {
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        }
+        return types
+    }
+
 }

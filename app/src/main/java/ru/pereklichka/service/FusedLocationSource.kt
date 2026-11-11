@@ -23,61 +23,31 @@ import ru.pereklichka.domain.model.Fix
 import ru.pereklichka.domain.model.LatLon
 import javax.inject.Inject
 
-/**
- * [LocationSource] на Fused Location Provider из Google Play Services. Подписывается на него [TrackRecorder].
- *
- * Задача: docs/team/vasilisa-service-storage.md
- */
 class FusedLocationSource @Inject constructor(@ApplicationContext private val context: Context) : LocationSource {
 
-    private val client = LocationServices.getFusedLocationProviderClient(context)
-    val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L).build()
-
-    private fun Location.toFix(): Fix = Fix(
-        position = LatLon(latitude, longitude),
-        accuracyM = (if (hasAccuracy()) accuracy.toDouble() else null),
-        altitudeM = if (hasAltitude()) altitude else null,
-        speedMps = (if (hasSpeed()) speed.toDouble() else null),
-        bearingDeg = (if (hasBearing()) bearing.toDouble() else null),
-        timeUtcMs = time,
-        elapsedRealtimeMs = elapsedRealtimeNanos / 1_000_000,
-    )
-
-
-    override val fixes: Flow<Fix> = flow {
-        //  callbackFlow поверх requestLocationUpdates, PRIORITY_HIGH_ACCURACY раз в 5 с, отписка в awaitClose.
-        //  Необязательные поля Fix заполнять, только если hasAccuracy() и прочие вернули true.
-        //  docs/team/vasilisa-service-storage.md
-
-            // Проверка разрешения — при каждой подписке, с актуальным состоянием
-            if (ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                throw SecurityException("ACCESS_FINE_LOCATION not granted")
-            }
-            emitAll(
-                callbackFlow {
-                    val callback = object : LocationCallback() {
-                        override fun onLocationResult(result: LocationResult) {
-                            result.lastLocation?.let { location ->
-                                trySend(location.toFix())
-                            }
-                        }
-                    }
-
-                    try {
-                        client.requestLocationUpdates(request, callback, Looper.getMainLooper())
-                            .addOnFailureListener { e -> close(e) }
-                    } catch (e: SecurityException) {
-                        close(e)
-                    }
-
-                    awaitClose {
-                        client.removeLocationUpdates(callback)
-                    }
+    @SuppressLint("MissingPermission")
+    override val fixes: Flow<Fix> = callbackFlow {
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                for (location in result.locations) {
+                    trySend(location.toFix())
                 }
-            )
+            }
+        }
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000).build()
+        client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+            .addOnFailureListener { close(it) }
+        awaitClose { client.removeLocationUpdates(callback) }
     }
 }
+
+internal fun Location.toFix() = Fix(
+    position = LatLon(latitude, longitude),
+    accuracyM = if (hasAccuracy()) accuracy.toDouble() else null,
+    altitudeM = if (hasAltitude()) altitude else null,
+    speedMps = if (hasSpeed()) speed.toDouble() else null,
+    bearingDeg = if (hasBearing()) bearing.toDouble() else null,
+    timeUtcMs = time,
+    elapsedRealtimeMs = elapsedRealtimeNanos / 1_000_000,
+)

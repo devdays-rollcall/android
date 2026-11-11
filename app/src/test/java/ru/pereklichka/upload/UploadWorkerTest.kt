@@ -7,7 +7,6 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import mockwebserver3.Dispatcher
@@ -16,7 +15,6 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -26,25 +24,13 @@ import ru.pereklichka.data.db.LocationPointEntity
 import ru.pereklichka.data.inMemoryDatabase
 import ru.pereklichka.di.NetworkModule
 import ru.pereklichka.domain.model.GroupInfo
-import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.testing.FakeClock
-import ru.pereklichka.domain.testing.InMemoryMeshStore
-import ru.pereklichka.service.OwnLocation
-import ru.pereklichka.status.GroupViewProvider
 import java.util.Collections
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/**
- * Реакция `UploadWorker` на ответы сервера: 202 помечает пачку, 503 даёт повтор, 413 уменьшает пачку,
- * 422 находит кривую точку, 401 останавливает отправку. Сервер подменяет MockWebServer.
- *
- * Тест-спецификация для Даниила: сними `@Ignore`, когда `UploadWorker` готов, и добейся зелёного.
- * Задача: docs/team/daniil-upload.md
- */
-@Ignore("включи, когда сделаешь UploadWorker")
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class UploadWorkerTest {
@@ -157,21 +143,33 @@ class UploadWorkerTest {
         assertEquals(3, batches.sumOf { it.events.size })
     }
 
-    private suspend fun TestScope.runWorker(): ListenableWorker.Result {
-        val viewProvider = GroupViewProvider(
-            store = InMemoryMeshStore(group, clock),
-            presence = PresenceTracker(clock),
-            ownLocation = OwnLocation(),
-            settings = settings,
-            clock = clock,
-            scope = backgroundScope,
-        )
+    @Test
+    fun `отправляет только точки этого участника`() = runTest {
+        insertPoints(2)
+        db.locationDao().insertAll(listOf(entity("other-point", 1).copy(author = "other-author")))
+        respond { batch -> accepted(batch) }
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+        assertEquals(setOf("point-1", "point-2"), acceptedIds.toSet())
+        assertEquals(listOf("other-point"), db.locationDao().unsent(10).map { it.id })
+    }
+
+    @Test
+    fun `ошибка соединения сохраняет точки для повтора`() = runTest {
+        insertPoints(2)
+        settings.setServerUrl("http://127.0.0.1:1")
+
+        assertEquals(ListenableWorker.Result.retry(), runWorker())
+        assertEquals(2, db.locationDao().unsent(10).size)
+    }
+
+    private suspend fun runWorker(): ListenableWorker.Result {
         val worker = TestListenableWorkerBuilder<UploadWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
                     UploadWorker(
                         appContext, workerParameters, db.locationDao(), repository,
-                        NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings, viewProvider, uploadStatus,
+                        NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings, uploadStatus,
                     )
             })
             .build()

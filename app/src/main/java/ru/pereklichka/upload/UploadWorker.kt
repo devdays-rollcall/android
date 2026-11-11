@@ -6,21 +6,12 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import java.io.IOException
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.db.LocationDao
-import ru.pereklichka.status.GroupViewProvider
+import ru.pereklichka.data.db.toModel
 
-/**
- * Задача WorkManager, которая отправляет на сервер точки всей группы, свои и полученные от соседей. В очередь
- * её ставит [UploadScheduler]: при появлении сети, после завершения маршрута и раз в 15 минут.
- *
- * Воркер должен брать точки из [LocationDao] пачками и после ответа 202 помечать их отправленными. Одни и те же
- * точки отправят несколько телефонов, и сервер отсеет повторы по `id`. Состояние маршрута для heartbeat даёт
- * [viewProvider], ошибку для диагностики принимает [uploadStatus].
- *
- * Задача: docs/team/daniil-upload.md
- */
 @HiltWorker
 class UploadWorker @AssistedInject constructor(
     @Assisted context: Context,
@@ -29,16 +20,65 @@ class UploadWorker @AssistedInject constructor(
     private val groupRepository: GroupRepository,
     private val api: EventsApi,
     private val settings: AppSettings,
-    private val viewProvider: GroupViewProvider,
     private val uploadStatus: UploadStatus,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        // TODO(Даниил): пачки до 200 из locationDao.unsent(), проверка hasValidValues, разбор кодов ответа, heartbeat.
-        //  202 помечает ровно эту пачку, 5xx и нет сети дают retry, 413 уменьшает пачку, 400 и 422 ищут кривую точку,
-        //  401 даёт failure и ошибку в uploadStatus. Сначала проверить активную группу: без неё
-        //  viewProvider.view.filterNotNull().first() будет ждать вечно.
-        //  docs/team/daniil-upload.md, тесты в UploadWorkerTest
-        throw NotImplementedError("TODO(Даниил): пачки до 200 из locationDao.unsent(), проверка hasValidValues, разбор кодов ответа, heartbeat.")
+        val group = groupRepository.activeGroup() ?: return Result.success()
+        val serverUrl = settings.serverUrl.value
+        if (serverUrl.isBlank()) return Result.success()
+
+        var limit = BATCH_SIZE
+        while (groupRepository.activeGroup() == group) {
+            val points = locationDao.unsentByAuthor(group.me.value, limit)
+            if (points.isEmpty()) return Result.success()
+
+            val invalid = points.filterNot { it.toModel().hasValidValues() }
+            if (invalid.isNotEmpty()) {
+                locationDao.markRejected(invalid.map { it.id })
+                continue
+            }
+
+            val response = try {
+                api.postEvents(
+                    EventsApi.eventsUrl(serverUrl),
+                    EventsApi.bearer(group.token),
+                    EventBatchDto(group.me.value, points.map { it.toModel().toEventInput() }),
+                )
+            } catch (exception: IOException) {
+                return Result.retry()
+            } catch (exception: IllegalArgumentException) {
+                uploadStatus.reportError("Некорректный адрес сервера")
+                return Result.failure()
+            }
+
+            when (val code = response.code()) {
+                202 -> {
+                    if (response.body()?.accepted != points.size) return Result.retry()
+                    locationDao.markUploaded(points.map { it.id })
+                    uploadStatus.clearError()
+                }
+                400, 413, 422 -> {
+                    if (points.size > 1) {
+                        limit = points.size / 2
+                    } else if (code == 400) {
+                        uploadStatus.reportError("Сервер отклонил запрос (400)")
+                        return Result.failure()
+                    } else {
+                        locationDao.markRejected(listOf(points.single().id))
+                    }
+                }
+                429, in 500..599 -> return Result.retry()
+                else -> {
+                    uploadStatus.reportError("Сервер отклонил запрос ($code)")
+                    return Result.failure()
+                }
+            }
+        }
+        return Result.success()
+    }
+
+    private companion object {
+        const val BATCH_SIZE = 200
     }
 }

@@ -85,6 +85,12 @@ interface LocationDao {
     @Query("SELECT * FROM location_point WHERE uploaded = 0 AND rejected = 0 ORDER BY author, seq LIMIT :limit")
     suspend fun unsent(limit: Int): List<LocationPointEntity>
 
+    @Query("select max(seq) from location_point where author = :author")
+    suspend fun maxSeq(author: String): Long?
+
+    @Query("select * from location_point where author = :author and uploaded = 0 and rejected = 0 order by seq limit :limit")
+    suspend fun unsentByAuthor(author: String, limit: Int): List<LocationPointEntity>
+
     /** null, если такой точки нет. Нужен контрактному тесту хранилища и проверке пометок. */
     @Query("SELECT rejected FROM location_point WHERE id = :id")
     suspend fun isRejected(id: String): Boolean?
