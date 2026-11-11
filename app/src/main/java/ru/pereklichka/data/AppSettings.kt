@@ -1,6 +1,7 @@
 package ru.pereklichka.data
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,8 +13,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Настройки с экрана диагностики: адрес сервера, режим демо и список блокировки (его переключатели на экране
- * ещё предстоит добавить).
+ * Настройки с экрана диагностики: адрес сервера, режим демо и список блокировки.
  *
  * Хранятся в SharedPreferences и живут дольше группы. Значения отдаются потоками, поэтому изменение сразу видят
  * `GroupViewProvider` (порог «Не слышно»), транспорт (блокировка) и `UploadWorker` (адрес).
@@ -23,12 +23,20 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    private val serverUrlState = MutableStateFlow(prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL).orEmpty())
+    private val isDebuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
+    private val serverUrlState = MutableStateFlow(
+        prefs.getString(KEY_SERVER_URL, if (isDebuggable) "" else DEFAULT_SERVER_URL).orEmpty(),
+    )
     private val demoModeState = MutableStateFlow(prefs.getBoolean(KEY_DEMO_MODE, false))
     private val blockedState = MutableStateFlow(
         prefs.getStringSet(KEY_BLOCKED, emptySet()).orEmpty().map(::MemberId).toSet(),
     )
 
+    /**
+     * Адрес сервера без завершающей косой черты. В release по умолчанию боевой сервер, в debug пусто: отладочная
+     * сборка не шлёт точки и SOS, пока адрес не ввели в диагностике, и не включает тревогу у настоящих групп.
+     */
     val serverUrl: StateFlow<String> = serverUrlState.asStateFlow()
 
     /** Режим демо: «Не слышно» через 60 с вместо 120 с. С фейковыми данными из `DataModeModule` он не связан. */
