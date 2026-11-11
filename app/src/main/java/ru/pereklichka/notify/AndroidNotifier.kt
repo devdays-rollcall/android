@@ -37,6 +37,9 @@ import javax.inject.Singleton
  * Без `POST_NOTIFICATIONS` (Android 13 и новее) уведомлений нет совсем. Тогда звук тревоги проигрывает само
  * приложение через [RingtoneManager] и останавливает его на [NotifyEvent.AlarmResolved] этой тревоги.
  *
+ * Уведомление тревоги постоянное, но с Android 14 его можно смахнуть на разблокированном экране. Тогда
+ * [AlarmSwipeReceiver] вызывает [repostAlarm], и тревога, которую ещё не сняли, возвращается в шторку без звука.
+ *
  * Задача: docs/team/valentin-ui.md
  */
 @Singleton
@@ -46,6 +49,9 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
 
     /** Тревоги, которые сейчас звучат без уведомлений, по ключу. */
     private val ringing = mutableMapOf<String, Ringtone>()
+
+    /** Показанные и ещё не снятые тревоги по ключу: их возвращает [repostAlarm]. */
+    private val activeAlarms = mutableMapOf<String, NotifyEvent.AlarmRaised>()
 
     @Volatile
     private var channelsCreated = false
@@ -85,12 +91,25 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         }
     }
 
+    // Под одним замком с repostAlarm: иначе смахнутая тревога могла бы вернуться в шторку уже после снятия.
+    @Synchronized
     override fun dismiss(key: String) {
+        activeAlarms.remove(key)
         manager.cancel(key, NOTIFICATION_ID)
         stopRinging(key)
     }
 
-    private fun showAlarm(event: NotifyEvent.AlarmRaised) {
+    /** Возвращает в шторку смахнутое уведомление тревоги [key] без звука, если тревогу ещё не сняли. */
+    @Synchronized
+    fun repostAlarm(key: String) {
+        val event = activeAlarms[key] ?: return
+        ensureChannels()
+        showAlarm(event, silent = true)
+    }
+
+    @Synchronized
+    private fun showAlarm(event: NotifyEvent.AlarmRaised, silent: Boolean = false) {
+        activeAlarms[event.key] = event
         val (title, text) = when {
             event.isAboutMe && event.isSos -> "Вы отправили SOS" to "Группа получила сигнал. Если помощь не нужна, отмените его"
             event.isAboutMe -> "Группа объявила тревогу о вас" to "Если вы в порядке, откройте и нажмите «Я в порядке»"
@@ -103,16 +122,19 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            // Тревогу нельзя смахнуть: уведомление уходит само, когда её снимут.
+            // Уведомление уходит само, когда тревогу снимут. Смахнуть его можно с Android 14, и тогда deleteIntent
+            // возвращает его через repostAlarm.
             .setOngoing(true)
+            .setSilent(silent)
             .setContentIntent(open(event.key, NotificationTarget.Alarms))
-        if (!post(event.key, builder, autoCancel = false)) startRinging(event.key)
+            .setDeleteIntent(swipeIntent(event.key))
+        if (!post(event.key, builder, autoCancel = false) && !silent) startRinging(event.key)
     }
 
     /** Показывает уведомление ([autoCancel]: убрать по нажатию); false, если уведомления выключены и показать нельзя. */
-    @SuppressLint("MissingPermission") // Разрешение проверяет areNotificationsEnabled: на Android 13+ оно учитывает POST_NOTIFICATIONS.
+    @SuppressLint("MissingPermission") // Разрешение проверяет PhoneChecks: на Android 13+ оно учитывает POST_NOTIFICATIONS.
     private fun post(key: String, builder: NotificationCompat.Builder, autoCancel: Boolean = true): Boolean {
-        if (!manager.areNotificationsEnabled()) return false
+        if (!PhoneChecks.notificationsEnabled(context)) return false
         manager.notify(
             key,
             NOTIFICATION_ID,
@@ -137,6 +159,14 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
     }
+
+    /** deleteIntent тревоги [key]: сообщает [AlarmSwipeReceiver], что её смахнули. requestCode свой у каждого ключа, как в [open]. */
+    private fun swipeIntent(key: String): PendingIntent = PendingIntent.getBroadcast(
+        context,
+        key.hashCode(),
+        AlarmSwipeReceiver.intent(context, key),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     @Synchronized
     private fun startRinging(key: String) {

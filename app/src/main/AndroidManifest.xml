@@ -79,6 +79,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- deleteIntent смахнутой тревоги, его шлёт только система от имени приложения. -->
+        <receiver
+            android:name=".notify.AlarmSwipeReceiver"
+            android:exported="false" />
+
         <!-- Сканер QR поворачивается вместе с телефоном, по умолчанию он только альбомный. -->
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
