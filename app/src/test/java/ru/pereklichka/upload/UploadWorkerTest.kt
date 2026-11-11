@@ -7,7 +7,12 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
 import androidx.work.testing.TestListenableWorkerBuilder
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -20,12 +25,19 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
+import ru.pereklichka.data.RoomMeshStore
 import ru.pereklichka.data.db.LocationPointEntity
 import ru.pereklichka.data.inMemoryDatabase
 import ru.pereklichka.di.NetworkModule
+import ru.pereklichka.domain.model.EventType
 import ru.pereklichka.domain.model.GroupInfo
+import ru.pereklichka.domain.presence.PresenceTracker
+import ru.pereklichka.domain.sync.ControlEventDraft
 import ru.pereklichka.domain.testing.FakeClock
+import ru.pereklichka.service.OwnLocation
+import ru.pereklichka.status.GroupViewProvider
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -37,10 +49,18 @@ class UploadWorkerTest {
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val db = inMemoryDatabase()
-    private val clock = FakeClock { 0 }
+    /** Время теста. Его двигает сам тест или сервер на каждый запрос, поэтому оно атомарное. */
+    private val nowMs = AtomicLong(0)
+    private val clock = FakeClock { nowMs.get() }
     private val repository = GroupRepository(db, clock)
+    private val store = RoomMeshStore(db, repository, clock)
     private val uploadStatus = UploadStatus()
     private val settings = AppSettings(context)
+
+    // Вид считается на настоящем времени: виртуальное время runTest сработало бы на таймауте awaitRoute,
+    // пока Room отвечает из своего потока.
+    private val viewScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val viewProvider = GroupViewProvider(store, PresenceTracker(clock), OwnLocation(), settings, clock, viewScope)
     private val server = MockWebServer()
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -60,6 +80,7 @@ class UploadWorkerTest {
 
     @After
     fun tearDown() {
+        viewScope.cancel()
         server.close()
         db.close()
     }
@@ -72,8 +93,7 @@ class UploadWorkerTest {
         val result = runWorker()
 
         assertEquals(ListenableWorker.Result.success(), result)
-        // Пустые пачки здесь возможны: это heartbeat.
-        assertEquals(listOf(200, 50), batches.map { it.events.size }.filter { it > 0 })
+        assertEquals(listOf(200, 50), batches.map { it.events.size })
         assertEquals(0, db.locationDao().unsent(1_000).size)
         assertTrue(batches.all { it.senderId == group.me.value })
         assertEquals("Bearer ${group.token}", server.takeRequest().headers["Authorization"])
@@ -118,6 +138,110 @@ class UploadWorkerTest {
         assertEquals(true, db.locationDao().isRejected(badId))
         assertEquals(0, db.locationDao().unsent(1_000).size)
         assertEquals((1..20).map { "point-$it" }.toSet() - badId, acceptedIds.toSet())
+    }
+
+    @Test
+    fun `после кривой точки размер пачки восстанавливается`() = runTest {
+        insertPoints(300)
+        val badId = "point-13"
+        respond { batch ->
+            if (batch.events.any { it.id == badId }) MockResponse.Builder().code(422).body(error("invalid_event")).build()
+            else accepted(batch)
+        }
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        val badBatch = batches.indexOfFirst { it.events.singleOrNull()?.id == badId }
+        assertEquals(listOf(200, 87), batches.drop(badBatch + 1).map { it.events.size })
+        assertEquals(true, db.locationDao().isRejected(badId))
+        assertEquals(0, db.locationDao().unsent(1_000).size)
+    }
+
+    @Test
+    fun `запуск длится не дольше двух минут, остаток уходит в повтор`() = runTest {
+        insertPoints(1_000)
+        respond { batch ->
+            nowMs.addAndGet(70_000)
+            accepted(batch)
+        }
+
+        assertEquals(ListenableWorker.Result.retry(), runWorker())
+        assertEquals(listOf(200, 200), batches.map { it.events.size })
+        assertEquals(600, db.locationDao().unsent(1_000).size)
+    }
+
+    @Test
+    fun `портал Wi-Fi без интернета даёт повтор, а не ошибку`() = runTest {
+        insertPoints(3)
+        respond { MockResponse.Builder().code(200).body("<html>Войдите в сеть</html>").build() }
+
+        assertEquals(ListenableWorker.Result.retry(), runWorker())
+        assertEquals(3, db.locationDao().unsent(10).size)
+        assertEquals(null, uploadStatus.lastError.value)
+    }
+
+    @Test
+    fun `неожиданный успешный код даёт повтор`() = runTest {
+        insertPoints(3)
+        respond { MockResponse.Builder().code(204).build() }
+
+        assertEquals(ListenableWorker.Result.retry(), runWorker())
+        assertEquals(3, db.locationDao().unsent(10).size)
+    }
+
+    @Test
+    fun `heartbeat уходит, когда маршрут идёт и отправлять нечего`() = runTest {
+        store.appendOwnEvent(ControlEventDraft(EventType.ROUTE_STARTED))
+        respond { batch -> accepted(batch) }
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+        val heartbeat = batches.single()
+        assertEquals(emptyList(), heartbeat.events)
+        assertEquals(group.me.value, heartbeat.senderId)
+    }
+
+    @Test
+    fun `heartbeat не чаще раза в минуту`() = runTest {
+        store.appendOwnEvent(ControlEventDraft(EventType.ROUTE_STARTED))
+        respond { batch -> accepted(batch) }
+
+        runWorker()
+        nowMs.addAndGet(59_000)
+        runWorker()
+        assertEquals(1, batches.size)
+
+        nowMs.addAndGet(2_000)
+        runWorker()
+        assertEquals(2, batches.size)
+    }
+
+    @Test
+    fun `после отправки точек heartbeat не нужен`() = runTest {
+        store.appendOwnEvent(ControlEventDraft(EventType.ROUTE_STARTED))
+        insertPoints(5)
+        respond { batch -> accepted(batch) }
+
+        runWorker()
+
+        assertEquals(listOf(5), batches.map { it.events.size })
+    }
+
+    @Test
+    fun `до начала маршрута heartbeat не уходит`() = runTest {
+        respond { batch -> accepted(batch) }
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+        assertEquals(emptyList(), batches)
+    }
+
+    @Test
+    fun `после конца маршрута heartbeat не уходит`() = runTest {
+        store.appendOwnEvent(ControlEventDraft(EventType.ROUTE_STARTED))
+        store.appendOwnEvent(ControlEventDraft(EventType.ROUTE_FINISHED))
+        respond { batch -> accepted(batch) }
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+        assertEquals(emptyList(), batches)
     }
 
     @Test
@@ -171,11 +295,11 @@ class UploadWorkerTest {
                 override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
                     UploadWorker(
                         appContext, workerParameters, db.locationDao(), repository,
-                        NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings, uploadStatus,
+                        NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings, uploadStatus, viewProvider, clock,
                     )
             })
             .build()
-        return worker.doWork()
+        return withContext(Dispatchers.Default) { worker.doWork() }
     }
 
     private fun respond(response: (EventBatchDto) -> MockResponse) {

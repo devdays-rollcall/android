@@ -5,7 +5,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -35,7 +34,7 @@ import javax.inject.Singleton
  * в момент пересчёта, так что новый сосед появляется в виде с задержкой до 2 с.
  *
  * Подписаны `GroupViewModel`, [StatusMonitor] и `RouteService`. `GroupActions` берёт текущее значение,
- * а `UploadWorker` будет ждать первый вид через `first()`.
+ * а `UploadWorker`, `BootReceiver` и `RouteService` при перезапуске без экрана спрашивают маршрут через [awaitRoute].
  *
  * Пока на [view] никто не подписан, пересчёт стоит, а значение сбрасывается в null: устаревший вид после паузы
  * дал бы [StatusMonitor] ложные уведомления. null значит, что группы нет или первый расчёт ещё не готов.
@@ -50,9 +49,7 @@ class GroupViewProvider @Inject constructor(
     @ApplicationScope scope: CoroutineScope,
 ) {
     val view: StateFlow<GroupView?> = combine(
-        // snapshot() вызывается при первой подписке. Так провайдер можно создать, не трогая хранилище,
-        // и в фейковом режиме заглушка RoomMeshStore.snapshot() не падает.
-        flow { emitAll(store.snapshot()) },
+        store.snapshot(),
         settings.demoMode.map { demo -> GroupCalculator(if (demo) Thresholds.DEMO else Thresholds()) },
         ownLocation.lastFix,
         refreshTicks(),

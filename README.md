@@ -61,4 +61,3 @@ MONITOR_LIVE_URL=https://rollcall.vareonix.cc ./gradlew :app:testDebugUnitTest -
 | `app/.../service/RouteService.kt`, ветка `intent == null` | Василиса | Безопасный перезапуск после убийства процесса |
 | `app/.../service/BootReceiver.kt` | Василиса | Запуск после перезагрузки, затем включить приёмник в манифесте |
 | `app/.../permissions/PermissionsScreen.kt` | Василиса | Запрос разрешений с объяснением |
-| `app/.../upload/UploadWorker.kt` | Даниил | Heartbeat пустой пачкой, пока идёт маршрут, и предел в 2 минуты на запуск |
