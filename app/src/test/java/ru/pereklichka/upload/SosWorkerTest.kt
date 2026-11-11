@@ -41,6 +41,7 @@ class SosWorkerTest {
         val request = server.takeRequest()
         assertEquals("/api/v1/alert", request.url.encodedPath)
         assertEquals("Bearer test-token", request.headers["Authorization"])
+        assertEquals("sos", request.headers["X-Alert-Source"])
     }
 
     @Test

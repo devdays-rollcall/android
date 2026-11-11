@@ -121,9 +121,18 @@ paths:
     post:
       operationId: raiseAlert
       summary: Activate a warning and notify the group observers
+      parameters:
+        - name: X-Alert-Source
+          in: header
+          required: false
+          schema:
+            type: string
+            enum: [observer, sos]
+            default: observer
+          description: SOS может отправить только участник с ключом группы.
       description: |
         Включает общее предупреждение группы и отправляет уведомление через ntfy.
-        Используется и для SOS. Поле notified подтверждает приём сообщения ntfy,
+        Для SOS передайте заголовок X-Alert-Source со значением sos. Поле notified подтверждает приём сообщения ntfy,
         но не доставку на каждый телефон. Группа должна существовать на сервере.
       security:
         - groupToken: []

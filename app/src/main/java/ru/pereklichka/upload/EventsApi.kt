@@ -31,6 +31,7 @@ interface EventsApi {
     suspend fun raiseAlert(
         @Url url: String,
         @Header("Authorization") authorization: String,
+        @Header("X-Alert-Source") source: String,
     ): Response<AlertResultDto>
 
     @GET
