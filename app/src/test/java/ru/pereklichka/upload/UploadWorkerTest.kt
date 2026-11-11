@@ -144,14 +144,16 @@ class UploadWorkerTest {
     }
 
     @Test
-    fun `отправляет только точки этого участника`() = runTest {
+    fun `отправляет точки всей группы от своего имени`() = runTest {
         insertPoints(2)
         db.locationDao().insertAll(listOf(entity("other-point", 1).copy(author = "other-author")))
         respond { batch -> accepted(batch) }
 
         assertEquals(ListenableWorker.Result.success(), runWorker())
-        assertEquals(setOf("point-1", "point-2"), acceptedIds.toSet())
-        assertEquals(listOf("other-point"), db.locationDao().unsent(10).map { it.id })
+        assertEquals(setOf("point-1", "point-2", "other-point"), acceptedIds.toSet())
+        assertTrue(batches.all { it.senderId == group.me.value })
+        assertEquals("other-author", batches.flatMap { it.events }.single { it.id == "other-point" }.memberId)
+        assertTrue(db.locationDao().unsent(10).isEmpty())
     }
 
     @Test

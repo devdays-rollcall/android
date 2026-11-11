@@ -30,7 +30,9 @@ class UploadWorker @AssistedInject constructor(
 
         var limit = BATCH_SIZE
         while (groupRepository.activeGroup() == group) {
-            val points = locationDao.unsentByAuthor(group.me.value, limit)
+            // Точки всей группы, свои и полученные от соседей: сервер записывает автора каждой точки отдельно от
+            // отправителя и отсеивает повторы по id, поэтому одни и те же точки могут прийти от нескольких телефонов.
+            val points = locationDao.unsent(limit)
             if (points.isEmpty()) return Result.success()
 
             val invalid = points.filterNot { it.toModel().hasValidValues() }
