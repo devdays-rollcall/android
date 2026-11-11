@@ -23,14 +23,15 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    private val serverUrlState = MutableStateFlow(prefs.getString(KEY_SERVER_URL, null).orEmpty())
+    private val serverUrlState = MutableStateFlow(prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL).orEmpty())
+    private val trackingEnabledState = MutableStateFlow(prefs.getBoolean(KEY_TRACKING_ENABLED, true))
     private val demoModeState = MutableStateFlow(prefs.getBoolean(KEY_DEMO_MODE, false))
     private val blockedState = MutableStateFlow(
         prefs.getStringSet(KEY_BLOCKED, emptySet()).orEmpty().map(::MemberId).toSet(),
     )
 
-    /** Адрес сервера без завершающей косой черты, например `http://192.168.1.20:8080`; пусто, пока не ввели. */
     val serverUrl: StateFlow<String> = serverUrlState.asStateFlow()
+    val trackingEnabled: StateFlow<Boolean> = trackingEnabledState.asStateFlow()
 
     /** Режим демо: «Не слышно» через 60 с вместо 120 с. С фейковыми данными из `DataModeModule` он не связан. */
     val demoMode: StateFlow<Boolean> = demoModeState.asStateFlow()
@@ -47,6 +48,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         serverUrlState.value = normalized
     }
 
+    fun setTrackingEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_TRACKING_ENABLED, enabled) }
+        trackingEnabledState.value = enabled
+    }
+
     fun setDemoMode(enabled: Boolean) {
         prefs.edit { putBoolean(KEY_DEMO_MODE, enabled) }
         demoModeState.value = enabled
@@ -58,7 +64,9 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     }
 
     private companion object {
+        const val DEFAULT_SERVER_URL = "https://rollcall.vareonix.cc"
         const val KEY_SERVER_URL = "server_url"
+        const val KEY_TRACKING_ENABLED = "tracking_enabled"
         const val KEY_DEMO_MODE = "demo_mode"
         const val KEY_BLOCKED = "blocked_members"
     }

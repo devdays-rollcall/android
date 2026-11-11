@@ -233,24 +233,13 @@ class RoomMeshStore @Inject constructor(
     }
 
     override suspend fun appendOwnLocation(fix: Fix, batteryPercent: Int?): LocationPoint {
-        //  своя точка с номером MAX(seq) + 1 в той же транзакции, затем OWN_LOCATION в changesFlow.
-        //  Готовую точку даёт fix.toLocationPoint.
-        //  docs/team/vasilisa-service-storage.md
-
-        val meId = me()
-
         val point = db.withTransaction {
-            val maxSeq = db.locationDao().findMaxSeqByAuthor(meId.value)?.maxSeq ?: 0L
-            val point = fix.toLocationPoint(
-                id = EventId.random(),
-                author = meId,
-                seq = maxSeq + 1L,
-                batteryPercent = batteryPercent,
-            )
-            db.locationDao().insertAll(listOf(point.toEntity()))
-            point
+            val group = checkNotNull(groupRepository.activeGroup())
+            val seq = (db.locationDao().maxSeq(group.me.value) ?: 0) + 1
+            fix.toLocationPoint(EventId.random(), group.me, seq, batteryPercent).also {
+                db.locationDao().insertAll(listOf(it.toEntity()))
+            }
         }
-
         changesFlow.emit(StoreChange.OWN_LOCATION)
         return point
     }

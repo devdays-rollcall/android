@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
@@ -59,8 +60,7 @@ import javax.inject.Inject
  * Для активной группы служба поднимает [RouteSession] с движком, транспортом, своим состоянием, монитором
  * уведомлений, треком, wake lock и отправкой на сервер. В «Сборе» телефон уже обменивается данными
  * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт ещё [SyncConfig.exchangeAfterFinishMs],
- * чтобы завершение дошло до всех. В фейковом режиме (`DataModeModule`) служба показывает уведомление
- * и больше ничего не запускает.
+ * чтобы завершение дошло до всех.
  *
  * Задача: docs/team/vasilisa-service-storage.md (перезапуск после убийства процесса)
  */
@@ -88,6 +88,7 @@ class RouteService : Service() {
     // Запуск и остановка частей идут на главном потоке, поэтому полям ниже синхронизация не нужна.
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var route: RouteSession? = null
+    private var trackingJob: kotlinx.coroutines.Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -124,7 +125,14 @@ class RouteService : Service() {
             return
         }
         ServiceCompat.startForeground(this, ServiceNotification.ID, ServiceNotification.build(this), types)
-        if (useFakeGroupData) return
+        if (useFakeGroupData) {
+            if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION == 0 || trackingJob?.isActive == true) return
+            registerNetworkCallback()
+            uploadScheduler.schedulePeriodic()
+            uploadScheduler.uploadNow()
+            trackingJob = serviceScope.launch { trackRecorder.run(MutableStateFlow(RouteState.ACTIVE), uploadScheduler::uploadNow) }
+            return
+        }
 
         registerNetworkCallback()
         serviceScope.launch {
@@ -143,6 +151,8 @@ class RouteService : Service() {
     }
 
     private fun stopComponents() {
+        trackingJob?.cancel()
+        trackingJob = null
         route?.stop()
         route = null
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
@@ -192,7 +202,7 @@ class RouteService : Service() {
                 .stateIn(scope, SharingStarted.Eagerly, RouteState.LOBBY)
             scope.launch { selfStateProducer.run() }
             scope.launch { statusMonitor.run(group) }
-            scope.launch { trackRecorder.run(routeState) }
+            scope.launch { trackRecorder.run(routeState, uploadScheduler::uploadNow) }
             scope.launch {
                 routeState.first { it == RouteState.FINISHED }
                 uploadScheduler.uploadNow()

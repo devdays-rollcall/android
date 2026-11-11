@@ -4,4 +4,10 @@
     <string name="service_channel_name">Работа на маршруте</string>
     <string name="service_notification_title">Перекличка на связи</string>
     <string name="service_notification_text">Обмен с группой и GPS работают в фоне</string>
+    <string name="channel_alarms">Тревоги</string>
+    <string name="channel_alarms_description">Тревоги и SOS участников группы. Звучат как будильник</string>
+    <string name="channel_members">Участники</string>
+    <string name="channel_members_description">«Не слышно» и подсказки, что рядом участник с тревогой</string>
+    <string name="channel_rollcall">Перекличка</string>
+    <string name="channel_rollcall_description">Руководитель начал перекличку</string>
 </resources>

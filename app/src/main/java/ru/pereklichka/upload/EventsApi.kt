@@ -3,7 +3,9 @@ package ru.pereklichka.upload
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.Header
+import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Query
 import retrofit2.http.Url
 
 /**
@@ -25,9 +27,35 @@ interface EventsApi {
         @Body batch: EventBatchDto,
     ): Response<AcceptedDto>
 
+    @POST
+    suspend fun raiseAlert(
+        @Url url: String,
+        @Header("Authorization") authorization: String,
+        @Header("X-Alert-Source") source: String,
+        @Header("X-Alert-Member-Id") memberId: String,
+    ): Response<AlertResultDto>
+
+    @GET
+    suspend fun getEvents(
+        @Url url: String,
+        @Header("Authorization") authorization: String,
+        @Query("limit") limit: Int? = null,
+        @Query("cursor") cursor: String? = null,
+    ): Response<EventPageDto>
+
+    @POST
+    suspend fun createShareLink(
+        @Url url: String,
+        @Header("Authorization") authorization: String,
+    ): Response<ShareTokenDto>
+
     companion object {
         /** Полный адрес `POST /api/v1/events` для адреса сервера из `AppSettings`. */
         fun eventsUrl(serverUrl: String): String = serverUrl.trimEnd('/') + "/api/v1/events"
+
+        fun alertUrl(serverUrl: String) = serverUrl.trimEnd('/') + "/api/v1/alert"
+
+        fun shareLinksUrl(serverUrl: String): String = serverUrl.trimEnd('/') + "/api/v1/share-links"
 
         /** Значение заголовка Authorization для токена группы. */
         fun bearer(token: String): String = "Bearer $token"

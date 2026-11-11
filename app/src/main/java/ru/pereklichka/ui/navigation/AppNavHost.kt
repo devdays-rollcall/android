@@ -1,13 +1,17 @@
 package ru.pereklichka.ui.navigation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -19,7 +23,9 @@ import androidx.navigation.toRoute
 import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.rules.GroupView
+import ru.pereklichka.notify.NotificationTarget
 import ru.pereklichka.permissions.PermissionsScreen
+import ru.pereklichka.permissions.RequiredPermissions
 import ru.pereklichka.ui.GroupViewModel
 import ru.pereklichka.ui.diagnostics.DiagnosticsScreen
 import ru.pereklichka.ui.screens.AlarmScreen
@@ -42,10 +48,28 @@ import ru.pereklichka.ui.screens.StartScreen
  * [GroupViewModel.ensureRouteServiceRunning], так служба оживает после убийства процесса или выдачи разрешений.
  */
 @Composable
-fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
+fun AppNavHost(
+    openTarget: NotificationTarget? = null,
+    onOpenHandled: () -> Unit = {},
+    viewModel: GroupViewModel = hiltViewModel(),
+) {
     val hadGroupAtStart by viewModel.hadGroupAtStart.collectAsStateWithLifecycle()
     val view by viewModel.view.collectAsStateWithLifecycle()
+    val trackingEnabled by viewModel.trackingEnabled.collectAsStateWithLifecycle()
+    val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        viewModel.ensureRouteServiceRunning()
+    }
+    fun requestLocation() {
+        if (RequiredPermissions.missing(context, RequiredPermissions.location()).isNotEmpty()) {
+            locationPermission.launch(RequiredPermissions.location().toTypedArray())
+        }
+    }
+    LaunchedEffect(hadGroupAtStart) {
+        if (hadGroupAtStart == true && trackingEnabled) requestLocation()
+    }
     LifecycleResumeEffect(Unit) {
         viewModel.ensureRouteServiceRunning()
         onPauseOrDispose { }
@@ -54,6 +78,18 @@ fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
         null -> return Loading()
         true -> GroupRoute
         false -> StartRoute
+    }
+
+    // Нажатие на уведомление: открыть экран поверх текущего. Повторное нажатие не плодит копии экрана.
+    LaunchedEffect(openTarget) {
+        val target = openTarget ?: return@LaunchedEffect
+        val route: Any = when (target) {
+            NotificationTarget.Alarms -> AlarmRoute
+            NotificationTarget.Rollcall -> RollcallRoute
+            is NotificationTarget.Member -> MemberRoute(target.id.value)
+        }
+        navController.navigate(route) { launchSingleTop = true }
+        onOpenHandled()
     }
 
     NavHost(navController, startDestination = startDestination) {
@@ -66,16 +102,35 @@ fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
             )
         }
         composable<CreateGroupRoute> {
-            CreateGroupScreen { groupName, myName ->
-                viewModel.createGroup(groupName, myName) { navController.replaceStack(LobbyRoute) }
-            }
+            CreateGroupScreen(
+                onCreate = { groupName, myName ->
+                    viewModel.createGroup(groupName, myName) {
+                        navController.replaceStack(LobbyRoute)
+                        requestLocation()
+                    }
+                },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable<JoinRoute> {
-            JoinScreen { qr, myName -> viewModel.joinGroup(qr, myName) { navController.replaceStack(GroupRoute) } }
+            JoinScreen(
+                onJoin = { qr, myName ->
+                    viewModel.joinGroup(qr, myName) {
+                        navController.replaceStack(GroupRoute)
+                        requestLocation()
+                    }
+                },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable<LobbyRoute> {
             WithView(view) {
-                LobbyScreen(it, onStartRoute = viewModel::startRoute, onOpenGroup = { navController.replaceStack(GroupRoute) })
+                LobbyScreen(
+                    it,
+                    serverUrl = serverUrl,
+                    onStartRoute = { viewModel.startRoute(); navController.replaceStack(GroupRoute) },
+                    onOpenGroup = { navController.replaceStack(GroupRoute) },
+                )
             }
         }
         composable<GroupRoute> {
@@ -89,6 +144,14 @@ fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
                     onSos = { navController.navigate(SosRoute) },
                     onFinishRoute = { navController.navigate(FinishRouteRoute) },
                     onDiagnostics = { navController.navigate(DiagnosticsRoute) },
+                    onStopService = viewModel::stopService,
+                    trackingEnabled = trackingEnabled,
+                    onToggleTracking = {
+                        if (trackingEnabled) viewModel.stopService() else {
+                            viewModel.startTracking()
+                            requestLocation()
+                        }
+                    },
                 )
             }
         }
@@ -100,23 +163,47 @@ fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
                     memberId = memberId,
                     onRaiseAlarm = viewModel::raiseAlarm,
                     onSeenOk = { target -> viewModel.resolve(target, ResolveKind.SEEN_OK) },
+                    onBack = { navController.popBackStack() },
                 )
             }
         }
         composable<RollcallRoute> {
-            WithView(view) { RollcallScreen(it, onStartRollcall = viewModel::startRollcall, onAnswer = viewModel::answerRollcall) }
+            WithView(view) {
+                RollcallScreen(
+                    it,
+                    onStartRollcall = viewModel::startRollcall,
+                    onAnswer = viewModel::answerRollcall,
+                    onAway = { navController.navigate(AwayRoute) },
+                    onSos = { navController.navigate(SosRoute) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable<AwayRoute> {
-            WithView(view) { AwayScreen(it, onAway = viewModel::announceAway, onCancelAway = viewModel::cancelAway) }
+            WithView(view) {
+                AwayScreen(
+                    it,
+                    onAway = viewModel::announceAway,
+                    onCancelAway = viewModel::cancelAway,
+                    onClose = { navController.popBackStack() },
+                )
+            }
         }
         composable<AlarmRoute> {
-            WithView(view) { AlarmScreen(it, onResolve = viewModel::resolve) }
+            WithView(view) { AlarmScreen(it, onResolve = viewModel::resolve, onClose = { navController.popBackStack() }) }
         }
         composable<SosRoute> {
-            WithView(view) { SosScreen(it, onSos = viewModel::sos) }
+            WithView(view) { SosScreen(it, onSos = viewModel::sos, onBack = { navController.popBackStack() }) }
         }
         composable<FinishRouteRoute> {
-            WithView(view) { FinishRouteScreen(it, onFinish = viewModel::finishRoute, onStopService = viewModel::stopService) }
+            WithView(view) {
+                FinishRouteScreen(
+                    it,
+                    onFinish = viewModel::finishRoute,
+                    onStopService = viewModel::stopService,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
         composable<PermissionsRoute> {
             PermissionsScreen(onDone = { navController.popBackStack() })
