@@ -22,7 +22,7 @@ class SosWorker @AssistedInject constructor(
         val authorization = EventsApi.bearer(token)
 
         return try {
-            val response = api.raiseAlert(EventsApi.alertUrl(url), authorization, "sos")
+            val response = api.raiseAlert(EventsApi.alertUrl(url), authorization, "sos", member)
             when (response.code()) {
                 200 -> if (response.body()?.notified == true) Result.success() else Result.retry()
                 404 -> {

@@ -32,6 +32,7 @@ interface EventsApi {
         @Url url: String,
         @Header("Authorization") authorization: String,
         @Header("X-Alert-Source") source: String,
+        @Header("X-Alert-Member-Id") memberId: String,
     ): Response<AlertResultDto>
 
     @GET

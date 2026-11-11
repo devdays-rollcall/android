@@ -42,6 +42,7 @@ class SosWorkerTest {
         assertEquals("/api/v1/alert", request.url.encodedPath)
         assertEquals("Bearer test-token", request.headers["Authorization"])
         assertEquals("sos", request.headers["X-Alert-Source"])
+        assertEquals("member", request.headers["X-Alert-Member-Id"])
     }
 
     @Test

@@ -130,6 +130,13 @@ paths:
             enum: [observer, sos]
             default: observer
           description: SOS может отправить только участник с ключом группы.
+        - name: X-Alert-Member-Id
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: UUID участника, отправившего SOS.
       description: |
         Включает общее предупреждение группы и отправляет уведомление через ntfy.
         Для SOS передайте заголовок X-Alert-Source со значением sos. Поле notified подтверждает приём сообщения ntfy,
