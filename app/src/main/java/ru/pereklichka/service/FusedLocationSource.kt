@@ -17,6 +17,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import ru.pereklichka.domain.model.Fix
 import ru.pereklichka.domain.model.LatLon
 import javax.inject.Inject
@@ -42,8 +44,8 @@ class FusedLocationSource @Inject constructor(@ApplicationContext private val co
     )
 
 
-    override val fixes: Flow<Fix> = callbackFlow {
-        // TODO(Василиса): callbackFlow поверх requestLocationUpdates, PRIORITY_HIGH_ACCURACY раз в 5 с, отписка в awaitClose.
+    override val fixes: Flow<Fix> = flow {
+        //  callbackFlow поверх requestLocationUpdates, PRIORITY_HIGH_ACCURACY раз в 5 с, отписка в awaitClose.
         //  Необязательные поля Fix заполнять, только если hasAccuracy() и прочие вернули true.
         //  docs/team/vasilisa-service-storage.md
 
@@ -53,27 +55,29 @@ class FusedLocationSource @Inject constructor(@ApplicationContext private val co
                     Manifest.permission.ACCESS_FINE_LOCATION,
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                close(SecurityException("ACCESS_FINE_LOCATION not granted"))
-                return@callbackFlow
+                throw SecurityException("ACCESS_FINE_LOCATION not granted")
             }
+            emitAll(
+                callbackFlow {
+                    val callback = object : LocationCallback() {
+                        override fun onLocationResult(result: LocationResult) {
+                            result.lastLocation?.let { location ->
+                                trySend(location.toFix())
+                            }
+                        }
+                    }
 
-            val callback = object : LocationCallback() {
-                override fun onLocationResult(result: LocationResult) {
-                    result.lastLocation?.let { location ->
-                        trySend(location.toFix())
+                    try {
+                        client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+                            .addOnFailureListener { e -> close(e) }
+                    } catch (e: SecurityException) {
+                        close(e)
+                    }
+
+                    awaitClose {
+                        client.removeLocationUpdates(callback)
                     }
                 }
-            }
-
-            try {
-                client.requestLocationUpdates(request, callback, Looper.getMainLooper())
-                    .addOnFailureListener { e -> close(e) }
-            } catch (e: SecurityException) {
-                close(e)
-            }
-
-            awaitClose {
-                client.removeLocationUpdates(callback)
-            }
+            )
     }
 }
