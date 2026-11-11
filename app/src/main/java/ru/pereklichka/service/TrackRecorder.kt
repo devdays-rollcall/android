@@ -27,7 +27,7 @@ class TrackRecorder @Inject constructor(
     private val battery: BatteryLevel,
 ) {
     /** Работает до отмены корутины. [route] даёт текущее состояние маршрута. */
-    suspend fun run(route: StateFlow<RouteState>) {
+    suspend fun run(route: StateFlow<RouteState>, onPoint: () -> Unit = {}) {
         route
             .map { it != RouteState.FINISHED }
             .distinctUntilChanged()
@@ -37,6 +37,7 @@ class TrackRecorder @Inject constructor(
                 ownLocation.update(fix)
                 if (route.value == RouteState.ACTIVE && thinner.shouldKeep(fix)) {
                     store.appendOwnLocation(fix, battery.percent())
+                    onPoint()
                 }
             }
     }

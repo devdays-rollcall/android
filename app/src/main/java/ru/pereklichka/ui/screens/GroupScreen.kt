@@ -22,6 +22,8 @@ fun GroupScreen(
     onSos: () -> Unit,
     onFinishRoute: () -> Unit,
     onDiagnostics: () -> Unit,
+    trackingEnabled: Boolean,
+    onToggleTracking: () -> Unit,
 ) {
     // TODO(Валентин): список участников со статусом текстом рядом с цветом, баннеры тревог и подсказок о близости,
     //  кнопки «Перекличка» (руководитель), «Отойду», SOS, вход в диагностику из меню.
@@ -35,6 +37,7 @@ fun GroupScreen(
         StubButton("Отойду", onAway)
         StubButton("SOS", onSos)
         if (view.iAmLeader) StubButton("Завершить маршрут", onFinishRoute)
+        StubButton(if (trackingEnabled) "Остановить запись GPS" else "Начать запись GPS", onToggleTracking)
         StubButton("Диагностика", onDiagnostics)
         Text("Подсказок о близости: ${view.prompts.size}")
     }

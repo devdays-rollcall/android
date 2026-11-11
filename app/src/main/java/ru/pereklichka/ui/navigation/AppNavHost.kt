@@ -1,13 +1,17 @@
 package ru.pereklichka.ui.navigation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,6 +24,7 @@ import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.permissions.PermissionsScreen
+import ru.pereklichka.permissions.RequiredPermissions
 import ru.pereklichka.ui.GroupViewModel
 import ru.pereklichka.ui.diagnostics.DiagnosticsScreen
 import ru.pereklichka.ui.screens.AlarmScreen
@@ -45,7 +50,20 @@ import ru.pereklichka.ui.screens.StartScreen
 fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
     val hadGroupAtStart by viewModel.hadGroupAtStart.collectAsStateWithLifecycle()
     val view by viewModel.view.collectAsStateWithLifecycle()
+    val trackingEnabled by viewModel.trackingEnabled.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        viewModel.ensureRouteServiceRunning()
+    }
+    fun requestLocation() {
+        if (RequiredPermissions.missing(context, RequiredPermissions.location()).isNotEmpty()) {
+            locationPermission.launch(RequiredPermissions.location().toTypedArray())
+        }
+    }
+    LaunchedEffect(hadGroupAtStart) {
+        if (hadGroupAtStart == true && trackingEnabled) requestLocation()
+    }
     LifecycleResumeEffect(Unit) {
         viewModel.ensureRouteServiceRunning()
         onPauseOrDispose { }
@@ -67,11 +85,17 @@ fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
         }
         composable<CreateGroupRoute> {
             CreateGroupScreen { groupName, myName ->
-                viewModel.createGroup(groupName, myName) { navController.replaceStack(LobbyRoute) }
+                viewModel.createGroup(groupName, myName) {
+                    navController.replaceStack(LobbyRoute)
+                    requestLocation()
+                }
             }
         }
         composable<JoinRoute> {
-            JoinScreen { qr, myName -> viewModel.joinGroup(qr, myName) { navController.replaceStack(GroupRoute) } }
+            JoinScreen { qr, myName -> viewModel.joinGroup(qr, myName) {
+                navController.replaceStack(GroupRoute)
+                requestLocation()
+            } }
         }
         composable<LobbyRoute> {
             WithView(view) {
@@ -89,6 +113,13 @@ fun AppNavHost(viewModel: GroupViewModel = hiltViewModel()) {
                     onSos = { navController.navigate(SosRoute) },
                     onFinishRoute = { navController.navigate(FinishRouteRoute) },
                     onDiagnostics = { navController.navigate(DiagnosticsRoute) },
+                    trackingEnabled = trackingEnabled,
+                    onToggleTracking = {
+                        if (trackingEnabled) viewModel.stopService() else {
+                            viewModel.startTracking()
+                            requestLocation()
+                        }
+                    },
                 )
             }
         }

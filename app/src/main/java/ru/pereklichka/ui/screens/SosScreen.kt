@@ -2,22 +2,31 @@ package ru.pereklichka.ui.screens
 
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import ru.pereklichka.domain.rules.GroupView
+import ru.pereklichka.upload.UploadScheduler
 
-/**
- * SOS. Отправка удержанием кнопки 2 секунды, после отправки звонок в 112 через `ACTION_DIAL` и текст
- * с координатами из моей позиции в `view.members`.
- *
- * Задача: docs/team/valentin-ui.md
- */
 @Composable
 fun SosScreen(view: GroupView, onSos: () -> Unit) {
-    // TODO(Валентин): удержание 2 с, звонок 112, текст с координатами для копирования и подпись о границах:
-    //  звонок пройдёт только при сотовой сети, а SOS дойдёт лишь до телефонов группы, связанных цепочкой.
-    //  docs/team/valentin-ui.md
-    val myPosition = view.members.firstOrNull { it.isMe }?.position
+    val context = LocalContext.current
+    val work = remember(view.group.tag) {
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UploadScheduler.sosName(view.group.tag))
+    }
+    val workInfos by work.collectAsStateWithLifecycle(initialValue = emptyList())
+    val status = when (workInfos.lastOrNull()?.state) {
+        WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> "SOS ожидает отправки."
+        WorkInfo.State.RUNNING -> "Отправляем SOS…"
+        WorkInfo.State.SUCCEEDED -> "Предупреждение передано сервису уведомлений."
+        WorkInfo.State.FAILED -> "Не удалось отправить SOS. Проверьте настройки и попробуйте снова."
+        else -> null
+    }
     StubScreen("SOS") {
         StubButton("Отправить SOS", onSos)
-        Text("Моя позиция: ${myPosition ?: "нет фиксации"}")
+        if (status != null) Text(status)
     }
 }

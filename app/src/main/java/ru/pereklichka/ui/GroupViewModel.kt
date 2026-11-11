@@ -5,13 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ru.pereklichka.actions.GroupActions
+import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.di.FakeGroupData
 import ru.pereklichka.domain.model.EventId
@@ -22,13 +23,14 @@ import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.service.RouteService
 import ru.pereklichka.status.GroupViewProvider
+import ru.pereklichka.upload.UploadScheduler
 import javax.inject.Inject
 
 /**
  * Состояние и действия для всех экранов группы: экраны рисуют [view] и вызывают методы действий, а методы
  * передают их в [GroupActions]. Один экземпляр на всю навигацию создаёт `AppNavHost`.
  *
- * В фейковом режиме (`DataModeModule`) [view] берётся из [FakeGroupViews], а кнопки ничего не пишут.
+ * В фейковом режиме (`DataModeModule`) [view] берётся из [FakeGroupViews].
  * Создание группы и вступление при этом настоящие: они пишут группу в базу и запускают службу, только событие
  * JOINED пропускают.
  *
@@ -39,13 +41,23 @@ class GroupViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val actions: GroupActions,
     private val repository: GroupRepository,
+    private val settings: AppSettings,
+    private val uploadScheduler: UploadScheduler,
     viewProvider: GroupViewProvider,
     @FakeGroupData private val useFakeGroupData: Boolean,
 ) : ViewModel() {
 
     /** Вид группы для экранов; null, пока группы нет или первый расчёт ещё не готов. */
+    val trackingEnabled = settings.trackingEnabled
+
     val view: StateFlow<GroupView?> =
-        if (useFakeGroupData) MutableStateFlow(FakeGroupViews.leader) else viewProvider.view
+        if (useFakeGroupData) {
+            repository.activeGroup.map { group ->
+                group?.let { FakeGroupViews.leader.copy(group = it, me = it.me, iAmLeader = it.me == it.leaderId) }
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
+        } else {
+            viewProvider.view
+        }
 
     /**
      * Была ли активная группа при запуске: от этого зависит первый экран. Читается один раз, чтобы создание группы
@@ -62,7 +74,7 @@ class GroupViewModel @Inject constructor(
      */
     fun ensureRouteServiceRunning() {
         viewModelScope.launch {
-            if (repository.activeGroup() == null || view.value?.route == RouteState.FINISHED) return@launch
+            if (!trackingEnabled.value || repository.activeGroup() == null || view.value?.route == RouteState.FINISHED) return@launch
             RouteService.start(context)
         }
     }
@@ -70,6 +82,7 @@ class GroupViewModel @Inject constructor(
     fun createGroup(groupName: String, myName: String, onCreated: () -> Unit) {
         viewModelScope.launch {
             if (useFakeGroupData) repository.createGroup(groupName) else actions.createGroup(groupName, myName)
+            settings.setTrackingEnabled(true)
             RouteService.start(context)
             onCreated()
         }
@@ -78,6 +91,7 @@ class GroupViewModel @Inject constructor(
     fun joinGroup(qr: QrPayload, myName: String, onJoined: () -> Unit) {
         viewModelScope.launch {
             if (useFakeGroupData) repository.join(qr) else actions.joinGroup(qr, myName)
+            settings.setTrackingEnabled(true)
             RouteService.start(context)
             onJoined()
         }
@@ -88,7 +102,15 @@ class GroupViewModel @Inject constructor(
     fun finishRoute() = act { actions.finishRoute() }
 
     /** «Выключить» после завершения маршрута, не дожидаясь 15 минут. */
-    fun stopService() = RouteService.stop(context)
+    fun stopService() {
+        settings.setTrackingEnabled(false)
+        RouteService.stop(context)
+    }
+
+    fun startTracking() {
+        settings.setTrackingEnabled(true)
+        ensureRouteServiceRunning()
+    }
 
     fun startRollcall() = act { actions.startRollcall() }
 
@@ -100,7 +122,12 @@ class GroupViewModel @Inject constructor(
 
     fun raiseAlarm(target: MemberId) = act { actions.raiseAlarm(target) }
 
-    fun sos() = act { actions.sos() }
+    fun sos() {
+        viewModelScope.launch {
+            val group = repository.activeGroup() ?: return@launch
+            uploadScheduler.sendSos(group, settings.serverUrl.value)
+        }
+    }
 
     fun resolve(target: MemberId, kind: ResolveKind) = act { actions.resolve(target, kind) }
 
