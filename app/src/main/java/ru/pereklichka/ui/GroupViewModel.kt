@@ -47,9 +47,9 @@ class GroupViewModel @Inject constructor(
     @FakeGroupData private val useFakeGroupData: Boolean,
 ) : ViewModel() {
 
-    /** Вид группы для экранов; null, пока группы нет или первый расчёт ещё не готов. */
     val trackingEnabled = settings.trackingEnabled
 
+    /** Вид группы для экранов; null, пока группы нет или первый расчёт ещё не готов. */
     val view: StateFlow<GroupView?> =
         if (useFakeGroupData) {
             repository.activeGroup.map { group ->
@@ -58,6 +58,9 @@ class GroupViewModel @Inject constructor(
         } else {
             viewProvider.view
         }
+
+    /** Адрес сервера: его вместе с токеном отправляет «Передать токен» на экране QR. */
+    val serverUrl: StateFlow<String> = settings.serverUrl
 
     /**
      * Была ли активная группа при запуске: от этого зависит первый экран. Читается один раз, чтобы создание группы

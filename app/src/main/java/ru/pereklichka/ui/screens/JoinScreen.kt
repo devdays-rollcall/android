@@ -1,36 +1,128 @@
 package ru.pereklichka.ui.screens
 
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.tooling.preview.Preview
+import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.model.QrPayload
 import ru.pereklichka.qr.QrParseResult
 import ru.pereklichka.qr.rememberQrScanner
+import ru.pereklichka.ui.components.AppScreen
+import ru.pereklichka.ui.components.BigButton
+import ru.pereklichka.ui.components.BigButtonFull
+import ru.pereklichka.ui.components.ButtonKind
+import ru.pereklichka.ui.components.CardLabel
+import ru.pereklichka.ui.components.HintText
+import ru.pereklichka.ui.components.InfoCard
+import ru.pereklichka.ui.components.LabeledField
+import ru.pereklichka.ui.theme.PereklichkaTheme
+import ru.pereklichka.ui.theme.statusColors
 
 /**
- * Вступление: сканер QR и ввод имени. Работает в авиарежиме, сканеру `rememberQrScanner` интернет не нужен.
+ * Вступление: кнопка сканирования, карточка «Найдена группа» с токеном,
+ * поле «Как вас зовут» и «Вступить». Для чужого или битого кода показывается `QrParseResult.Invalid.reason`
+ * и предложение отсканировать ещё раз.
+ *
+ * Работает в авиарежиме: сканер `rememberQrScanner` открывает камеру без интернета, а разбор кода делает `QrFormat`.
  *
  * Задача: docs/team/valentin-ui.md
  */
 @Composable
-fun JoinScreen(onJoin: (qr: QrPayload, myName: String) -> Unit) {
-    // TODO(Валентин): кнопка сканирования, понятное сообщение для чужого или битого кода (QrParseResult.Invalid.reason),
-    //  поле «Ваше имя» и «Вступить».
-    //  docs/team/valentin-ui.md
+fun JoinScreen(onJoin: (qr: QrPayload, myName: String) -> Unit, onBack: () -> Unit) {
     var scanned by remember { mutableStateOf<QrParseResult?>(null) }
     val scan = rememberQrScanner { scanned = it }
-    StubScreen("Вступление") {
-        StubButton("Сканировать QR", scan)
-        when (val result = scanned) {
-            is QrParseResult.Valid -> {
-                Text("Группа «${result.payload.groupName}»")
-                StubButton("Вступить как «Участник»") { onJoin(result.payload, "Участник") }
-            }
-            is QrParseResult.Invalid -> Text(result.reason)
-            null -> Unit
+    JoinContent(scanned, scan, onJoin, onBack)
+}
+
+@Composable
+private fun JoinContent(
+    scanned: QrParseResult?,
+    onScan: () -> Unit,
+    onJoin: (qr: QrPayload, myName: String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var myName by rememberSaveable { mutableStateOf("") }
+    var joining by rememberSaveable { mutableStateOf(false) }
+    val valid = scanned as? QrParseResult.Valid
+    val ready = valid != null && myName.isNotBlank() && !joining
+    val join = {
+        if (ready && valid != null) {
+            joining = true
+            onJoin(valid.payload, myName.trim())
         }
     }
+
+    AppScreen(
+        title = "Вступить в группу",
+        onBack = onBack,
+        bottom = {
+            if (valid != null) {
+                BigButton(
+                    text = if (joining) "Вступаем…" else "Вступить",
+                    onClick = join,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = ready,
+                )
+                BigButtonFull("Сканировать другой код", onScan, ButtonKind.SECONDARY)
+            } else {
+                BigButtonFull(if (scanned == null) "Сканировать QR" else "Сканировать ещё раз", onScan)
+            }
+        },
+    ) {
+        when (scanned) {
+            null -> {
+                InfoCard {
+                    Text("Наведите камеру на QR-код руководителя", style = MaterialTheme.typography.titleMedium)
+                    HintText("Код на телефоне руководителя, на экране «QR и сбор». Интернет не нужен.")
+                }
+            }
+            is QrParseResult.Invalid -> {
+                val color = MaterialTheme.statusColors.lost
+                InfoCard(container = color.container) {
+                    Text("Это не код группы", style = MaterialTheme.typography.titleMedium, color = color.content)
+                    Text(scanned.reason, style = MaterialTheme.typography.bodyMedium, color = color.content)
+                }
+            }
+            is QrParseResult.Valid -> {
+                InfoCard {
+                    CardLabel("Найдена группа")
+                    Text(scanned.payload.groupName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    HintText("Токен ${scanned.payload.token}")
+                }
+                LabeledField("Как вас зовут", myName, { myName = it }, imeAction = ImeAction.Done, onDone = join)
+                HintText("Имя увидит вся группа в списке и на карте")
+            }
+        }
+    }
+}
+
+@Preview(name = "Вступление: до сканирования")
+@Composable
+private fun JoinEmptyPreview() {
+    PereklichkaTheme { JoinContent(null, {}, { _, _ -> }, {}) }
+}
+
+@Preview(name = "Вступление: группа найдена")
+@Preview(name = "Вступление: группа найдена, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun JoinValidPreview() {
+    val payload = QrPayload("ЛДГ-7К4-М92", "Поход на Ладогу", MemberId("8c1e5b0a-3f2d-4c6e-9a7b-1d2e3f4a5b6c"))
+    PereklichkaTheme { JoinContent(QrParseResult.Valid(payload), {}, { _, _ -> }, {}) }
+}
+
+@Preview(name = "Вступление: чужой код")
+@Composable
+private fun JoinInvalidPreview() {
+    PereklichkaTheme { JoinContent(QrParseResult.Invalid("Код не от Переклички"), {}, { _, _ -> }, {}) }
 }
