@@ -71,14 +71,12 @@ fun GroupScreen(
     onFinishRoute: () -> Unit,
     onDiagnostics: () -> Unit,
     onStopService: () -> Unit,
-    trackingEnabled: Boolean,
-    onToggleTracking: () -> Unit,
     onLobby: () -> Unit = {},
     warnings: List<PhoneWarning> = rememberPhoneWarnings(view),
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { GroupTopBar(view, trackingEnabled, onToggleTracking, onFinishRoute, onDiagnostics) },
+        topBar = { GroupTopBar(view, onFinishRoute, onDiagnostics) },
         bottomBar = { GroupBottomBar(view, onRollcall, onAway, onSos, onStopService, onLobby) },
     ) { innerPadding ->
         GroupList(view, warnings, innerPadding, onMember, onRollcall, onAlarms)
@@ -89,8 +87,6 @@ fun GroupScreen(
 @Composable
 private fun GroupTopBar(
     view: GroupView,
-    trackingEnabled: Boolean,
-    onToggleTracking: () -> Unit,
     onFinishRoute: () -> Unit,
     onDiagnostics: () -> Unit,
 ) {
@@ -117,10 +113,6 @@ private fun GroupTopBar(
                     DropdownMenuItem(
                         text = { Text("Диагностика") },
                         onClick = { menuOpen = false; onDiagnostics() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(if (trackingEnabled) "Остановить запись GPS" else "Начать запись GPS") },
-                        onClick = { menuOpen = false; onToggleTracking() },
                     )
                     // Завершить маршрут может только руководитель и только пока маршрут идёт.
                     if (view.iAmLeader && view.route == RouteState.ACTIVE) {
@@ -256,20 +248,20 @@ private fun Hint(text: String) {
 @Composable
 private fun GroupLeaderPreview() {
     PereklichkaTheme {
-        GroupScreen(FakeGroupViews.leader, {}, {}, {}, {}, {}, {}, {}, {}, trackingEnabled = true, onToggleTracking = {}, warnings = listOf(PhoneWarning.BLUETOOTH_OFF))
+        GroupScreen(FakeGroupViews.leader, {}, {}, {}, {}, {}, {}, {}, {}, warnings = listOf(PhoneWarning.BLUETOOTH_OFF))
     }
 }
 
 @Preview(name = "Группа: участник")
 @Composable
 private fun GroupParticipantPreview() {
-    PereklichkaTheme { GroupScreen(FakeGroupViews.participant, {}, {}, {}, {}, {}, {}, {}, {}, trackingEnabled = true, onToggleTracking = {}) }
+    PereklichkaTheme { GroupScreen(FakeGroupViews.participant, {}, {}, {}, {}, {}, {}, {}, {}) }
 }
 
 @Preview(name = "Группа: маршрут завершён")
 @Composable
 private fun GroupFinishedPreview() {
     PereklichkaTheme {
-        GroupScreen(FakeGroupViews.participant.copy(route = RouteState.FINISHED, alarms = emptyList(), rollcall = null), {}, {}, {}, {}, {}, {}, {}, {}, trackingEnabled = true, onToggleTracking = {})
+        GroupScreen(FakeGroupViews.participant.copy(route = RouteState.FINISHED, alarms = emptyList(), rollcall = null), {}, {}, {}, {}, {}, {}, {}, {})
     }
 }

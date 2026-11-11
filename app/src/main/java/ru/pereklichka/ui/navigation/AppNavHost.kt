@@ -55,7 +55,6 @@ fun AppNavHost(
 ) {
     val hadGroupAtStart by viewModel.hadGroupAtStart.collectAsStateWithLifecycle()
     val view by viewModel.view.collectAsStateWithLifecycle()
-    val trackingEnabled by viewModel.trackingEnabled.collectAsStateWithLifecycle()
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val context = LocalContext.current
@@ -68,7 +67,7 @@ fun AppNavHost(
         }
     }
     LaunchedEffect(hadGroupAtStart) {
-        if (hadGroupAtStart == true && trackingEnabled) requestLocation()
+        if (hadGroupAtStart == true) requestLocation()
     }
     LifecycleResumeEffect(Unit) {
         viewModel.ensureRouteServiceRunning()
@@ -146,13 +145,6 @@ fun AppNavHost(
                     onDiagnostics = { navController.navigate(DiagnosticsRoute) },
                     onStopService = viewModel::stopService,
                     onLobby = { navController.navigate(LobbyRoute) { launchSingleTop = true } },
-                    trackingEnabled = trackingEnabled,
-                    onToggleTracking = {
-                        if (trackingEnabled) viewModel.stopService() else {
-                            viewModel.startTracking()
-                            requestLocation()
-                        }
-                    },
                 )
             }
         }

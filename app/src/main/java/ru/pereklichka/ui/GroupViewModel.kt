@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
@@ -47,8 +49,6 @@ class GroupViewModel @Inject constructor(
     @FakeGroupData private val useFakeGroupData: Boolean,
 ) : ViewModel() {
 
-    val trackingEnabled = settings.trackingEnabled
-
     /** Вид группы для экранов; null, пока группы нет или первый расчёт ещё не готов. */
     val view: StateFlow<GroupView?> =
         if (useFakeGroupData) {
@@ -71,13 +71,14 @@ class GroupViewModel @Inject constructor(
 
     /**
      * Поднимает службу, когда приложение на экране: после убийства процесса, принудительной остановки или выдачи
-     * разрешений. Для той же группы служба ничего не перезапускает. Завершённый маршрут проверяется по текущему
-     * виду, а он сразу после открытия приложения обычно ещё null. Тогда служба поднимется и после завершения
-     * и проработает ещё 15 минут.
+     * разрешений. Для той же группы служба ничего не перезапускает. После завершения маршрута служба не поднимается:
+     * она сама работает 15 минут после ROUTE_FINISHED или её останавливает «Выключить». Вид ждём из потока, потому что
+     * сразу после открытия приложения он ещё null.
      */
     fun ensureRouteServiceRunning() {
         viewModelScope.launch {
-            if (!trackingEnabled.value || repository.activeGroup() == null || view.value?.route == RouteState.FINISHED) return@launch
+            if (repository.activeGroup() == null) return@launch
+            if (view.filterNotNull().first().route == RouteState.FINISHED) return@launch
             RouteService.start(context)
         }
     }
@@ -85,7 +86,6 @@ class GroupViewModel @Inject constructor(
     fun createGroup(groupName: String, myName: String, onCreated: () -> Unit) {
         viewModelScope.launch {
             if (useFakeGroupData) repository.createGroup(groupName) else actions.createGroup(groupName, myName)
-            settings.setTrackingEnabled(true)
             RouteService.start(context)
             onCreated()
         }
@@ -94,7 +94,6 @@ class GroupViewModel @Inject constructor(
     fun joinGroup(qr: QrPayload, myName: String, onJoined: () -> Unit) {
         viewModelScope.launch {
             if (useFakeGroupData) repository.join(qr) else actions.joinGroup(qr, myName)
-            settings.setTrackingEnabled(true)
             RouteService.start(context)
             onJoined()
         }
@@ -105,15 +104,7 @@ class GroupViewModel @Inject constructor(
     fun finishRoute() = act { actions.finishRoute() }
 
     /** «Выключить» после завершения маршрута, не дожидаясь 15 минут. */
-    fun stopService() {
-        settings.setTrackingEnabled(false)
-        RouteService.stop(context)
-    }
-
-    fun startTracking() {
-        settings.setTrackingEnabled(true)
-        ensureRouteServiceRunning()
-    }
+    fun stopService() = RouteService.stop(context)
 
     fun startRollcall() = act { actions.startRollcall() }
 
