@@ -17,7 +17,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Ставит [UploadWorker] в очередь WorkManager. Вызывают его `RouteService` и диагностика.
+ * Ставит [UploadWorker] и [SosWorker] в очередь WorkManager. Вызывают его `RouteService`, `TrackRecorder`,
+ * `GroupViewModel` и диагностика.
  *
  * Отправка не зависит от службы: WorkManager сам дождётся сети и повторит разовую задачу после сбоя с растущей
  * паузой от 10 секунд, а периодическая просто сработает в свой срок.
@@ -28,16 +29,16 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
     private val needsNetwork = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
     /**
-     * Отправить сейчас. Вызывают служба при появлении сети с интернетом и после завершения маршрута,
-     * а также кнопка на экране диагностики.
+     * Отправить, когда будет сеть. Если разовая задача уже стоит в очереди, в том числе в паузе после сбоя,
+     * она остаётся как есть. Вызывают `TrackRecorder` на каждую новую точку и служба после завершения маршрута.
      */
-    fun uploadNow() {
-        val request = OneTimeWorkRequestBuilder<UploadWorker>()
-            .setConstraints(needsNetwork)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(UPLOAD_NOW, ExistingWorkPolicy.KEEP, request)
-    }
+    fun uploadNow() = enqueueUpload(ExistingWorkPolicy.KEEP)
+
+    /**
+     * Отправить сразу, не дожидаясь конца паузы после сбоя: прежняя разовая задача заменяется новой, даже если
+     * уже идёт. Вызывают служба при появлении сети с интернетом и кнопка на экране диагностики.
+     */
+    fun restartUpload() = enqueueUpload(ExistingWorkPolicy.REPLACE)
 
     fun sendSos(group: GroupInfo, serverUrl: String) {
         val request = OneTimeWorkRequestBuilder<SosWorker>()
@@ -48,6 +49,11 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
         WorkManager.getInstance(context).enqueueUniqueWork(sosName(group.tag), ExistingWorkPolicy.KEEP, request)
     }
 
+    /** Снимает SOS группы [groupTag], который ещё ждёт сети: человек отменил свой SOS, и сервер о нём не узнает. */
+    fun cancelSos(groupTag: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(sosName(groupTag))
+    }
+
     /** Страховка на случай, если сигнал о сети не пришёл: раз в 15 минут, это минимум WorkManager. */
     fun schedulePeriodic() {
         val request = PeriodicWorkRequestBuilder<UploadWorker>(PERIOD_MINUTES, TimeUnit.MINUTES)
@@ -56,12 +62,20 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(UPLOAD_PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
+    private fun enqueueUpload(policy: ExistingWorkPolicy) {
+        val request = OneTimeWorkRequestBuilder<UploadWorker>()
+            .setConstraints(needsNetwork)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(UPLOAD_NOW, policy, request)
+    }
+
     companion object {
         fun sosName(groupTag: String) = "sos-$groupTag"
 
-        const val UPLOAD_NOW = "upload-now"
-        const val UPLOAD_PERIODIC = "upload-periodic"
-        const val BACKOFF_SECONDS = 10L
-        const val PERIOD_MINUTES = 15L
+        private const val UPLOAD_NOW = "upload-now"
+        private const val UPLOAD_PERIODIC = "upload-periodic"
+        private const val BACKOFF_SECONDS = 10L
+        private const val PERIOD_MINUTES = 15L
     }
 }

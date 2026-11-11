@@ -7,8 +7,8 @@ import java.time.Instant
 
 /**
  * `EventBatch`: пачка не больше 500 событий (`UploadWorker` шлёт по 200), [senderId] равен `member_id` этого телефона.
- * Пустую пачку телефон шлёт как heartbeat, пока идёт маршрут: по ней сервер знает, что телефон на связи,
- * даже когда новых точек нет.
+ * Пустую пачку `UploadWorker` шлёт как heartbeat, когда маршрут идёт, а новых точек нет, не чаще раза в минуту.
+ * Её же шлёт `SosWorker`, если сервер ещё не знает группу: группа появляется на сервере после первой пачки.
  */
 @Serializable
 data class EventBatchDto(
@@ -74,13 +74,6 @@ data class AlertResultDto(val notified: Boolean)
 
 @Serializable
 data class ShareTokenDto(val token: String)
-
-/** `ErrorResponse`: тело ответов 400, 401, 413, 422 и 503. */
-@Serializable
-data class ErrorResponseDto(val error: ErrorDetailDto)
-
-@Serializable
-data class ErrorDetailDto(val code: String, val message: String)
 
 /** Точка трека в виде события для сервера. Проверку значений перед отправкой делает `UploadWorker`. */
 fun LocationPoint.toEventInput(): EventInputDto = EventInputDto(

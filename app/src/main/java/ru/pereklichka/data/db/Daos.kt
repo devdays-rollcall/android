@@ -32,11 +32,9 @@ interface ControlEventDao {
     @Query("SELECT author, MAX(seq) AS maxSeq FROM control_event GROUP BY author")
     suspend fun maxSeqByAuthor(): List<AuthorMaxSeq>
 
-    @Query("SELECT * FROM control_event WHERE author = :author")
-    suspend fun findByAuthor(author: String): List<ControlEventEntity>
-
-    @Query("SELECT author, MAX(seq) AS maxSeq FROM control_event WHERE author = :author GROUP BY author")
-    suspend fun findMaxSeqByAuthor(author: String): AuthorMaxSeq?
+    /** null, если у автора нет событий. */
+    @Query("SELECT MAX(seq) FROM control_event WHERE author = :author")
+    suspend fun maxSeq(author: String): Long?
 
     @Query("SELECT * FROM control_event WHERE author = :author AND seq > :afterSeq ORDER BY seq LIMIT :limit")
     suspend fun range(author: String, afterSeq: Long, limit: Int): List<ControlEventEntity>
@@ -60,17 +58,19 @@ interface ControlEventDao {
 /** Запросы к точкам трека для `RoomMeshStore`, `UploadWorker` (неотправленные и пометки) и счётчиков диагностики. */
 @Dao
 interface LocationDao {
+    /** Падает на повторном id или паре (author, seq): хранилище проверяет это до вставки. */
+    @Insert
+    suspend fun insert(point: LocationPointEntity)
+
     @Insert
     suspend fun insertAll(points: List<LocationPointEntity>)
 
     @Query("SELECT author, MAX(seq) AS maxSeq FROM location_point GROUP BY author")
     suspend fun maxSeqByAuthor(): List<AuthorMaxSeq>
 
-    @Query("SELECT * FROM location_point WHERE author = :author")
-    suspend fun findByAuthor(author: String): List<LocationPointEntity>
-
-    @Query("SELECT author, MAX(seq) AS maxSeq FROM location_point WHERE author = :author GROUP BY author")
-    suspend fun findMaxSeqByAuthor(author: String): AuthorMaxSeq?
+    /** null, если у автора нет точек. */
+    @Query("SELECT MAX(seq) FROM location_point WHERE author = :author")
+    suspend fun maxSeq(author: String): Long?
 
     @Query("SELECT * FROM location_point WHERE author = :author AND seq > :afterSeq ORDER BY seq LIMIT :limit")
     suspend fun range(author: String, afterSeq: Long, limit: Int): List<LocationPointEntity>
@@ -84,12 +84,6 @@ interface LocationDao {
     /** Неотправленные и не отклонённые точки по порядку (автор, номер). */
     @Query("SELECT * FROM location_point WHERE uploaded = 0 AND rejected = 0 ORDER BY author, seq LIMIT :limit")
     suspend fun unsent(limit: Int): List<LocationPointEntity>
-
-    @Query("select max(seq) from location_point where author = :author")
-    suspend fun maxSeq(author: String): Long?
-
-    @Query("select * from location_point where author = :author and uploaded = 0 and rejected = 0 order by seq limit :limit")
-    suspend fun unsentByAuthor(author: String, limit: Int): List<LocationPointEntity>
 
     /** null, если такой точки нет. Нужен контрактному тесту хранилища и проверке пометок. */
     @Query("SELECT rejected FROM location_point WHERE id = :id")
@@ -122,6 +116,9 @@ interface MemberStateDao {
 
     @Query("SELECT * FROM member_state WHERE memberId = :memberId")
     suspend fun get(memberId: String): MemberStateEntity?
+
+    @Query("SELECT * FROM member_state")
+    suspend fun getAll(): List<MemberStateEntity>
 
     @Query("SELECT * FROM member_state")
     fun observeAll(): Flow<List<MemberStateEntity>>

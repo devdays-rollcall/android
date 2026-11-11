@@ -125,7 +125,11 @@ class GroupViewModel @Inject constructor(
         }
     }
 
-    fun resolve(target: MemberId, kind: ResolveKind) = act { actions.resolve(target, kind) }
+    /** Снятие тревоги о себе отменяет и SOS, который ещё ждёт сети. */
+    fun resolve(target: MemberId, kind: ResolveKind) = act {
+        actions.resolve(target, kind)
+        repository.activeGroup()?.takeIf { it.me == target }?.let { uploadScheduler.cancelSos(it.tag) }
+    }
 
     private fun act(action: suspend () -> Unit) {
         if (useFakeGroupData) return

@@ -12,7 +12,7 @@ import ru.pereklichka.domain.time.Stamped
 /**
  * Хранит всё, что телефон знает о группе, и решает, какие записи от соседа можно принять.
  *
- * На телефоне это `RoomMeshStore`, в тестах [ru.pereklichka.domain.testing.InMemoryMeshStore]; обе реализации
+ * На телефоне это `RoomMeshStore`, в тестах `InMemoryMeshStore` из `testFixtures`; обе реализации
  * проходят один контрактный тест `MeshStoreContractTest`. Свои записи пишут сюда `GroupActions` (события),
  * `TrackRecorder` (точки) и `SelfStateProducer` (состояние). [SyncEngine] берёт отсюда сводку и записи для
  * соседей и применяет их Delta, а `GroupViewProvider` строит из [snapshot] вид группы.
@@ -56,8 +56,9 @@ interface MeshStore {
     suspend fun putOwnState(draft: MemberStateDraft): MemberState
 
     /**
-     * Что изменилось. Срабатывает после фиксации транзакции, но до возврата из метода записи, и только если
-     * что-то действительно добавилось. Подписан движок: по нему он рассылает своё новое соседям.
+     * Своё новое событие или состояние. Срабатывает после фиксации транзакции в [appendOwnEvent] и [putOwnState],
+     * но до возврата из метода. Подписан движок: по нему он сразу рассылает новое соседям. Точки и записи соседей
+     * движок отдаёт в ответ на сводку, поэтому о них поток не сообщает.
      */
     val changes: Flow<StoreChange>
 
@@ -68,5 +69,5 @@ interface MeshStore {
     fun snapshot(): Flow<GroupSnapshot>
 }
 
-/** Что изменилось в хранилище: своё (`OWN_*`) или пришедшее от соседа (`REMOTE_*`) событие, состояние или точка. */
-enum class StoreChange { OWN_EVENT, OWN_STATE, OWN_LOCATION, REMOTE_EVENTS, REMOTE_STATES, REMOTE_LOCATIONS }
+/** Что изменилось в хранилище: своё событие или своё состояние. */
+enum class StoreChange { OWN_EVENT, OWN_STATE }

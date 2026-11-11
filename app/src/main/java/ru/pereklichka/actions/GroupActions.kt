@@ -1,6 +1,8 @@
 package ru.pereklichka.actions
 
+import androidx.room.withTransaction
 import ru.pereklichka.data.GroupRepository
+import ru.pereklichka.data.db.AppDatabase
 import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.EventType
 import ru.pereklichka.domain.model.GroupInfo
@@ -27,13 +29,20 @@ class GroupActions @Inject constructor(
     private val repository: GroupRepository,
     private val store: MeshStore,
     private val viewProvider: GroupViewProvider,
+    private val db: AppDatabase,
 ) {
-    /** Создаёт новую группу, где я руководитель, и пишет моё событие JOINED. Старые данные стираются. */
+    /**
+     * Создаёт новую группу, где я руководитель, и пишет моё событие JOINED. Старые данные стираются.
+     * Группа и JOINED пишутся одной транзакцией: если процесс умрёт посередине, не останется группы, в которой
+     * у руководителя нет имени. Транзакция `RoomMeshStore` при этом вкладывается в общую.
+     */
     suspend fun createGroup(groupName: String, myName: String): GroupInfo {
         require(myName.isNotBlank()) { "Пустое имя" }
-        val group = repository.createGroup(groupName)
-        store.appendOwnEvent(ControlEventDraft(EventType.JOINED, name = myName.trim()))
-        return group
+        return db.withTransaction {
+            repository.createGroup(groupName).also {
+                store.appendOwnEvent(ControlEventDraft(EventType.JOINED, name = myName.trim()))
+            }
+        }
     }
 
     /** Вступает в группу по QR и пишет JOINED. Повторное вступление в ту же группу второй JOINED не пишет. */

@@ -132,7 +132,7 @@ class DiagnosticsViewModel @Inject constructor(
 
     fun setDemoMode(enabled: Boolean) = settings.setDemoMode(enabled)
 
-    fun uploadNow() = uploadScheduler.uploadNow()
+    fun uploadNow() = uploadScheduler.restartUpload()
 
     /** Переключатель блокировки участника: заблокированного транспорт отключает и отбрасывает его сообщения. */
     fun setBlocked(member: MemberId, blocked: Boolean) = settings.setBlocked(member, blocked)

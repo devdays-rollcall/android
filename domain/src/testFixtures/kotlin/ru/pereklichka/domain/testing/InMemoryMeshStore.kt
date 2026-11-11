@@ -29,7 +29,7 @@ import ru.pereklichka.domain.time.Stamped
 /**
  * [MeshStore] в памяти для тестов обоих модулей и эталон поведения для `RoomMeshStore`. Правила приёма
  * из `docs/03-sync-protocol.md` здесь записаны полностью, обе реализации проходят `MeshStoreContractTest`.
- * Класс лежит в основном наборе исходников `domain` и поэтому попадает в APK, хотя приложение его не использует.
+ * Класс лежит в `testFixtures` модуля `domain` и в APK не попадает.
  *
  * Мьютекс делает каждую операцию атомарной, как транзакция Room: две [apply] не перемешиваются,
  * а максимумы по авторам читаются под тем же замком, что и запись.
@@ -72,8 +72,8 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
     override suspend fun statesNewerThan(known: Map<MemberId, Long>): List<Stamped<MemberState>> =
         mutex.withLock { states.values.filter { it.value.seq > (known[it.value.member] ?: 0) } }
 
-    override suspend fun apply(delta: IncomingDelta): ApplyResult {
-        val result = mutex.withLock {
+    override suspend fun apply(delta: IncomingDelta): ApplyResult =
+        mutex.withLock {
             val counter = ApplyCounter()
             applyControl(delta.control, counter)
             applyStates(delta.states, counter)
@@ -81,11 +81,6 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
             if (counter.newControl > 0 || counter.newStates > 0) snapshotState.value = buildSnapshot()
             counter.toResult()
         }
-        if (result.newControl > 0) changesFlow.emit(StoreChange.REMOTE_EVENTS)
-        if (result.newStates > 0) changesFlow.emit(StoreChange.REMOTE_STATES)
-        if (result.newLocations > 0) changesFlow.emit(StoreChange.REMOTE_LOCATIONS)
-        return result
-    }
 
     override suspend fun appendOwnEvent(draft: ControlEventDraft): ControlEvent {
         val event = mutex.withLock {
@@ -109,7 +104,6 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
             if (!point.hasValidValues()) rejectedPointIds += point.id
             point
         }
-        changesFlow.emit(StoreChange.OWN_LOCATION)
         return point
     }
 

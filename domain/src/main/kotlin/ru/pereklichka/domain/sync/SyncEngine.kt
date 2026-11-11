@@ -293,7 +293,6 @@ class SyncEngine @Inject constructor(
             when (change) {
                 StoreChange.OWN_EVENT -> sendOwnEvents()
                 StoreChange.OWN_STATE -> sendOwnState()
-                else -> Unit
             }
         }
 

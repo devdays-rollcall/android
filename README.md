@@ -36,7 +36,7 @@ MONITOR_LIVE_URL=https://rollcall.vareonix.cc ./gradlew :app:testDebugUnitTest -
 | `domain/presence` | `PresenceTracker`: кого телефон слышит напрямую |
 | `domain/rules` | `GroupCalculator` и `GroupView`: статусы, тревоги, перекличка, расстояния |
 | `domain/track` | Прореживание трека и очистка фиксаций |
-| `domain/testing` | `InMemoryMeshStore`, `InMemoryNetwork` с `InMemoryTransport`, `FakeClock` для тестов обоих модулей |
+| `domain/testing` | `InMemoryMeshStore` и `FakeClock` для тестов обоих модулей, `InMemoryNetwork` с `InMemoryTransport` для симуляции в `domain`. Пакет лежит в `testFixtures` и в APK не попадает |
 
 `app` содержит всё, что требует Android.
 
@@ -61,4 +61,3 @@ MONITOR_LIVE_URL=https://rollcall.vareonix.cc ./gradlew :app:testDebugUnitTest -
 | `app/.../service/RouteService.kt`, ветка `intent == null` | Василиса | Безопасный перезапуск после убийства процесса |
 | `app/.../service/BootReceiver.kt` | Василиса | Запуск после перезагрузки, затем включить приёмник в манифесте |
 | `app/.../permissions/PermissionsScreen.kt` | Василиса | Запрос разрешений с объяснением |
-| `app/.../upload/UploadWorker.kt` | Даниил | Heartbeat пустой пачкой, пока идёт маршрут, и предел в 2 минуты на запуск |
