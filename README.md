@@ -1,6 +1,6 @@
 # Перекличка
 
-Android-приложение отправляет GPS-точки участников на сервер. Обмен между телефонами без интернета пока не реализован. Протокол обмена и задачи участников лежат в [`docs/`](docs/README.md).
+Android-приложение, которое держит связь туристической группы без сотовой сети. Телефоны обмениваются данными через Google Nearby Connections, считают статусы и тревоги, а при появлении интернета отправляют GPS-точки на сервер. Протокол обмена и задачи участников лежат в [`docs/`](docs/README.md).
 
 Кнопка SOS включает предупреждение группы с пометкой SOS и отправляет его в ntfy. Без сети запрос остаётся в очереди до подключения. Это не вызов экстренных служб; доставка уведомления на каждый телефон не гарантируется.
 
@@ -58,13 +58,7 @@ MONITOR_LIVE_URL=https://rollcall.vareonix.cc ./gradlew :app:testDebugUnitTest -
 
 | Файл | Кто | Задача |
 |---|---|---|
-| `domain/.../sync/SyncEngine.kt` | Ольга | Обработчики сеанса: Hello, Delta, рассылка, таймер Hello; цель `MeshSimulationTest` |
-| `app/.../transport/NearbyPeerTransport.kt` | Ольга | Реклама, поиск и соединения Nearby по `ConnectionPolicy`, отправка |
-| `app/.../ui/diagnostics/DiagnosticsViewModel.kt` | Ольга | Соседи с временем последнего сообщения, список блокировки |
-| `app/.../data/RoomMeshStore.kt` | Василиса | Хранилище на Room по эталону `InMemoryMeshStore`; цель `RoomMeshStoreContractTest` |
 | `app/.../service/RouteService.kt`, ветка `intent == null` | Василиса | Безопасный перезапуск после убийства процесса |
 | `app/.../service/BootReceiver.kt` | Василиса | Запуск после перезагрузки, затем включить приёмник в манифесте |
 | `app/.../permissions/PermissionsScreen.kt` | Василиса | Запрос разрешений с объяснением |
-| `app/.../ui/screens/*.kt` | Валентин | Одиннадцать экранов; в каждой заглушке написано, какие поля `GroupView` нужны |
-| `app/.../notify/AndroidNotifier.kt` | Валентин | Каналы, звук тревоги, одно уведомление на тревогу |
-| `app/.../upload/UploadWorker.kt` | Даниил | Пачки, коды ответа, повторы, heartbeat; цель `UploadWorkerTest` |
+| `app/.../upload/UploadWorker.kt` | Даниил | Heartbeat пустой пачкой, пока идёт маршрут, и предел в 2 минуты на запуск |
