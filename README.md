@@ -36,7 +36,7 @@ MONITOR_LIVE_URL=https://rollcall.vareonix.cc ./gradlew :app:testDebugUnitTest -
 | `domain/presence` | `PresenceTracker`: кого телефон слышит напрямую |
 | `domain/rules` | `GroupCalculator` и `GroupView`: статусы, тревоги, перекличка, расстояния |
 | `domain/track` | Прореживание трека и очистка фиксаций |
-| `domain/testing` | `InMemoryMeshStore`, `InMemoryNetwork` с `InMemoryTransport`, `FakeClock` для тестов обоих модулей |
+| `domain/testing` | `InMemoryMeshStore` и `FakeClock` для тестов обоих модулей, `InMemoryNetwork` с `InMemoryTransport` для симуляции в `domain`. Пакет лежит в `testFixtures` и в APK не попадает |
 
 `app` содержит всё, что требует Android.
 

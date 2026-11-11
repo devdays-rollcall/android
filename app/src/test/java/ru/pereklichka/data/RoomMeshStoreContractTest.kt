@@ -2,7 +2,6 @@ package ru.pereklichka.data
 
 import android.app.Application
 import org.junit.After
-import org.junit.Ignore
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -17,11 +16,7 @@ import ru.pereklichka.domain.time.Clock
 /**
  * Контракт `MeshStore` на `RoomMeshStore`: те же проверки, что проходит `InMemoryMeshStore`, на Room в памяти
  * через Robolectric, без эмулятора.
- *
- * Тест-спецификация для Василисы: сними `@Ignore`, когда `RoomMeshStore` готов, и добейся зелёного.
- * Задача: docs/team/vasilisa-service-storage.md
  */
-//@Ignore("включи, когда сделаешь RoomMeshStore")
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class RoomMeshStoreContractTest : MeshStoreContractTest() {

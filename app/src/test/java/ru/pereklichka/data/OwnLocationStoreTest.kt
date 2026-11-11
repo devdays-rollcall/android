@@ -33,7 +33,7 @@ class OwnLocationStoreTest {
 
         assertEquals(group.me, first.author)
         assertEquals(group.me, second.author)
-        assertEquals(listOf(1L, 2L), db.locationDao().unsentByAuthor(group.me.value, 10).map { it.seq })
-        assertEquals(listOf(first.id.value, second.id.value), db.locationDao().unsentByAuthor(group.me.value, 10).map { it.id })
+        assertEquals(listOf(1L, 2L), db.locationDao().unsent(10).map { it.seq })
+        assertEquals(listOf(first.id.value, second.id.value), db.locationDao().unsent(10).map { it.id })
     }
 }

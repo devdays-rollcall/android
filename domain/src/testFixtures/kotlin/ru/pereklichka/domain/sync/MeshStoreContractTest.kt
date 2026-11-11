@@ -119,6 +119,34 @@ abstract class MeshStoreContractTest {
     }
 
     @Test
+    fun `новый номер с чужим id это конфликт, и в той же Delta тоже`() = storeTest { store ->
+        val taken = EventId("taken")
+        store.apply(IncomingDelta(control = listOf(remote(bob, 1, id = taken))))
+
+        val result = store.apply(
+            IncomingDelta(
+                control = listOf(remote(bob, 2, id = taken)),
+                locations = listOf(point(bob, 1, id = EventId("shared")), point(bob, 2, id = EventId("shared"))),
+            ),
+        )
+
+        assertEquals(ApplyResult(newLocations = 1, conflicts = 2), result)
+        assertEquals(mapOf(bob to 1L), store.summary().control)
+        assertEquals(listOf(EventId("shared")), store.locations(bob, 0, 10).map { it.id })
+    }
+
+    @Test
+    fun `повтор той же записи внутри одной Delta это повтор`() = storeTest { store ->
+        val event = remote(bob, 1)
+        val point = point(bob, 1)
+
+        val result = store.apply(IncomingDelta(control = listOf(event, event), locations = listOf(point, point)))
+
+        assertEquals(ApplyResult(newControl = 1, newLocations = 1, duplicates = 2), result)
+        assertEquals(listOf(point), store.locations(bob, 0, 10))
+    }
+
+    @Test
     fun `запись с номером меньше единицы отбрасывается`() = storeTest { store ->
         val result = store.apply(
             IncomingDelta(control = listOf(remote(bob, 0)), locations = listOf(point(bob, -1))),
@@ -244,32 +272,22 @@ abstract class MeshStoreContractTest {
     }
 
     @Test
-    fun `изменения приходят только когда что-то добавилось`() = storeTest { store ->
+    fun `изменения сообщают только о своих событиях и состоянии`() = storeTest { store ->
         val changes = mutableListOf<StoreChange>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { store.changes.toList(changes) }
 
         store.appendOwnEvent(ControlEventDraft(EventType.JOINED, name = "Я"))
         store.putOwnState(MemberStateDraft(fix = null, batteryPercent = null, heardAgoMs = emptyMap()))
         store.appendOwnLocation(fix(), batteryPercent = null)
-        val delta = IncomingDelta(
-            control = listOf(remote(bob, 1)),
-            states = listOf(remoteState(bob, 1)),
-            locations = listOf(point(bob, 1)),
-        )
-        store.apply(delta)
-        store.apply(delta)
-
-        assertEquals(
-            listOf(
-                StoreChange.OWN_EVENT,
-                StoreChange.OWN_STATE,
-                StoreChange.OWN_LOCATION,
-                StoreChange.REMOTE_EVENTS,
-                StoreChange.REMOTE_STATES,
-                StoreChange.REMOTE_LOCATIONS,
+        store.apply(
+            IncomingDelta(
+                control = listOf(remote(bob, 1)),
+                states = listOf(remoteState(bob, 1)),
+                locations = listOf(point(bob, 1)),
             ),
-            changes,
         )
+
+        assertEquals(listOf(StoreChange.OWN_EVENT, StoreChange.OWN_STATE), changes)
     }
 
     @Test
@@ -313,8 +331,12 @@ abstract class MeshStoreContractTest {
     private fun remoteState(member: MemberId, seq: Long): Stamped<MemberState> =
         Stamped.received(MemberState(member, seq), 0, clock)
 
-    private fun point(author: MemberId, seq: Long, latitude: Double = 43.35): LocationPoint =
-        LocationPoint(EventId("$author-l$seq"), author, seq, latitude, longitude = 42.44, recordedAtMs = 0)
+    private fun point(
+        author: MemberId,
+        seq: Long,
+        latitude: Double = 43.35,
+        id: EventId = EventId("$author-l$seq"),
+    ): LocationPoint = LocationPoint(id, author, seq, latitude, longitude = 42.44, recordedAtMs = 0)
 
     private fun fix(elapsedRealtimeMs: Long = 0) = Fix(
         position = LatLon(43.35, 42.44),
