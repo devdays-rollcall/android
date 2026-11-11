@@ -79,6 +79,13 @@ fun PromptBanner(prompt: NearbyPrompt, onClick: () -> Unit, modifier: Modifier =
     )
 }
 
+/** Предупреждение о телефоне: выключен Bluetooth, уведомления или включена полная тишина. Нажатие открывает настройки. */
+@Composable
+fun WarningBanner(warning: PhoneWarning, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val color = MaterialTheme.statusColors.away
+    Banner(color.container, color.content, warning.title, warning.subtitle, onClick, modifier)
+}
+
 /** Идёт перекличка: руководитель видит, сколько ответило, участник видит, сколько осталось времени. */
 @Composable
 fun RollcallBanner(rollcall: RollcallView, iAmLeader: Boolean, iAnswered: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {

@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ru.pereklichka.actions.GroupActions
+import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.di.FakeGroupData
 import ru.pereklichka.domain.model.EventId
@@ -39,6 +40,7 @@ class GroupViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val actions: GroupActions,
     private val repository: GroupRepository,
+    settings: AppSettings,
     viewProvider: GroupViewProvider,
     @FakeGroupData private val useFakeGroupData: Boolean,
 ) : ViewModel() {
@@ -46,6 +48,9 @@ class GroupViewModel @Inject constructor(
     /** Вид группы для экранов; null, пока группы нет или первый расчёт ещё не готов. */
     val view: StateFlow<GroupView?> =
         if (useFakeGroupData) MutableStateFlow(FakeGroupViews.leader) else viewProvider.view
+
+    /** Адрес сервера: его вместе с токеном отправляет «Передать токен» на экране QR. */
+    val serverUrl: StateFlow<String> = settings.serverUrl
 
     /**
      * Была ли активная группа при запуске: от этого зависит первый экран. Читается один раз, чтобы создание группы

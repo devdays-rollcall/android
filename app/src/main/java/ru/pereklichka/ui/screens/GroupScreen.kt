@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -43,6 +44,9 @@ import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.ButtonKind
 import ru.pereklichka.ui.components.MemberRow
 import ru.pereklichka.ui.components.MoreAlarmsBanner
+import ru.pereklichka.ui.components.PhoneWarning
+import ru.pereklichka.ui.components.WarningBanner
+import ru.pereklichka.ui.components.rememberPhoneWarnings
 import ru.pereklichka.ui.components.PromptBanner
 import ru.pereklichka.ui.components.RollcallBanner
 import ru.pereklichka.ui.theme.PereklichkaTheme
@@ -55,11 +59,7 @@ private const val MAX_ALARM_BANNERS = 3
  * «примерно», если `approximate`), расстояние и направление, заряд. Сверху баннеры `view.alarms` и `view.prompts`.
  * Это главный экран, пока группа есть.
  *
- * Экран только рисует [view] и вызывает колбэки, ничего не считает и не знает про ViewModel.
- *
- * Задача: docs/team/valentin-ui.md
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupScreen(
     view: GroupView,
@@ -70,13 +70,15 @@ fun GroupScreen(
     onSos: () -> Unit,
     onFinishRoute: () -> Unit,
     onDiagnostics: () -> Unit,
+    onStopService: () -> Unit,
+    warnings: List<PhoneWarning> = rememberPhoneWarnings(view),
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { GroupTopBar(view, onFinishRoute, onDiagnostics) },
-        bottomBar = { GroupBottomBar(view, onRollcall, onAway, onSos) },
+        bottomBar = { GroupBottomBar(view, onRollcall, onAway, onSos, onStopService) },
     ) { innerPadding ->
-        GroupList(view, innerPadding, onMember, onRollcall, onAlarms)
+        GroupList(view, warnings, innerPadding, onMember, onRollcall, onAlarms)
     }
 }
 
@@ -130,6 +132,7 @@ private fun routeText(route: RouteState) = when (route) {
 @Composable
 private fun GroupList(
     view: GroupView,
+    warnings: List<PhoneWarning>,
     innerPadding: PaddingValues,
     onMember: (MemberId) -> Unit,
     onRollcall: () -> Unit,
@@ -137,6 +140,7 @@ private fun GroupList(
 ) {
     val spacing = MaterialTheme.spacing
     val alone = view.members.none { !it.isMe }
+    val context = LocalContext.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -152,6 +156,9 @@ private fun GroupList(
         }
         if (view.alarms.size > MAX_ALARM_BANNERS) {
             item(key = "alarms-more") { MoreAlarmsBanner(view.alarms.size - MAX_ALARM_BANNERS, onAlarms) }
+        }
+        items(warnings, key = { "warning-${it.name}" }) { warning ->
+            WarningBanner(warning, onClick = { context.startActivity(warning.settingsIntent(context)) })
         }
         items(view.prompts, key = { "prompt-${it.member.value}" }) { prompt ->
             PromptBanner(prompt, onClick = { onMember(prompt.member) })
@@ -180,7 +187,13 @@ private fun GroupList(
 
 /** Нижняя панель: набор кнопок зависит от состояния маршрута и роли. */
 @Composable
-private fun GroupBottomBar(view: GroupView, onRollcall: () -> Unit, onAway: () -> Unit, onSos: () -> Unit) {
+private fun GroupBottomBar(
+    view: GroupView,
+    onRollcall: () -> Unit,
+    onAway: () -> Unit,
+    onSos: () -> Unit,
+    onStopService: () -> Unit,
+) {
     val spacing = MaterialTheme.spacing
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
@@ -190,7 +203,11 @@ private fun GroupBottomBar(view: GroupView, onRollcall: () -> Unit, onAway: () -
             verticalArrangement = Arrangement.spacedBy(spacing.s),
         ) {
             when (view.route) {
-                RouteState.FINISHED -> Hint("Маршрут завершён")
+                RouteState.FINISHED -> {
+                    // Служба работает ещё 15 минут, чтобы завершение дошло до всех. «Выключить» останавливает её сразу.
+                    Hint("Маршрут завершён. Приложение ещё 15 минут передаёт это остальным")
+                    BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY)
+                }
                 RouteState.LOBBY -> Hint("Маршрут ещё не начался")
                 RouteState.ACTIVE -> {
                     if (view.iAmLeader) BigButtonFull("Перекличка", onRollcall)
@@ -215,3 +232,25 @@ private fun Hint(text: String) {
     )
 }
 
+@Preview(name = "Группа: руководитель")
+@Preview(name = "Группа: руководитель, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun GroupLeaderPreview() {
+    PereklichkaTheme {
+        GroupScreen(FakeGroupViews.leader, {}, {}, {}, {}, {}, {}, {}, {}, warnings = listOf(PhoneWarning.BLUETOOTH_OFF))
+    }
+}
+
+@Preview(name = "Группа: участник")
+@Composable
+private fun GroupParticipantPreview() {
+    PereklichkaTheme { GroupScreen(FakeGroupViews.participant, {}, {}, {}, {}, {}, {}, {}, {}) }
+}
+
+@Preview(name = "Группа: маршрут завершён")
+@Composable
+private fun GroupFinishedPreview() {
+    PereklichkaTheme {
+        GroupScreen(FakeGroupViews.participant.copy(route = RouteState.FINISHED, alarms = emptyList(), rollcall = null), {}, {}, {}, {}, {}, {}, {}, {})
+    }
+}
