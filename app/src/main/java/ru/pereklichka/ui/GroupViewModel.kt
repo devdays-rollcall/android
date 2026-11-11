@@ -125,7 +125,9 @@ class GroupViewModel @Inject constructor(
 
     fun raiseAlarm(target: MemberId) = act { actions.raiseAlarm(target) }
 
+    /** SOS уходит и в mesh к телефонам группы, и на сервер мониторинга, когда появится сеть. */
     fun sos() {
+        act { actions.sos() }
         viewModelScope.launch {
             val group = repository.activeGroup() ?: return@launch
             uploadScheduler.sendSos(group, settings.serverUrl.value)
