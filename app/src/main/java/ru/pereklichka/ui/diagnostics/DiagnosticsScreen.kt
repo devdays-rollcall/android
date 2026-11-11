@@ -69,9 +69,24 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             Section("Обмен")
             Line("Движок", if (state.sync.running) "работает" else "остановлен")
             Line("Соседи", state.connectedPeers.joinToString().ifEmpty { "нет" })
+            state.heardAgo.entries.sortedBy { it.key.value }.forEach { (member, ago) ->
+                Line(state.memberNames[member] ?: member.value, "${ago / 1000} с назад")
+            }
             Line("Сообщений отправлено и получено", "${state.sync.sentMessages} / ${state.sync.receivedMessages}")
             Line("Неразборчивых", state.sync.corruptMessages.toString())
             Line("Повторы, не по порядку, конфликты", state.sync.applied.run { "$duplicates / $outOfOrder / $conflicts" })
+
+            Section("Блокировка")
+            if (state.members.isEmpty()) Line("Участники", "нет")
+            state.members.forEach { member ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(state.memberNames[member] ?: member.value, Modifier.weight(1f))
+                    Switch(
+                        checked = member in state.blocked,
+                        onCheckedChange = { viewModel.setBlocked(member, it) },
+                    )
+                }
+            }
 
             Section("База")
             Line("События", state.counts.events.toString())

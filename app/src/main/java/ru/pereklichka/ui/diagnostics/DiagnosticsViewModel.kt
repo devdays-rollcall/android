@@ -16,11 +16,13 @@ import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.db.AppDatabase
 import ru.pereklichka.domain.model.GroupInfo
 import ru.pereklichka.domain.model.MemberId
+import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.sync.PeerTransport
 import ru.pereklichka.domain.sync.SyncDiagnostics
 import ru.pereklichka.domain.sync.SyncEngine
 import ru.pereklichka.notify.PhoneChecks
 import ru.pereklichka.service.PowerTools
+import ru.pereklichka.status.GroupViewProvider
 import ru.pereklichka.transport.RadioCheck
 import ru.pereklichka.upload.UploadScheduler
 import ru.pereklichka.upload.UploadStatus
@@ -33,6 +35,14 @@ data class DiagnosticsState(
     val counts: DatabaseCounts = DatabaseCounts(),
     val connectedPeers: Set<MemberId> = emptySet(),
     val sync: SyncDiagnostics = SyncDiagnostics(),
+    /** Кого телефон слышал напрямую и сколько миллисекунд назад, по `PresenceTracker`. */
+    val heardAgo: Map<MemberId, Long> = emptyMap(),
+    /** Состав группы для списка блокировки. */
+    val members: List<MemberId> = emptyList(),
+    /** Заблокированные участники: им не подключаемся и их сообщения отбрасываем. */
+    val blocked: Set<MemberId> = emptySet(),
+    /** Имена участников из состояния группы; у тех, чей JOINED ещё не дошёл, имени нет. */
+    val memberNames: Map<MemberId, String> = emptyMap(),
 )
 
 /** Системные флаги для раздела «Телефон». ViewModel перечитывает их раз в 2 секунды, это проще, чем подписываться на рассылку о каждом. */
@@ -72,15 +82,21 @@ class DiagnosticsViewModel @Inject constructor(
     private val settings: AppSettings,
     private val uploadScheduler: UploadScheduler,
     uploadStatus: UploadStatus,
+    private val presence: PresenceTracker,
+    viewProvider: GroupViewProvider,
 ) : ViewModel() {
-
-    // TODO(Ольга): добавить соседей с временем последнего сообщения и список блокировки (AppSettings.setBlocked).
-    //  Блокировка нужна, чтобы на одном столе заставить телефоны общаться через посредника.
-    //  docs/team/olga-transport.md
 
     private val systemChecks = flow {
         while (true) {
             emit(readSystemChecks())
+            delay(SYSTEM_REFRESH_MS)
+        }
+    }
+
+    // Сколько назад слышали каждого: считается по монотонным часам, обновляем с тем же тиком, что и системные проверки.
+    private val heardAgo = flow {
+        while (true) {
+            emit(presence.heardAgo())
             delay(SYSTEM_REFRESH_MS)
         }
     }
@@ -94,12 +110,18 @@ class DiagnosticsViewModel @Inject constructor(
     ) { events, points, unsent, rejected, states -> DatabaseCounts(events, points, unsent, rejected, states) }
 
     val state: StateFlow<DiagnosticsState> = combine(
-        groupRepository.activeGroup,
-        systemChecks,
-        counts,
-        transport.connectedPeers,
-        engine.diagnostics,
-    ) { group, system, dbCounts, peers, sync -> DiagnosticsState(group, system, dbCounts, peers, sync) }
+        combine(groupRepository.activeGroup, systemChecks, counts, ::Triple),
+        combine(transport.connectedPeers, engine.diagnostics, heardAgo, ::Triple),
+        combine(settings.blockedMembers, viewProvider.view, ::Pair),
+    ) { (group, system, dbCounts), (peers, sync, heard), (blocked, view) ->
+        val names = view?.members?.associate { it.id to it.name }.orEmpty()
+        // Себя в список блокировки не выводим: GroupView.members включает свой телефон.
+        val roster = (view?.members?.map { it.id }.orEmpty() + heard.keys + blocked)
+            .distinct()
+            .filter { it != group?.me }
+            .sortedBy { names[it] ?: it.value }
+        DiagnosticsState(group, system, dbCounts, peers, sync, heard, roster, blocked, names)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DiagnosticsState())
 
     val serverUrl: StateFlow<String> = settings.serverUrl
@@ -111,6 +133,9 @@ class DiagnosticsViewModel @Inject constructor(
     fun setDemoMode(enabled: Boolean) = settings.setDemoMode(enabled)
 
     fun uploadNow() = uploadScheduler.uploadNow()
+
+    /** Переключатель блокировки участника: заблокированного транспорт отключает и отбрасывает его сообщения. */
+    fun setBlocked(member: MemberId, blocked: Boolean) = settings.setBlocked(member, blocked)
 
     private fun readSystemChecks() = SystemChecks(
         bluetoothEnabled = radioCheck.isBluetoothEnabled(),
