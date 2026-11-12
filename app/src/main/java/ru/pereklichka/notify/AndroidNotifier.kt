@@ -19,13 +19,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * [Notifier] на системных уведомлениях Android: тревоги, «Не слышно», перекличка и подсказки о близости.
+ * [Notifier] на системных уведомлениях Android: тревоги, «Не слышно», перекличка, подсказки о близости
+ * и «Вернулись?» в конце отлучки.
  * Вызывает его `StatusMonitor`. Тихий канал службы создаёт `ServiceNotification`, остальные каналы создаются здесь.
  *
  * Каналы:
  * - «Тревоги» ([CHANNEL_ALARMS]): тревоги и SOS, высокая важность, звук будильника с `USAGE_ALARM`. Так тревога
  *   проходит «Не беспокоить», если в нём разрешены будильники (по умолчанию разрешены).
- * - «Участники» ([CHANNEL_MEMBERS]): «Не слышно» и подсказка «Рядом телефон участника».
+ * - «Участники» ([CHANNEL_MEMBERS]): «Не слышно», подсказка «Рядом телефон участника» и «Вернулись?». Кнопки
+ *   «Вернулись?» обрабатывает [AwayReminderReceiver].
  * - «Перекличка» ([CHANNEL_ROLLCALL]).
  *
  * У всех уведомлений один id, различает их tag = [NotifyEvent.key]: повторный [show] с тем же ключом обновляет
@@ -87,6 +89,17 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
                     .setCategory(NotificationCompat.CATEGORY_STATUS)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setContentIntent(open(event.key, NotificationTarget.Alarms)),
+            )
+            NotifyEvent.AwayEnding -> post(
+                event.key,
+                NotificationCompat.Builder(context, CHANNEL_MEMBERS)
+                    .setContentTitle("Отлучка заканчивается — вы вернулись?")
+                    .setContentText("Если ещё не вернулись, продлите отлучку. Иначе группа увидит у вас «Не слышно»")
+                    .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setContentIntent(open(event.key, NotificationTarget.Away))
+                    .addAction(R.drawable.sym_check, "Я вернулся", awayIntent(AwayReminderReceiver.ACTION_BACK))
+                    .addAction(R.drawable.sym_schedule, "Ещё 10 минут", awayIntent(AwayReminderReceiver.ACTION_EXTEND)),
             )
         }
     }
@@ -165,6 +178,14 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         context,
         key.hashCode(),
         AlarmSwipeReceiver.intent(context, key),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    /** Кнопка уведомления «Вернулись?». У двух кнопок разные action, поэтому PendingIntent не совпадут. */
+    private fun awayIntent(action: String): PendingIntent = PendingIntent.getBroadcast(
+        context,
+        NotifyEvent.AWAY_ENDING_KEY.hashCode(),
+        AwayReminderReceiver.intent(context, action),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 

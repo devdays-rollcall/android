@@ -26,7 +26,6 @@ import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.notify.NotificationTarget
 import ru.pereklichka.permissions.PermissionsScreen
 import ru.pereklichka.ui.GroupViewModel
-import ru.pereklichka.ui.diagnostics.DiagnosticsScreen
 import ru.pereklichka.ui.screens.AlarmScreen
 import ru.pereklichka.ui.screens.AwayScreen
 import ru.pereklichka.ui.screens.CreateGroupScreen
@@ -38,6 +37,8 @@ import ru.pereklichka.ui.screens.MemberScreen
 import ru.pereklichka.ui.screens.RollcallScreen
 import ru.pereklichka.ui.screens.SosScreen
 import ru.pereklichka.ui.screens.StartScreen
+import ru.pereklichka.ui.settings.DevScreen
+import ru.pereklichka.ui.settings.SettingsScreen
 
 /**
  * Граф навигации: все экраны приложения и переходы между ними. Его показывает `MainActivity`.
@@ -77,6 +78,7 @@ fun AppNavHost(
         val route: Any = when (target) {
             NotificationTarget.Alarms -> AlarmRoute
             NotificationTarget.Rollcall -> RollcallRoute
+            NotificationTarget.Away -> AwayRoute
             is NotificationTarget.Member -> MemberRoute(target.id.value)
         }
         navController.open(route)
@@ -106,7 +108,7 @@ fun AppNavHost(
                 // Без проверки RESUMED: стартовый экран открывает разрешения сам, ещё до конца перехода на него,
                 // а второй копии экрана не будет и так из-за launchSingleTop.
                 onPermissions = { navController.open(PermissionsRoute) },
-                onSettings = { go { navController.open(DiagnosticsRoute) } },
+                onSettings = { go { navController.open(SettingsRoute) } },
             )
         }
         composable<CreateGroupRoute> {
@@ -150,7 +152,7 @@ fun AppNavHost(
                     onAlarms = { go { navController.open(AlarmRoute) } },
                     onSos = { go { navController.open(SosRoute) } },
                     onFinishRoute = { go { navController.open(FinishRouteRoute) } },
-                    onSettings = { go { navController.open(DiagnosticsRoute) } },
+                    onSettings = { go { navController.open(SettingsRoute) } },
                     onPermissions = { go { navController.open(PermissionsRoute) } },
                     onLobby = { go { navController.open(LobbyRoute) } },
                     onStopService = viewModel::stopService,
@@ -239,9 +241,17 @@ fun AppNavHost(
             val go = onlyWhenResumed()
             PermissionsScreen(onDone = { go { viewModel.ensureRouteServiceRunning(); navController.popBackStack() } })
         }
-        composable<DiagnosticsRoute> {
+        composable<SettingsRoute> {
             val go = onlyWhenResumed()
-            DiagnosticsScreen(onBack = { go { navController.popBackStack() } })
+            SettingsScreen(
+                onBack = { go { navController.popBackStack() } },
+                onPermissions = { go { navController.open(PermissionsRoute) } },
+                onDev = { go { navController.open(DevRoute) } },
+            )
+        }
+        composable<DevRoute> {
+            val go = onlyWhenResumed()
+            DevScreen(onBack = { go { navController.popBackStack() } })
         }
     }
 }

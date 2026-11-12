@@ -10,12 +10,14 @@ import ru.pereklichka.domain.model.MemberId
 sealed interface NotificationTarget {
     data object Alarms : NotificationTarget
     data object Rollcall : NotificationTarget
+    data object Away : NotificationTarget
     data class Member(val id: MemberId) : NotificationTarget
 
     companion object {
         private const val EXTRA_OPEN = "ru.pereklichka.OPEN"
         private const val ALARMS = "alarms"
         private const val ROLLCALL = "rollcall"
+        private const val AWAY = "away"
         private const val MEMBER_PREFIX = "member:"
 
         fun put(intent: Intent, target: NotificationTarget): Intent = intent.putExtra(
@@ -23,6 +25,7 @@ sealed interface NotificationTarget {
             when (target) {
                 Alarms -> ALARMS
                 Rollcall -> ROLLCALL
+                Away -> AWAY
                 is Member -> MEMBER_PREFIX + target.id.value
             },
         )
@@ -33,6 +36,7 @@ sealed interface NotificationTarget {
             return when {
                 value == ALARMS -> Alarms
                 value == ROLLCALL -> Rollcall
+                value == AWAY -> Away
                 value.startsWith(MEMBER_PREFIX) -> Member(MemberId(value.removePrefix(MEMBER_PREFIX)))
                 else -> null
             }

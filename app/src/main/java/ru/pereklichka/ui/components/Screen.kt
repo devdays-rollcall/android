@@ -75,9 +75,9 @@ fun AppScreen(
     }
 }
 
-/** Шапка: стрелка «Назад» (если есть) и заголовок 21 sp с подписью под ним. Её же рисует экран диагностики. */
+/** Шапка: стрелка «Назад» (если есть) и заголовок 21 sp с подписью под ним. */
 @Composable
-fun ScreenHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null) {
+private fun ScreenHeader(title: String, subtitle: String? = null, onBack: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

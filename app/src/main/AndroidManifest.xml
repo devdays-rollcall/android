@@ -85,6 +85,11 @@
             android:name=".notify.AlarmSwipeReceiver"
             android:exported="false" />
 
+        <!-- Кнопки «Я вернулся» и «Ещё 10 минут» уведомления «Вернулись?», их шлёт только система от имени приложения. -->
+        <receiver
+            android:name=".notify.AwayReminderReceiver"
+            android:exported="false" />
+
         <!-- WorkManager получает фабрику воркеров от Hilt в App, стандартный инициализатор не нужен. -->
         <provider
             android:name="androidx.startup.InitializationProvider"

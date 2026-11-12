@@ -20,7 +20,7 @@ import javax.inject.Singleton
 
 /**
  * Ставит [UploadWorker] и [SosWorker] в очередь WorkManager. Вызывают его `RouteService`, `TrackRecorder`,
- * `GroupViewModel` и диагностика.
+ * `GroupViewModel` и экран «Для разработчиков».
  *
  * Отправка не зависит от службы: WorkManager сам дождётся сети и повторит разовую задачу после сбоя с растущей
  * паузой от 10 секунд, а периодическая просто сработает в свой срок.
@@ -39,7 +39,7 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
     /**
      * Отправить сразу, не дожидаясь конца паузы после сбоя: ждущая разовая задача заменяется новой. Идущую
      * отправку замена не трогает, иначе каждое переключение Wi-Fi и сотовой сети в горах обрывало бы её посреди
-     * запроса. Вызывают служба при появлении сети с интернетом и кнопка на экране диагностики.
+     * запроса. Вызывают служба при появлении сети с интернетом и кнопка «Отправить» на экране «Для разработчиков».
      */
     suspend fun restartUpload() {
         val running = WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UPLOAD_NOW).first()

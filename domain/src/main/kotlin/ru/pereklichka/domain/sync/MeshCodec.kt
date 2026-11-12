@@ -35,7 +35,7 @@ class MeshCodec @Inject constructor(private val config: SyncConfig) {
      * Разбирает сообщение соседа.
      *
      * @throws MeshFormatException если байты не разбираются: чужая версия формата, битый gzip или JSON,
-     * нет обязательного поля. Движок отбрасывает такое сообщение и считает его в диагностике.
+     * нет обязательного поля. Движок отбрасывает такое сообщение и считает его в счётчиках экрана «Для разработчиков».
      */
     fun decode(bytes: ByteArray): MeshMessage {
         if (bytes.isEmpty()) throw MeshFormatException("Пустое сообщение")

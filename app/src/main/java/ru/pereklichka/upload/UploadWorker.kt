@@ -1,7 +1,6 @@
 package ru.pereklichka.upload
 
 import android.content.Context
-import androidx.core.content.edit
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -27,10 +26,10 @@ import ru.pereklichka.status.GroupViewProvider
  * интернета отвечает 200 своей страницей), дают `Result.retry()`. На 413 пачка уменьшается вдвое до конца запуска.
  * На 400 и 422 пачка делится пополам, пока не найдётся виновная точка; её помечают `rejected`, и дальше снова
  * идут полные пачки. Если же 400 пришёл на одну точку, плох сам запрос. Его, как и 401 с прочими 4xx, повторять
- * бесполезно: запуск завершается ошибкой, а текст ошибки уходит в [UploadStatus] для диагностики.
+ * бесполезно: запуск завершается ошибкой, а текст ошибки уходит в [UploadStatus] для экранов настроек.
  *
  * Если отправлять нечего, а маршрут идёт, запуск шлёт пустую пачку как heartbeat, но не чаще раза в
- * [HEARTBEAT_INTERVAL_MS] после последнего ответа 202. Время этого ответа хранится в SharedPreferences и
+ * [HEARTBEAT_INTERVAL_MS] после последнего ответа 202. Время этого ответа хранит [UploadStatus], оно
  * переживает перезапуск процесса. Один запуск длится не дольше [RUN_LIMIT_MS]: WorkManager останавливает задачу
  * через 10 минут, поэтому оставшиеся точки уходят в следующем запуске через `Result.retry()`.
  */
@@ -46,8 +45,6 @@ class UploadWorker @AssistedInject constructor(
     private val viewProvider: GroupViewProvider,
     private val clock: Clock,
 ) : CoroutineWorker(context, params) {
-
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     override suspend fun doWork(): Result {
         val group = groupRepository.activeGroup() ?: return Result.success()
@@ -100,7 +97,7 @@ class UploadWorker @AssistedInject constructor(
     }
 
     private suspend fun sendHeartbeatIfDue(url: String, group: GroupInfo): Result {
-        val sinceAcceptedMs = clock.wallMs() - prefs.getLong(KEY_LAST_ACCEPTED_WALL_MS, 0L)
+        val sinceAcceptedMs = clock.wallMs() - (uploadStatus.lastAcceptedWallMs.value ?: 0L)
         // Отрицательный промежуток значит, что часы перевели назад, и тогда heartbeat уходит.
         if (sinceAcceptedMs in 0 until HEARTBEAT_INTERVAL_MS) return Result.success()
         if (viewProvider.awaitRoute() != RouteState.ACTIVE) return Result.success()
@@ -122,8 +119,7 @@ class UploadWorker @AssistedInject constructor(
         }
 
     private fun onAccepted() {
-        prefs.edit { putLong(KEY_LAST_ACCEPTED_WALL_MS, clock.wallMs()) }
-        uploadStatus.clearError()
+        uploadStatus.reportAccepted(clock.wallMs())
     }
 
     /** Коды, на которые нет особого правила: 429, 5xx, 2xx и 3xx кроме 202 повторяются, остальное ошибка. */
@@ -141,7 +137,5 @@ class UploadWorker @AssistedInject constructor(
         const val BATCH_SIZE = 200
         const val RUN_LIMIT_MS = 2 * 60_000L
         const val HEARTBEAT_INTERVAL_MS = 60_000L
-        const val PREFS = "upload"
-        const val KEY_LAST_ACCEPTED_WALL_MS = "last_accepted_wall_ms"
     }
 }

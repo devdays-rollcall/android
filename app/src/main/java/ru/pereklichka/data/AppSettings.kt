@@ -13,7 +13,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Настройки с экрана диагностики: адрес сервера, режим демо и список блокировки.
+ * Настройки приложения: режим демо и открытый экран «Для разработчиков» с экрана «Настройки», адрес сервера
+ * и список блокировки с экрана «Для разработчиков».
  *
  * Хранятся в SharedPreferences и живут дольше группы. Значения отдаются потоками, поэтому изменение сразу видят
  * `GroupViewProvider` (порог «Не слышно»), транспорт (блокировка) и `UploadWorker` (адрес).
@@ -32,10 +33,11 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val blockedState = MutableStateFlow(
         prefs.getStringSet(KEY_BLOCKED, emptySet()).orEmpty().map(::MemberId).toSet(),
     )
+    private val devOptionsState = MutableStateFlow(prefs.getBoolean(KEY_DEV_OPTIONS, false))
 
     /**
      * Адрес сервера без завершающей косой черты. В release по умолчанию боевой сервер, в debug пусто: отладочная
-     * сборка не шлёт точки и SOS, пока адрес не ввели в диагностике, и не включает тревогу у настоящих групп.
+     * сборка не шлёт точки и SOS, пока адрес не ввели на экране «Для разработчиков», и не включает тревогу у настоящих групп.
      */
     val serverUrl: StateFlow<String> = serverUrlState.asStateFlow()
 
@@ -47,6 +49,9 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
      * пересылку через посредника: A блокирует C, C блокирует A, и данные между ними идут через B.
      */
     val blockedMembers: StateFlow<Set<MemberId>> = blockedState.asStateFlow()
+
+    /** Экран «Для разработчиков» открыт семью нажатиями на «О приложении» и остаётся в настройках навсегда. */
+    val devOptionsUnlocked: StateFlow<Boolean> = devOptionsState.asStateFlow()
 
     fun setServerUrl(url: String) {
         val normalized = url.trim().trimEnd('/')
@@ -64,10 +69,16 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         prefs.edit { putStringSet(KEY_BLOCKED, updated.map { it.value }.toSet()) }
     }
 
+    fun unlockDevOptions() {
+        prefs.edit { putBoolean(KEY_DEV_OPTIONS, true) }
+        devOptionsState.value = true
+    }
+
     private companion object {
         const val DEFAULT_SERVER_URL = "https://rollcall.vareonix.cc"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_DEMO_MODE = "demo_mode"
         const val KEY_BLOCKED = "blocked_members"
+        const val KEY_DEV_OPTIONS = "dev_options_unlocked"
     }
 }

@@ -55,7 +55,7 @@ class UploadWorkerTest {
     private val clock = FakeClock { nowMs.get() }
     private val repository = GroupRepository(db, clock)
     private val store = RoomMeshStore(db, repository, clock)
-    private val uploadStatus = UploadStatus()
+    private val uploadStatus = UploadStatus(context)
     private val settings = AppSettings(context)
 
     // Вид считается на настоящем времени: виртуальное время runTest сработало бы на таймауте awaitRoute,
@@ -252,7 +252,7 @@ class UploadWorkerTest {
 
         assertEquals(ListenableWorker.Result.failure(), runWorker())
         assertEquals(5, db.locationDao().unsent(1_000).size)
-        assertNotNull(uploadStatus.lastError.value, "Ошибка 401 должна попасть в диагностику")
+        assertNotNull(uploadStatus.lastError.value, "Ошибка 401 должна попасть на экран настроек")
     }
 
     @Test

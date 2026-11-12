@@ -149,7 +149,7 @@ class NearbyPeerTransport @Inject constructor(
 
     override fun start(config: TransportConfig) {
         this.config = config
-        // Список блокировки из диагностики: попавший в него при живом соединении отключается,
+        // Список блокировки с экрана «Для разработчиков»: попавший в него при живом соединении отключается,
         // а его сообщения отбрасывает onPayloadReceived.
         blockedJob?.cancel()
         blockedJob = scope.launch {

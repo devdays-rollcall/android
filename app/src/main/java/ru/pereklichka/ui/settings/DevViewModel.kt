@@ -1,10 +1,8 @@
-package ru.pereklichka.ui.diagnostics
+package ru.pereklichka.ui.settings
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,42 +19,35 @@ import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.sync.PeerTransport
 import ru.pereklichka.domain.sync.SyncDiagnostics
 import ru.pereklichka.domain.sync.SyncEngine
-import ru.pereklichka.notify.PhoneChecks
-import ru.pereklichka.service.PowerTools
 import ru.pereklichka.status.GroupViewProvider
-import ru.pereklichka.transport.RadioCheck
 import ru.pereklichka.upload.UploadScheduler
 import ru.pereklichka.upload.UploadStatus
 import javax.inject.Inject
 
-/** Всё, что показывает экран диагностики. */
-data class DiagnosticsState(
+/** Всё, что показывает [DevScreen]. */
+data class DevState(
     val group: GroupInfo? = null,
-    val system: SystemChecks = SystemChecks(),
     val counts: DatabaseCounts = DatabaseCounts(),
+    /** Соседи, с которыми сейчас открыто соединение Nearby. */
     val connectedPeers: Set<MemberId> = emptySet(),
     val sync: SyncDiagnostics = SyncDiagnostics(),
-    /** Кого телефон слышал напрямую и сколько миллисекунд назад, по `PresenceTracker`. */
+    /** Кого телефон слышал напрямую за последние 10 минут и сколько миллисекунд назад, по `PresenceTracker`. */
     val heardAgo: Map<MemberId, Long> = emptyMap(),
-    /** Состав группы для списка блокировки. */
+    /** Участники для списка блокировки, кроме меня, по имени. */
     val members: List<MemberId> = emptyList(),
+    /** О ком в группе есть хоть какой-то контакт, пусть и через других. */
+    val groupHeard: Set<MemberId> = emptySet(),
     /** Заблокированные участники: им не подключаемся и их сообщения отбрасываем. */
     val blocked: Set<MemberId> = emptySet(),
     /** Имена участников из состояния группы; у тех, чей JOINED ещё не дошёл, имени нет. */
     val memberNames: Map<MemberId, String> = emptyMap(),
+    val serverUrl: String = "",
+    /** Настенное время последнего ответа сервера 202; null, если сервер ещё не принимал. */
+    val lastAcceptedWallMs: Long? = null,
+    val uploadError: String? = null,
 )
 
-/** Системные флаги для раздела «Телефон». ViewModel перечитывает их раз в 2 секунды, это проще, чем подписываться на рассылку о каждом. */
-data class SystemChecks(
-    val bluetoothEnabled: Boolean = false,
-    val playServicesAvailable: Boolean = false,
-    val ignoringBatteryOptimizations: Boolean = false,
-    val notificationsEnabled: Boolean = false,
-    /** «Не беспокоить» в режиме полной тишины: тревога не прозвучит, даже как будильник. */
-    val totalSilence: Boolean = false,
-)
-
-/** Сколько записей в базе: события, точки (всего, к отправке, отклонённые) и состояния. */
+/** Сколько записей в базе: события, точки (всего, ждут отправки, отклонены) и состояния участников. */
 data class DatabaseCounts(
     val events: Int = 0,
     val points: Int = 0,
@@ -66,20 +57,15 @@ data class DatabaseCounts(
 )
 
 /**
- * Данные для [DiagnosticsScreen]: собирает группу, системные проверки, счётчики базы, соседей и счётчики
- * `SyncEngine` в одно [DiagnosticsState] и передаёт настройки из экрана в `AppSettings`.
- *
- * Задача: docs/team/olga-transport.md
+ * Данные для [DevScreen]: группа, счётчики базы и `SyncEngine`, соседи и итог отправки. Передаёт адрес сервера
+ * и блокировку в `AppSettings`, «Отправить» в [UploadScheduler.restartUpload].
  */
 @HiltViewModel
-class DiagnosticsViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
+class DevViewModel @Inject constructor(
     groupRepository: GroupRepository,
     db: AppDatabase,
     transport: PeerTransport,
     engine: SyncEngine,
-    private val radioCheck: RadioCheck,
-    val powerTools: PowerTools,
     private val settings: AppSettings,
     private val uploadScheduler: UploadScheduler,
     uploadStatus: UploadStatus,
@@ -87,18 +73,11 @@ class DiagnosticsViewModel @Inject constructor(
     viewProvider: GroupViewProvider,
 ) : ViewModel() {
 
-    private val systemChecks = flow {
-        while (true) {
-            emit(readSystemChecks())
-            delay(SYSTEM_REFRESH_MS)
-        }
-    }
-
-    // Сколько назад слышали каждого: считается по монотонным часам, обновляем с тем же тиком, что и системные проверки.
+    // Сколько назад слышали каждого: считается по монотонным часам, поэтому перечитывается по таймеру.
     private val heardAgo = flow {
         while (true) {
             emit(presence.heardAgo())
-            delay(SYSTEM_REFRESH_MS)
+            delay(REFRESH_MS)
         }
     }
 
@@ -110,28 +89,37 @@ class DiagnosticsViewModel @Inject constructor(
         db.memberStateDao().observeCount(),
     ) { events, points, unsent, rejected, states -> DatabaseCounts(events, points, unsent, rejected, states) }
 
-    val state: StateFlow<DiagnosticsState> = combine(
-        combine(groupRepository.activeGroup, systemChecks, counts, ::Triple),
+    private val upload = combine(settings.serverUrl, uploadStatus.lastAcceptedWallMs, uploadStatus.lastError, ::Triple)
+
+    val state: StateFlow<DevState> = combine(
+        combine(groupRepository.activeGroup, counts, upload, ::Triple),
         combine(transport.connectedPeers, engine.diagnostics, heardAgo, ::Triple),
         combine(settings.blockedMembers, viewProvider.view, ::Pair),
-    ) { (group, system, dbCounts), (peers, sync, heard), (blocked, view) ->
+    ) { (group, dbCounts, uploadInfo), (peers, sync, heard), (blocked, view) ->
+        val (serverUrl, acceptedAt, error) = uploadInfo
         val names = view?.members?.associate { it.id to it.name }.orEmpty()
         // Себя в список блокировки не выводим: GroupView.members включает свой телефон.
         val roster = (view?.members?.map { it.id }.orEmpty() + heard.keys + blocked)
             .distinct()
             .filter { it != group?.me }
             .sortedBy { names[it] ?: it.value }
-        DiagnosticsState(group, system, dbCounts, peers, sync, heard, roster, blocked, names)
-    }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DiagnosticsState())
-
-    val serverUrl: StateFlow<String> = settings.serverUrl
-    val demoMode: StateFlow<Boolean> = settings.demoMode
-    val uploadError: StateFlow<String?> = uploadStatus.lastError
+        DevState(
+            group = group,
+            counts = dbCounts,
+            connectedPeers = peers,
+            sync = sync,
+            heardAgo = heard,
+            members = roster,
+            groupHeard = view?.members?.filter { it.lastContact != null }?.map { it.id }.orEmpty().toSet(),
+            blocked = blocked,
+            memberNames = names,
+            serverUrl = serverUrl,
+            lastAcceptedWallMs = acceptedAt,
+            uploadError = error,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DevState())
 
     fun setServerUrl(url: String) = settings.setServerUrl(url)
-
-    fun setDemoMode(enabled: Boolean) = settings.setDemoMode(enabled)
 
     fun uploadNow() {
         viewModelScope.launch { uploadScheduler.restartUpload() }
@@ -140,16 +128,8 @@ class DiagnosticsViewModel @Inject constructor(
     /** Переключатель блокировки участника: заблокированного транспорт отключает и отбрасывает его сообщения. */
     fun setBlocked(member: MemberId, blocked: Boolean) = settings.setBlocked(member, blocked)
 
-    private fun readSystemChecks() = SystemChecks(
-        bluetoothEnabled = radioCheck.isBluetoothEnabled(),
-        playServicesAvailable = radioCheck.isPlayServicesAvailable(),
-        ignoringBatteryOptimizations = powerTools.isIgnoringBatteryOptimizations(),
-        notificationsEnabled = PhoneChecks.notificationsEnabled(context),
-        totalSilence = PhoneChecks.totalSilence(context),
-    )
-
     private companion object {
-        const val SYSTEM_REFRESH_MS = 2_000L
+        const val REFRESH_MS = 2_000L
         const val STOP_TIMEOUT_MS = 5_000L
     }
 }

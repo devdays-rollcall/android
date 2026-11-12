@@ -9,7 +9,7 @@ import retrofit2.http.Query
 import retrofit2.http.Url
 
 /**
- * Клиент Retrofit для сервера событий (`docs/server/openapi.yaml`). Адрес сервера вводят на экране диагностики
+ * Клиент Retrofit для сервера событий (`docs/server/openapi.yaml`). Адрес сервера вводят на экране «Для разработчиков»
  * во время работы, поэтому полный URL передаётся в каждом вызове. Приложение вызывает [postEvents] из [UploadWorker]
  * и [SosWorker], а [raiseAlert] из [SosWorker]. [getEvents] и [createShareLink] нужны только `MonitorApiTest`
  * и `MonitorLiveApiTest`, которые проверяют сервер этим же клиентом.

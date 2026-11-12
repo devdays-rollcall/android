@@ -1,7 +1,7 @@
 package ru.pereklichka.domain.sync
 
 /**
- * Счётчики движка для экрана диагностики. Публикует их [SyncEngine.diagnostics], показывает `DiagnosticsScreen`.
+ * Счётчики движка для экрана «Для разработчиков». Публикует их [SyncEngine.diagnostics], показывает `DevScreen`.
  *
  * [running] ведёт сам движок, остальные счётчики пополняют обработчики сообщений.
  */
