@@ -62,12 +62,12 @@ import ru.pereklichka.ui.theme.statusColors
  *
  * Пока идёт вступление ([joining]), кнопка неактивна, а к списку группы переводит навигация, когда группа появилась
  * в базе. Работает в авиарежиме: камера и разбор кода (`QrFormat`) интернета не требуют. Отсканированный код
- * переживает поворот экрана: годный хранится строкой QR и после поворота разбирается заново.
+ * переживает поворот экрана: годный хранится строкой QR и после поворота разбирается заново. Камера отдаёт один
+ * и тот же код много раз в секунду, поэтому разбирается только новый текст.
  */
 @Composable
 fun JoinScreen(joining: Boolean, onJoin: (qr: QrPayload, myName: String) -> Unit, onBack: () -> Unit) {
     var scanned by rememberSaveable(stateSaver = ScanSaver) { mutableStateOf<QrParseResult?>(null) }
-    // Камера отдаёт один и тот же код много раз в секунду; разбираем только новый текст.
     var lastText by remember { mutableStateOf<String?>(null) }
     JoinContent(
         scanned = scanned,
@@ -128,7 +128,6 @@ private fun JoinContent(
             QrViewfinder(onCode)
             CenteredHint("Код на телефоне руководителя, на экране «Сбор». Интернет не нужен.", Modifier.padding(horizontal = 8.dp))
             if (scanned is QrParseResult.Invalid) InvalidCode(scanned.reason)
-            // Заготовки того, что появится после сканирования.
             ListCard(Modifier.alpha(0.55f)) {
                 ListRow(
                     title = "Группа появится здесь",

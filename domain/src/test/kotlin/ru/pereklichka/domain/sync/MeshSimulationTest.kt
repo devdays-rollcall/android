@@ -3,6 +3,7 @@ package ru.pereklichka.domain.sync
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
@@ -50,6 +51,39 @@ class MeshSimulationTest {
         assertPrefixesIntact()
     }
 
+    /**
+     * C уходит на час и копит трек, которого нет у A и B, а они копят свой. Встреча идёт по медленной связи
+     * 4 КБ/с, где порция из 300 точек идёт несколько секунд. Без отдельной срочной Delta SOS ехал в одном сообщении
+     * с порцией точек и приходил через 4-6 с.
+     */
+    @Test
+    fun `после долгой разлуки SOS и свежее состояние вернувшегося не ждут его трек`() = simulation(seed = 8) {
+        val (a, b, c) = phones("A", "B", "C")
+        phones.forEach { it.start() }
+        fullMesh(a, b, c)
+        trackUntil = 2.hours
+        runFor(5.minutes)
+
+        network.disconnect(a.id, c.id)
+        network.disconnect(b.id, c.id)
+        runFor(60.minutes)
+        val sos = c.sos()
+        val rollcall = a.rollcall()
+        val stateOfC = c.stateSeq(c)
+        network.bandwidthBytesPerSecond = 4_000
+        network.connect(a.id, c.id)
+        network.connect(b.id, c.id)
+
+        waitUntil("SOS от C у A и B", timeout = 2.seconds) { a.hasEvent(sos.id) && b.hasEvent(sos.id) }
+        waitUntil("перекличка A у C", timeout = 2.seconds) { c.hasEvent(rollcall.id) }
+        waitUntil("свежее состояние C у A и B", timeout = 2.seconds) { a.stateSeq(c) >= stateOfC && b.stateSeq(c) >= stateOfC }
+        assertTrue(a.pointCount(c) < c.pointCount(c), "Трек C уже дошёл до A, сценарий ничего не проверил")
+
+        network.bandwidthBytesPerSecond = 40_000
+        waitUntil("сходимость после встречи", timeout = 2.minutes) { converged() }
+        assertPrefixesIntact()
+    }
+
     @Test
     fun `тревога приходит раньше накопленных точек`() = simulation(seed = 3) {
         val group = phones("A", "B", "C", "D", "E", "F")
@@ -70,6 +104,10 @@ class MeshSimulationTest {
         assertPrefixesIntact()
     }
 
+    /**
+     * В этой симуляции с флагом more половины сходятся примерно за 11,5 с, без него примерно за 30,5 с
+     * (замер на 10 seed). Порог 20 с отделяет одно от другого.
+     */
     @Test
     fun `после встречи двух половин группы всё сходится`() = simulation(seed = 4) {
         val group = phones("A", "B", "C", "D", "E", "F")
@@ -83,8 +121,6 @@ class MeshSimulationTest {
 
         network.connect(b.id, e.id)
 
-        // В этой симуляции с флагом more половины сходятся примерно за 11,5 с, без него примерно за 30,5 с
-        // (замер на 10 seed). Порог 20 с отделяет одно от другого.
         waitUntil("сходимость половин", timeout = 20.seconds) { converged() }
         assertPrefixesIntact()
     }
@@ -128,6 +164,11 @@ class MeshSimulationTest {
         assertPrefixesIntact()
     }
 
+    /**
+     * Каждый слышит каждого, поэтому точки автора приходят только от него самого. Без правила «не слать точки автора
+     * тому, кто слышит его сам» в этой симуляции получалось около 6 % лишних точек, с правилом меньше 0,1 %, отсюда
+     * порог 2 %.
+     */
     @Test
     fun `в полной сетке точки автора не идут через соседей`() = simulation(seed = 6) {
         val (a, b, c) = phones("A", "B", "C")
@@ -139,9 +180,6 @@ class MeshSimulationTest {
         val needed = phones.sumOf { phone -> phones.filter { it != phone }.sumOf { phone.pointCount(it) } }
         val duplicates = phones.sumOf { it.countingStore.duplicatePoints }
         assertTrue(converged(), "Полная сетка не сошлась")
-        // Каждый слышит каждого, поэтому точки автора приходят только от него самого. Без правила
-        // «не слать точки автора тому, кто слышит его сам» в этой симуляции получалось около 6 % лишних точек,
-        // с правилом меньше 0,1 %, отсюда порог 2 %.
         assertTrue(duplicates.toDouble() / needed < 0.02, "Лишних точек $duplicates на $needed нужных")
         assertPrefixesIntact()
     }

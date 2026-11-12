@@ -4,14 +4,22 @@ import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.Ringtone
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.net.toUri
 import dagger.hilt.android.qualifiers.ApplicationContext
 import ru.pereklichka.MainActivity
 import ru.pereklichka.R
@@ -26,8 +34,11 @@ import javax.inject.Singleton
  * Каналы:
  * - «Тревоги» ([CHANNEL_ALARMS]): тревоги и SOS, высокая важность, звук будильника с `USAGE_ALARM`. Так тревога
  *   проходит «Не беспокоить», если в нём разрешены будильники (по умолчанию разрешены).
- * - «Участники» ([CHANNEL_MEMBERS]): «Не слышно», подсказка «Рядом телефон участника» и «Вернулись?». Кнопки
- *   «Вернулись?» обрабатывает [AwayReminderReceiver].
+ * - «Не слышно» ([CHANNEL_LOST]): три коротких гудка из `res/raw/lost_beeps.wav`, и на каждый гудок вибрация
+ *   ([LOST_VIBRATION] повторяет ритм звука). Звук идёт как обычное уведомление, поэтому беззвучный режим
+ *   и «Не беспокоить» его глушат, в отличие от тревог.
+ * - «Участники» ([CHANNEL_MEMBERS]): подсказка «Рядом телефон участника» и «Вернулись?». Кнопки «Вернулись?»
+ *   обрабатывает [AwayReminderReceiver].
  * - «Перекличка» ([CHANNEL_ROLLCALL]).
  *
  * У всех уведомлений один id, различает их tag = [NotifyEvent.key]: повторный [show] с тем же ключом обновляет
@@ -37,7 +48,8 @@ import javax.inject.Singleton
  * приложении ничего не изменится: нужно сменить id канала (отсюда суффикс версии) или переустановить приложение.
  *
  * Без `POST_NOTIFICATIONS` (Android 13 и новее) уведомлений нет совсем. Тогда звук тревоги проигрывает само
- * приложение через [RingtoneManager] и останавливает его на [NotifyEvent.AlarmResolved] этой тревоги.
+ * приложение через [RingtoneManager] и останавливает его на [NotifyEvent.AlarmResolved] этой тревоги, а три гудка
+ * и вибрацию «Не слышно» даёт [beepLost].
  *
  * Уведомление тревоги постоянное, но с Android 14 его можно смахнуть на разблокированном экране. Тогда
  * [AlarmSwipeReceiver] вызывает [repostAlarm], и тревога, которую ещё не сняли, возвращается в шторку без звука.
@@ -63,15 +75,18 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         when (event) {
             is NotifyEvent.AlarmRaised -> showAlarm(event)
             is NotifyEvent.AlarmResolved -> dismiss(event.key)
-            is NotifyEvent.MemberLost -> post(
-                event.key,
-                NotificationCompat.Builder(context, CHANNEL_MEMBERS)
-                    .setContentTitle("${event.name}: не слышно")
-                    .setContentText("Группа давно не слышала этого участника. Откройте карточку")
-                    .setCategory(NotificationCompat.CATEGORY_STATUS)
-                    .setPriority(NotificationCompat.PRIORITY_HIGH)
-                    .setContentIntent(open(event.key, NotificationTarget.Member(event.member))),
-            )
+            is NotifyEvent.MemberLost -> {
+                val posted = post(
+                    event.key,
+                    NotificationCompat.Builder(context, CHANNEL_LOST)
+                        .setContentTitle("${event.name}: не слышно")
+                        .setContentText("Группа давно не слышала этого участника. Откройте карточку")
+                        .setCategory(NotificationCompat.CATEGORY_STATUS)
+                        .setPriority(NotificationCompat.PRIORITY_HIGH)
+                        .setContentIntent(open(event.key, NotificationTarget.Member(event.member))),
+                )
+                if (!posted) beepLost()
+            }
             is NotifyEvent.RollcallStarted -> post(
                 event.key,
                 NotificationCompat.Builder(context, CHANNEL_ROLLCALL)
@@ -104,7 +119,10 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         }
     }
 
-    // Под одним замком с repostAlarm: иначе смахнутая тревога могла бы вернуться в шторку уже после снятия.
+    /**
+     * Убирает уведомление [key] и звук его тревоги. Идёт под одним замком с [repostAlarm], иначе смахнутая тревога
+     * могла бы вернуться в шторку уже после снятия.
+     */
     @Synchronized
     override fun dismiss(key: String) {
         activeAlarms.remove(key)
@@ -120,6 +138,10 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         showAlarm(event, silent = true)
     }
 
+    /**
+     * Показывает тревогу постоянным уведомлением: оно уходит само, когда тревогу снимут. Смахнуть его можно
+     * с Android 14, и тогда deleteIntent возвращает его через [repostAlarm].
+     */
     @Synchronized
     private fun showAlarm(event: NotifyEvent.AlarmRaised, silent: Boolean = false) {
         activeAlarms[event.key] = event
@@ -127,7 +149,7 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
             event.isAboutMe && event.isSos -> "Вы отправили SOS" to "Сигнал дойдёт до всех, кто связан с вами цепочкой. Если помощь не нужна, отмените его"
             event.isAboutMe -> "Группа объявила тревогу о вас" to "Если вы в порядке, откройте и нажмите «Я в порядке»"
             event.isSos -> "SOS: ${event.targetName}" to "Участнику нужна помощь. Откройте, чтобы ответить"
-            else -> "Тревога: ${event.targetName}" to "Откройте, чтобы ответить «Вижу, в порядке»"
+            else -> "Тревога: ${event.targetName}" to "Если вы рядом с ним, откройте и нажмите «Я рядом, помощь не нужна»"
         }
         val builder = NotificationCompat.Builder(context, CHANNEL_ALARMS)
             .setContentTitle(title)
@@ -135,8 +157,6 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            // Уведомление уходит само, когда тревогу снимут. Смахнуть его можно с Android 14, и тогда deleteIntent
-            // возвращает его через repostAlarm.
             .setOngoing(true)
             .setSilent(silent)
             .setContentIntent(open(event.key, NotificationTarget.Alarms))
@@ -144,8 +164,11 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         if (!post(event.key, builder, autoCancel = false) && !silent) startRinging(event.key)
     }
 
-    /** Показывает уведомление ([autoCancel]: убрать по нажатию); false, если уведомления выключены и показать нельзя. */
-    @SuppressLint("MissingPermission") // Разрешение проверяет PhoneChecks: на Android 13+ оно учитывает POST_NOTIFICATIONS.
+    /**
+     * Показывает уведомление ([autoCancel]: убрать по нажатию); false, если уведомления выключены и показать нельзя.
+     * Разрешение проверяет `PhoneChecks.notificationsEnabled`, на Android 13 и новее оно учитывает POST_NOTIFICATIONS.
+     */
+    @SuppressLint("MissingPermission")
     private fun post(key: String, builder: NotificationCompat.Builder, autoCancel: Boolean = true): Boolean {
         if (!PhoneChecks.notificationsEnabled(context)) return false
         manager.notify(
@@ -189,6 +212,28 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
+    /**
+     * Три гудка с вибрацией без уведомления, когда уведомления выключены. Режим звонка соблюдается так же, как его
+     * соблюдал бы канал: в режиме вибрации только вибрация, в беззвучном ничего.
+     */
+    private fun beepLost() {
+        val ringerMode = context.getSystemService(AudioManager::class.java)?.ringerMode ?: AudioManager.RINGER_MODE_NORMAL
+        if (ringerMode == AudioManager.RINGER_MODE_SILENT) return
+        if (ringerMode == AudioManager.RINGER_MODE_NORMAL) {
+            MediaPlayer.create(context, R.raw.lost_beeps, lostAudio(), AudioManager.AUDIO_SESSION_ID_GENERATE)?.apply {
+                setOnCompletionListener { it.release() }
+                start()
+            }
+        }
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Vibrator::class.java)
+        }
+        vibrator?.vibrate(VibrationEffect.createWaveform(LOST_VIBRATION, -1))
+    }
+
     @Synchronized
     private fun startRinging(key: String) {
         if (key in ringing) return
@@ -225,14 +270,31 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
             context.getString(R.string.channel_members),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply { description = context.getString(R.string.channel_members_description) }
+        val lost = NotificationChannel(
+            CHANNEL_LOST,
+            context.getString(R.string.channel_lost),
+            NotificationManager.IMPORTANCE_HIGH,
+        ).apply {
+            description = context.getString(R.string.channel_lost_description)
+            setSound(lostSound(), lostAudio())
+            enableVibration(true)
+            vibrationPattern = LOST_VIBRATION
+        }
         val rollcall = NotificationChannel(
             CHANNEL_ROLLCALL,
             context.getString(R.string.channel_rollcall),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply { description = context.getString(R.string.channel_rollcall_description) }
-        system.createNotificationChannels(listOf(alarms, members, rollcall))
+        system.createNotificationChannels(listOf(alarms, lost, members, rollcall))
         channelsCreated = true
     }
+
+    private fun lostSound(): Uri = "${ContentResolver.SCHEME_ANDROID_RESOURCE}://${context.packageName}/${R.raw.lost_beeps}".toUri()
+
+    private fun lostAudio(): AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
 
     private fun alarmAudio(): AudioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ALARM)
@@ -244,6 +306,10 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
         const val NOTIFICATION_ID = 2
         const val CHANNEL_ALARMS = "alarms_v1"
         const val CHANNEL_MEMBERS = "members_v1"
+        const val CHANNEL_LOST = "lost_v1"
+
+        /** Вибрация в ритм гудков `lost_beeps.wav`: три раза по 150 мс вибрации через 150 мс тишины. */
+        val LOST_VIBRATION = longArrayOf(0, 150, 150, 150, 150, 150)
         const val CHANNEL_ROLLCALL = "rollcall_v1"
     }
 }

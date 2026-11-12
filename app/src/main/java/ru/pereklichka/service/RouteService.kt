@@ -50,6 +50,7 @@ import ru.pereklichka.domain.sync.TransportConfig
 import ru.pereklichka.domain.time.Clock
 import ru.pereklichka.permissions.RequiredPermissions
 import ru.pereklichka.status.GroupViewProvider
+import ru.pereklichka.status.SosRelay
 import ru.pereklichka.status.StatusMonitor
 import ru.pereklichka.upload.UploadScheduler
 import javax.inject.Inject
@@ -68,9 +69,11 @@ import javax.inject.Inject
  * уведомлений, треком, wake lock и отправкой на сервер. В «Сборе» телефон уже обменивается данными
  * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт, пока завершение не подтвердят все участники
  * (`finishNotConfirmedBy`), но не дольше [SyncConfig.exchangeAfterFinishMs]. Без других участников служба выключается
- * сразу. Работает ли обмен и когда он закончится, служба пишет в [ExchangeStatus] для экранов. «Новая группа»
- * ([leave]) останавливает службу и стирает группу. «Выйти из группы» ([quit]) сначала пишет событие LEFT и ждёт,
- * пока его подтвердит хотя бы один сосед, но не дольше [QUIT_CONFIRM_MS], а потом стирает группу так же.
+ * сразу. Работает ли обмен и когда он закончится, служба пишет в [ExchangeStatus] для экранов. Перед созданием
+ * новой группы и вступлением в другую [leave] останавливает службу и переводит активную группу в прошлые маршруты,
+ * а отменённый сбор без участников [discard] удаляет совсем. «Выйти из группы» ([quit]) сначала пишет событие LEFT
+ * и ждёт, пока его подтвердит хотя бы один сосед, но не дольше [QUIT_CONFIRM_MS], а потом переводит группу
+ * в прошлые маршруты так же, как [leave].
  *
  * Если система убила процесс посреди маршрута, она возвращает службу сама (START_STICKY), а после перезагрузки
  * её поднимает [BootReceiver]. Оба пути идут через [restartRoute].
@@ -84,6 +87,7 @@ class RouteService : Service() {
     @Inject lateinit var transport: PeerTransport
     @Inject lateinit var selfStateProducer: SelfStateProducer
     @Inject lateinit var statusMonitor: StatusMonitor
+    @Inject lateinit var sosRelay: SosRelay
     @Inject lateinit var trackRecorder: TrackRecorder
     @Inject lateinit var powerTools: PowerTools
     @Inject lateinit var uploadScheduler: UploadScheduler
@@ -99,23 +103,27 @@ class RouteService : Service() {
     @FakeGroupData
     var useFakeGroupData: Boolean = false
 
-    // Запуск и остановка частей идут на главном потоке, поэтому полям ниже синхронизация не нужна.
+    /** Область службы на главном потоке. Запуск и остановка частей идут в ней, поэтому полям ниже синхронизация не нужна. */
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var route: RouteSession? = null
     private var trackingJob: kotlinx.coroutines.Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var leaving: kotlinx.coroutines.Job? = null
+
+    /** Пока закрывалась прежняя группа, пришёл запуск для новой: после закрытия служба поднимет её сеанс. */
+    private var startAfterLeaving = false
     private var quitting: kotlinx.coroutines.Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** Пустой интент приходит, когда система возвращает службу после убийства процесса (START_STICKY). */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            // Пустой интент приходит, когда система возвращает службу после убийства процесса (START_STICKY).
             null, ACTION_RESTART -> restartRoute()
             ACTION_START -> startRoute()
             ACTION_STOP -> stopRoute()
-            ACTION_LEAVE -> leaveGroup()
+            ACTION_LEAVE -> leaveGroup(discard = false)
+            ACTION_DISCARD -> leaveGroup(discard = true)
             ACTION_QUIT -> quitGroup()
         }
         return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
@@ -128,19 +136,26 @@ class RouteService : Service() {
         super.onDestroy()
     }
 
+    /**
+     * Запуск с экрана. Без разрешений служба сразу останавливается: [start] проверяет их заранее, и сюда это попадает,
+     * только если их отозвали за мгновение до запуска. Тип location снимает напоминание «Маршрут не завершён», потому
+     * что трек снова пишется. Пока закрывается прежняя группа, новый сеанс не поднимается, иначе он прочитал бы её
+     * из базы, и его поднимет само закрытие. Интерфейс запускает службу при каждом возврате на экран, поэтому та же
+     * группа ничего не перезапускает.
+     */
     private fun startRoute() {
         val types = foregroundServiceTypes(this)
         if (types == 0) {
-            // start() проверяет разрешения заранее, так что сюда попадаем, только если их отозвали за мгновение до запуска.
             Log.w(TAG, "Нет разрешений ни на обмен, ни на геолокацию, служба не запускается")
             stopSelf()
             return
         }
         ServiceCompat.startForeground(this, ServiceNotification.ID, ServiceNotification.build(this), types)
-        // Человек открыл приложение, и служба снова пишет трек: напоминание после перезапуска больше не нужно.
         if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0) RouteNotFinishedNotification.cancel(this)
-        // Пока стирается старая группа, новый сеанс поднимать нельзя: он прочитал бы её из базы.
-        if (leaving?.isActive == true) return
+        if (leaving?.isActive == true) {
+            startAfterLeaving = true
+            return
+        }
         if (useFakeGroupData) {
             if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION == 0 || trackingJob?.isActive == true) return
             registerNetworkCallback()
@@ -153,9 +168,7 @@ class RouteService : Service() {
         registerNetworkCallback()
         serviceScope.launch {
             val group = groupRepository.activeGroup() ?: return@launch stopRoute()
-            // «Новая группа» могла начаться, пока читалась база.
             if (leaving?.isActive == true) return@launch
-            // Интерфейс запускает службу при каждом возврате на экран, поэтому та же группа ничего не перезапускает.
             if (route?.group == group) return@launch
             route?.stop()
             route = RouteSession(group).also { it.start() }
@@ -168,6 +181,7 @@ class RouteService : Service() {
      * система убивает, если та не вышла на передний план за несколько секунд. Из фона тип location доступен
      * только с «Разрешить всегда», без него обмен идёт, а трек стоит, пока человек не откроет приложение.
      * Об этом на маршруте говорит [RouteNotFinishedNotification]; в «Сборе» трек не пишется, и напоминание не нужно.
+     * Пока читалась база, человек мог открыть приложение, и тогда сеанс уже поднял [startRoute].
      */
     private fun restartRoute() {
         if (useFakeGroupData || route != null) return
@@ -177,7 +191,6 @@ class RouteService : Service() {
             val group = groupRepository.activeGroup()
             val state = viewProvider.awaitRoute()
             if (group == null || state == RouteState.FINISHED) return@launch stopRoute()
-            // Пока читалась база, человек мог открыть приложение, и startRoute уже поднял сеанс.
             if (route != null || leaving?.isActive == true) return@launch
             val tracking = inForeground && types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0
             if (state == RouteState.ACTIVE && !tracking) RouteNotFinishedNotification.show(this@RouteService)
@@ -190,6 +203,7 @@ class RouteService : Service() {
     /**
      * false, если на передний план выйти нельзя: нет разрешений ни на один тип или Android 12 и новее
      * запретил запуск из фона (`ForegroundServiceStartNotAllowedException`, бывает при автоматическом перезапуске).
+     * Это исключение есть только с Android 12 и наследует `IllegalStateException`, поэтому ловится по нему.
      */
     private fun enterForeground(types: Int): Boolean {
         if (types == 0) return false
@@ -197,7 +211,6 @@ class RouteService : Service() {
             ServiceCompat.startForeground(this, ServiceNotification.ID, ServiceNotification.build(this), types)
             true
         } catch (e: IllegalStateException) {
-            // ForegroundServiceStartNotAllowedException наследует IllegalStateException и есть только с Android 12.
             Log.w(TAG, "Служба не вышла на передний план после перезапуска", e)
             false
         }
@@ -213,8 +226,8 @@ class RouteService : Service() {
 
     /**
      * «Выйти из группы» у участника. Сосед, подтвердивший LEFT сводкой, разошлёт его дальше сам, поэтому ждать
-     * всю группу не нужно. Если за [QUIT_CONFIRM_MS] никто не подтвердил (рядом никого нет), группа стирается
-     * всё равно, и остальные увидят «Не слышно».
+     * всю группу не нужно. Если за [QUIT_CONFIRM_MS] никто не подтвердил (рядом никого нет), группа всё равно
+     * уходит в прошлые маршруты, и остальные увидят «Не слышно».
      */
     private fun quitGroup() {
         if (quitting?.isActive == true || leaving?.isActive == true) return
@@ -228,18 +241,24 @@ class RouteService : Service() {
                 } != null
                 Log.i(TAG, if (confirmed) "Выход подтвердил сосед" else "Выход никто не подтвердил за $QUIT_CONFIRM_MS мс")
             }
-            leaveGroup()
+            leaveGroup(discard = false)
         }
     }
 
     /**
-     * «Новая группа»: сеанс останавливается здесь же, на главном потоке, и только после того, как все его корутины
-     * закончились, таблицы стираются. Иначе движок старой группы успел бы записать Delta соседей в очищенную базу.
+     * Закрывает активную группу: сеанс останавливается здесь же, на главном потоке, и только после того, как все его
+     * корутины закончились, группа уходит в прошлые маршруты или, с [discard], удаляется. Иначе движок прежней группы
+     * успел бы записать Delta соседей в новую группу, созданную сразу после этого.
+     *
+     * Вызов отменяет ожидание подтверждения выхода («Выйти сразу»). Если вызов пришёл из самого ожидания, отмена
+     * ничего не прерывает: до закрытия группы точек приостановки нет. Неотправленный трек прошлого маршрута уходит
+     * с его токеном, поэтому отправка снимается, только когда трека не осталось. Если новую группу записали, пока
+     * шло закрытие, её запуск ждал здесь и поднимается сразу: иначе служба остановилась бы, а сеанс новой группы
+     * поднялся бы только при следующем возврате приложения на экран.
      */
-    private fun leaveGroup() {
+    private fun leaveGroup(discard: Boolean) {
         if (leaving?.isActive == true) return
-        // «Выйти сразу» во время ожидания подтверждения: ждать больше не нужно. Если вызов пришёл из самого ожидания,
-        // отмена ничего не прерывает: дальше до запуска стирания нет точек приостановки.
+        startAfterLeaving = false
         quitting?.cancel()
         val session = route
         val tracking = trackingJob
@@ -249,10 +268,15 @@ class RouteService : Service() {
         leaving = serviceScope.launch {
             session?.join()
             tracking?.join()
-            groupRepository.leaveGroup()
-            // Неотправленный трек стёртой группы ждёт в очереди, и отправку снимать рано.
-            if (groupRepository.hasQueuedTrack()) uploadScheduler.uploadNow() else uploadScheduler.cancelPeriodic()
-            stopSelf()
+            if (discard) groupRepository.deleteActiveGroup() else groupRepository.archiveActiveGroup()
+            if (groupRepository.hasUnsentTrack()) uploadScheduler.uploadNow() else uploadScheduler.cancelPeriodic()
+            leaving = null
+            if (startAfterLeaving) {
+                startAfterLeaving = false
+                startRoute()
+            } else {
+                stopSelf()
+            }
         }
     }
 
@@ -286,12 +310,14 @@ class RouteService : Service() {
 
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+        /**
+         * Поднимает части сеанса. Кого слышали в прошлой группе, забывается. Движок запускается до транспорта, но его
+         * подписка всё равно может начаться позже, и первые события транспорта сохраняет буфер `Channel.UNLIMITED`,
+         * хотя контракт `PeerTransport` этого не обещает.
+         */
         fun start() {
             Log.i(TAG, "сеанс группы ${group.tag} запущен")
-            // Кого слышали в прошлой группе, в состоянии новой группы не нужно.
             presence.clear()
-            // Движок запускается до транспорта. Его подписка всё равно может начаться позже, и первые события
-            // транспорта сохраняет буфер Channel.UNLIMITED, хотя контракт PeerTransport этого не обещает.
             engine.start(scope, group)
             transport.start(
                 TransportConfig(
@@ -307,16 +333,17 @@ class RouteService : Service() {
 
             val routeState = viewProvider.view
                 .filterNotNull()
-                .filter { it.group.tag == group.tag }
+                .filter { it.group == group }
                 .map { it.route }
                 .stateIn(scope, SharingStarted.Eagerly, RouteState.LOBBY)
             scope.launch { selfStateProducer.run() }
             scope.launch { statusMonitor.run(group) }
+            scope.launch { sosRelay.run(group) }
             scope.launch { trackRecorder.run(routeState, uploadScheduler::uploadNow) }
             scope.launch {
                 viewProvider.view
                     .filterNotNull()
-                    .filter { it.group.tag == group.tag }
+                    .filter { it.group == group }
                     .map(ServiceNotification::statusText)
                     .distinctUntilChanged()
                     .collect { ServiceNotification.update(this@RouteService, it) }
@@ -343,7 +370,7 @@ class RouteService : Service() {
          * поэтому участник, которого мой телефон не слышит напрямую, держит обмен до конца срока.
          */
         private suspend fun awaitFinishConfirmedByAll() {
-            val view = viewProvider.view.filterNotNull().filter { it.group.tag == group.tag }
+            val view = viewProvider.view.filterNotNull().filter { it.group == group }
             combine(view, engine.reportedBySeq) { current, reported -> current.finishNotConfirmedBy(reported) }
                 .first { it?.isEmpty() == true }
         }
@@ -365,6 +392,7 @@ class RouteService : Service() {
         private const val ACTION_RESTART = "ru.pereklichka.action.RESTART_ROUTE"
         private const val ACTION_LEAVE = "ru.pereklichka.action.LEAVE_GROUP"
         private const val ACTION_QUIT = "ru.pereklichka.action.QUIT_GROUP"
+        private const val ACTION_DISCARD = "ru.pereklichka.action.DISCARD_GROUP"
 
         /** Сколько миллисекунд «Выйти из группы» ждёт, пока сосед подтвердит LEFT: сводки приходят раз в 10 с. */
         const val QUIT_CONFIRM_MS = 30_000L
@@ -397,25 +425,37 @@ class RouteService : Service() {
             context.startService(Intent(context, RouteService::class.java).setAction(ACTION_STOP))
         }
 
-        /** «Выйти из группы» у участника: LEFT, ожидание подтверждения и стирание группы. Вызывать, пока приложение на экране. */
+        /**
+         * «Выйти из группы» у участника: LEFT, ожидание подтверждения и переход группы в прошлые маршруты. Вызывать,
+         * пока приложение на экране.
+         */
         fun quit(context: Context) {
             context.startService(Intent(context, RouteService::class.java).setAction(ACTION_QUIT))
         }
 
         /**
-         * Останавливает службу и стирает группу со всеми данными: кнопка «Новая группа» после завершения маршрута.
-         * Стирание всегда идёт через службу, даже если она не работает, чтобы оно не обогнало остановку сеанса.
-         * Вызывать, пока приложение на экране.
+         * Останавливает службу и переводит активную группу в прошлые маршруты: перед созданием новой группы,
+         * вступлением в другую и по «Выйти сразу». Смена группы всегда идёт через службу, даже если она не работает,
+         * чтобы не обогнать остановку сеанса. Вызывать, пока приложение на экране.
          */
         fun leave(context: Context) {
             context.startService(Intent(context, RouteService::class.java).setAction(ACTION_LEAVE))
         }
 
         /**
+         * Останавливает службу и удаляет активную группу со всеми записями: руководитель отменил сбор, в который
+         * никто не вступил, и хранить такую группу незачем. Вызывать, пока приложение на экране.
+         */
+        fun discard(context: Context) {
+            context.startService(Intent(context, RouteService::class.java).setAction(ACTION_DISCARD))
+        }
+
+        /**
          * Типы службы по выданным разрешениям, 0 если нельзя ни один: без разрешения Android 14 роняет запуск
          * службы с этим типом. До Android 10 `ServiceCompat.startForeground` типы не передаёт, поэтому константы
          * новых версий здесь безопасны. [fromBackground] нужен запуску без экрана: тогда тип location требует
-         * ещё и «Разрешить всегда».
+         * ещё и «Разрешить всегда». Тип location берётся только с точной геолокацией: по приблизительной трек
+         * не записать.
          */
         @SuppressLint("InlinedApi")
         private fun foregroundServiceTypes(context: Context, fromBackground: Boolean = false): Int {
@@ -423,7 +463,6 @@ class RouteService : Service() {
             if (RequiredPermissions.allGranted(context, RequiredPermissions.exchange())) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
             }
-            // Тип location берётся только с точной геолокацией: по приблизительной трек не записать.
             val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
             if (fine && (!fromBackground || RequiredPermissions.allGranted(context, RequiredPermissions.backgroundLocation()))) {
                 types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION

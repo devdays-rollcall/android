@@ -5,10 +5,11 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 /**
- * База Room с данными одной активной группы (группа, события, точки трека, состояния участников) и очередью
- * неотправленного трека стёртых групп (`outbox_group`, `outbox_point`). Создание новой группы, вступление в другую
- * и «Новая группа» переносят неотправленные точки в очередь и очищают таблицы активной группы
- * ([ru.pereklichka.data.GroupRepository]). Схема выгружается в `app/schemas`, чтобы её изменения было видно в ревью.
+ * База Room со всеми группами телефона: активной и прошлыми маршрутами. Записи каждой группы (события, точки трека,
+ * состояния участников) лежат в общих таблицах с ключом группы `groupKey`. Создание новой группы и вступление
+ * в другую переводят прежнюю активную группу в прошлые маршруты, ничего не стирая, а удаляет маршрут только
+ * человек со своего экрана ([ru.pereklichka.data.GroupRepository]). Схема выгружается в `app/schemas`, чтобы её
+ * изменения было видно в ревью.
  */
 @Database(
     entities = [
@@ -16,8 +17,6 @@ import androidx.room.TypeConverters
         ControlEventEntity::class,
         LocationPointEntity::class,
         MemberStateEntity::class,
-        OutboxGroupEntity::class,
-        OutboxPointEntity::class,
     ],
     version = 1,
 )
@@ -27,7 +26,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun controlEventDao(): ControlEventDao
     abstract fun locationDao(): LocationDao
     abstract fun memberStateDao(): MemberStateDao
-    abstract fun outboxDao(): OutboxDao
 
     companion object {
         const val NAME = "pereklichka.db"

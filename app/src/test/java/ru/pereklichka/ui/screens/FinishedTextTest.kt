@@ -19,13 +19,13 @@ class FinishedTextTest {
         )
     }
 
+    /** Без других участников подтверждать завершение было некому, и «все участники знают» звучало бы странно. */
     @Test
     fun `выключенный обмен не обещает передачу`() {
         assertEquals(
             "Маршрут завершён, все участники об этом знают. Обмен с группой выключен.",
             finishedText(Exchange.Off(finishConfirmedByAll = true), minutesLeft = null, hasOthers = true),
         )
-        // Без других участников подтверждать было некому, и «все получили» звучало бы странно.
         assertEquals(
             "Маршрут завершён, обмен с группой выключен.",
             finishedText(Exchange.Off(finishConfirmedByAll = true), minutesLeft = null, hasOthers = false),

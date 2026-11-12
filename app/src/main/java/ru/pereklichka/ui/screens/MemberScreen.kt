@@ -78,7 +78,7 @@ private val CompassSize = 220.dp
  * круг со стрелкой на человека, расстоянием до его последней точки и стороной света словами. Ниже сведения: когда
  * слышали, кто слышал последним (`lastHeardBy`), точность и возраст позиции, заряд (красным, если низкий).
  *
- * Внизу «Вижу, всё в порядке», пока о человеке есть активная тревога, иначе «Объявить тревогу» с подтверждением,
+ * Внизу «Я рядом, помощь не нужна», пока о человеке есть активная тревога, иначе «Объявить тревогу» с подтверждением,
  * чтобы не нажать случайно. О себе ни того ни другого: для себя есть SOS, и круга со стрелкой тоже нет.
  *
  * Задача: docs/team/valentin-ui.md
@@ -123,7 +123,7 @@ fun MemberScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (member.hasActiveAlarm && !member.isMe) {
-                    BigButtonFull("Вижу, всё в порядке", { onSeenOk(member.id) }, icon = R.drawable.sym_visibility, large = true)
+                    BigButtonFull("Я рядом, помощь не нужна", { onSeenOk(member.id) }, icon = R.drawable.sym_visibility, large = true)
                     Text(
                         "Нажмите, только если видите этого человека своими глазами",
                         style = MaterialTheme.typography.bodyMedium,

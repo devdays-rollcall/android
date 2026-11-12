@@ -40,9 +40,9 @@ class FormatTest {
         assertNull(formatDistance(null))
     }
 
+    /** Номера секторов идут по часовой от севера: 0 «С», 1 «СВ», 2 «В», 5 «ЮЗ», 7 «СЗ». */
     @Test
     fun `восемь секторов по 45 градусов, север от минус 22,5 до плюс 22,5`() {
-        // Номера секторов по часовой от севера: 0 «С», 1 «СВ», 2 «В», 5 «ЮЗ», 7 «СЗ».
         fun sector(deg: Double) = placeOf(100.0, deg).sector
         assertEquals(0, sector(0.0))
         assertEquals(0, sector(22.4))

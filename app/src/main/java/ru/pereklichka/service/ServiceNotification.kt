@@ -44,14 +44,16 @@ object ServiceNotification {
             .build()
     }
 
-    /** Меняет текст уже показанного уведомления. Без разрешения на уведомления ничего не делает. */
+    /**
+     * Меняет текст уже показанного уведомления. Без разрешения на уведомления ничего не делает. Если разрешение
+     * отозвали между проверкой и показом, текст обновится при следующем изменении.
+     */
     fun update(context: Context, text: String) {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return
         try {
             manager.notify(ID, build(context, text))
         } catch (e: SecurityException) {
-            // Разрешение отозвали между проверкой и показом: текст обновится при следующем изменении.
         }
     }
 

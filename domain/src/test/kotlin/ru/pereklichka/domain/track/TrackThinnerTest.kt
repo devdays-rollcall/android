@@ -10,10 +10,10 @@ class TrackThinnerTest {
 
     private val start = LatLon(43.35, 42.44)
 
+    /** Десять минут на месте, фиксации каждые 5 с с дрожанием в пару метров. */
     @Test
     fun `стоящий человек даёт точку раз в минуту`() {
         val thinner = TrackThinner()
-        // Десять минут на месте: фиксации каждые 5 с с дрожанием в пару метров.
         val fixes = (0..120).map { i -> fix(i * 5_000L, northM = if (i % 2 == 0) 0.0 else 2.0) }
 
         val kept = fixes.filter(thinner::shouldKeep)
@@ -21,10 +21,10 @@ class TrackThinnerTest {
         assertEquals((0..10).map { it * 60_000L }, kept.map { it.elapsedRealtimeMs })
     }
 
+    /** Человек идёт со скоростью 1,2 м/с и каждые 5 с уходит на 6 м, поэтому в трек идёт каждая третья фиксация (18 м). */
     @Test
     fun `идущий человек даёт точку каждые 15 метров`() {
         val thinner = TrackThinner()
-        // 1,2 м/с: каждые 5 с на 6 м дальше, значит в трек идёт каждая третья фиксация (18 м).
         val fixes = (0..60).map { i -> fix(i * 5_000L, northM = i * 6.0) }
 
         val kept = fixes.filter(thinner::shouldKeep)
@@ -32,10 +32,10 @@ class TrackThinnerTest {
         assertEquals((0..60 step 3).map { it * 6.0 }, kept.map { northOf(it) })
     }
 
+    /** Настенное время прыгает на час назад, а монотонное идёт ровно. */
     @Test
     fun `перевод часов телефона на решение не влияет`() {
         val thinner = TrackThinner()
-        // Настенное время прыгает на час назад, монотонное идёт ровно.
         val fixes = (0..24).map { i -> fix(i * 5_000L, northM = 0.0, wallJumpMs = if (i > 6) -3_600_000 else 0) }
 
         val kept = fixes.filter(thinner::shouldKeep)
@@ -43,10 +43,10 @@ class TrackThinnerTest {
         assertEquals(listOf(0L, 60_000L, 120_000L), kept.map { it.elapsedRealtimeMs })
     }
 
+    /** При точности 80 м скачки на 30 м у стоящего человека смещением не считаются. */
     @Test
     fun `неточная фиксация идёт в трек только по времени`() {
         val thinner = TrackThinner()
-        // Точность 80 м: скачки на 30 м у стоящего человека смещением не считаются.
         val fixes = (0..24).map { i -> fix(i * 5_000L, northM = if (i % 2 == 0) 0.0 else 30.0, accuracyM = 80.0) }
 
         val kept = fixes.filter(thinner::shouldKeep)

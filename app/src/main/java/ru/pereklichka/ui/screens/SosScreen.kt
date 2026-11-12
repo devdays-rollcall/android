@@ -70,6 +70,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import ru.pereklichka.R
 import ru.pereklichka.domain.model.EventId
@@ -115,7 +116,9 @@ private val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
  * не нужно, вызов человек нажмёт сам) и отмена SOS: после подтверждения [onCancelSos] снимает его у всех.
  *
  * Отправлен ли SOS, экран берёт из вида (`hasSos` у меня), поэтому после снятия SOS снова видна кнопка удержания.
- * Только что нажатая кнопка считается отправкой, пока вид не догнал её.
+ * Только что нажатая кнопка считается отправкой, пока вид не догнал её: между удержанием и новым видом проходит
+ * до пары секунд, и без этой отметки на это время вернулась бы кнопка. В фейковом режиме вид SOS не покажет,
+ * и отметка держится, пока экран открыт или SOS не отменят.
  *
  * Задача: docs/team/valentin-ui.md
  */
@@ -127,12 +130,10 @@ fun SosScreen(
     onCancelSos: () -> Unit,
     onResendToServer: () -> Unit,
     onBack: () -> Unit,
-    serverState: WorkInfo.State? = rememberSosServerState(view),
+    serverState: WorkInfo.State? = rememberSosServerState(view, view.alarms.firstOrNull { it.isSos && it.target == view.me }?.id),
 ) {
     val me = view.members.firstOrNull { it.isMe }
     val hasSos = me?.hasSos == true
-    // Между удержанием и новым видом проходит до пары секунд, и без этой отметки на это время вернулась бы кнопка.
-    // В фейковом режиме вид SOS не покажет, и отметка держится, пока экран открыт или SOS не отменят.
     var justSent by remember { mutableStateOf(false) }
     LaunchedEffect(hasSos) { if (hasSos) justSent = false }
     val sent = hasSos || justSent
@@ -153,12 +154,13 @@ fun SosScreen(
     }
 }
 
-/** Состояние задачи отправки SOS на сервер; null, пока SOS на сервер не отправляли. */
+/** Состояние задачи отправки моего SOS [sosId] на сервер; null, пока SOS нет или его на сервер не отправляли. */
 @Composable
-private fun rememberSosServerState(view: GroupView): WorkInfo.State? {
+private fun rememberSosServerState(view: GroupView, sosId: EventId?): WorkInfo.State? {
     val context = LocalContext.current
-    val work = remember(view.group.tag) {
-        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UploadScheduler.sosName(view.group.tag))
+    val work = remember(view.group.tag, sosId) {
+        if (sosId == null) flowOf(emptyList())
+        else WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UploadScheduler.sosName(view.group.tag, sosId))
     }
     val workInfos by work.collectAsStateWithLifecycle(initialValue = emptyList())
     return workInfos.lastOrNull()?.state
@@ -270,10 +272,12 @@ private fun HoldToSend(onSend: () -> Unit) {
     }
 }
 
-/** Кому уйдёт сигнал: группа (и сколько телефонов рядом сейчас), наблюдатели через сервер, а спасатели нет. */
+/**
+ * Кому уйдёт сигнал: группа (и сколько телефонов рядом сейчас), наблюдатели через сервер, а спасатели нет. Дойдёт ли
+ * сигнал, телефон заранее не знает, поэтому карточка называет только число телефонов группы, слышных напрямую.
+ */
 @Composable
 private fun RecipientsCard(view: GroupView) {
-    // Что сигнал дойдёт, телефон заранее не знает. Известно только, сколько телефонов группы он слышит напрямую.
     val near = view.members.count { !it.isMe && it.heardDirectlyNow }
     val nearText = if (near == 0) {
         "Рядом сейчас телефонов группы нет"

@@ -12,14 +12,16 @@ import javax.inject.Singleton
 @Singleton
 class AndroidClock @Inject constructor(@ApplicationContext private val context: Context) : Clock {
 
-    // Номер загрузки не меняется, пока процесс жив, поэтому читается один раз.
+    /**
+     * Номер загрузки. Пока процесс жив, он не меняется, поэтому читается один раз. Без `BOOT_COUNT` загрузку отличает
+     * её момент на настенных часах, округлённый вниз до минуты. На границе минуты или после перевода часов такой id
+     * может смениться, и возрасты станут примерными.
+     */
     private val bootId: String by lazy {
         val bootCount = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
         if (bootCount >= 0) {
             bootCount.toString()
         } else {
-            // Без BOOT_COUNT загрузку отличаем по её моменту на настенных часах, округлённому вниз до минуты.
-            // На границе минуты или после перевода часов id может смениться, и возрасты станут примерными.
             "t" + (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 60_000
         }
     }

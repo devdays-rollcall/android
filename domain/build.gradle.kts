@@ -15,7 +15,6 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
-    // Виртуальное время kotlinx-coroutines-test (advanceTimeBy, UnconfinedTestDispatcher) помечено как экспериментальное.
     target.compilations.matching { it.name == "test" || it.name == "testFixtures" }.configureEach {
         compileTaskProvider.configure {
             compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
@@ -28,7 +27,6 @@ dependencies {
     api(libs.javax.inject)
     implementation(libs.kotlinx.serialization.json)
 
-    // Общий контрактный тест хранилища: его наследуют тесты InMemoryMeshStore здесь и RoomMeshStore в app.
     testFixturesApi(libs.junit)
     testFixturesApi(libs.kotlin.test)
     testFixturesApi(libs.kotlinx.coroutines.test)

@@ -32,8 +32,8 @@ import kotlin.coroutines.ContinuationInterceptor
  * Движок синхронизации: сверяет записи этого телефона с каждым соседом и досылает то, чего у соседа нет.
  *
  * На каждое соединение движок ведёт сеанс по правилам `docs/03-sync-protocol.md`. При подключении и каждые 10 с
- * он шлёт сводку ([Hello]), на сводку соседа отвечает одной [Delta], а свои новые события и состояние рассылает
- * сразу. Байты идут через [PeerTransport], записи через [MeshStore], и о каждом разобранном входящем сообщении
+ * он шлёт сводку ([Hello]). На сводку соседа он отвечает срочной [Delta] с событиями и состояниями и обычной
+ * с порцией точек, а свои новые события и состояние рассылает сразу. Байты идут через [PeerTransport], записи через [MeshStore], и о каждом разобранном входящем сообщении
  * узнаёт [PresenceTracker]. Запускает и останавливает движок `RouteService`. В `MeshSimulationTest` тот же движок
  * работает поверх `InMemoryMeshStore` и `InMemoryTransport` из testFixtures.
  *
@@ -143,10 +143,10 @@ class SyncEngine @Inject constructor(
              */
             val pendingBeforeHello = mutableListOf<Pair<Delta, IncomingDelta>>()
 
-            /** Срочные: Hello, свои новые события и состояние, ретранслируемые события. */
+            /** Срочные: Hello, свои новые события и состояние, ретранслируемые события, события и состояния в ответ на сводку. */
             val urgent = Channel<MeshMessage>(Channel.UNLIMITED)
 
-            /** Ответы на сводки соседа: самая объёмная часть обмена, в том числе порции точек. */
+            /** Порции точек в ответ на сводки соседа: самая объёмная часть обмена. */
             val normal = Channel<MeshMessage>(Channel.UNLIMITED)
 
             private var senderJob: Job? = null
@@ -175,7 +175,7 @@ class SyncEngine @Inject constructor(
                 normal.trySend(message)
             }
 
-            /** Ответы на сводку считаются из свежего `peerKnown`; собранные по старому в очереди не нужны. */
+            /** Порции точек считаются из свежего `peerKnown`; собранные по старому в очереди не нужны. */
             fun drainNormal() {
                 while (normal.tryReceive().isSuccess) Unit
             }
@@ -217,12 +217,12 @@ class SyncEngine @Inject constructor(
             }
         }
 
+        /** Заводит сеанс с новым соседом. Первое сообщение по соединению это Hello: до него соседу слать нечего. */
         private suspend fun onConnected(peer: MemberId) {
             peers.remove(peer)?.stopSender()
             val session = PeerSession(peer)
             peers[peer] = session
             session.startSender()
-            // Первое сообщение по новому соединению — Hello: до него соседу слать нечего.
             session.enqueueUrgent(hello())
         }
 
@@ -259,7 +259,6 @@ class SyncEngine @Inject constructor(
          */
         private suspend fun onFirstMessages(session: PeerSession, message: MeshMessage) {
             when {
-                // Первое Hello определяет, свой это сосед или чужой.
                 message is Hello && message.isFrom(session.peer) -> {
                     session.handshakeDone = true
                     onHello(session, message)
@@ -287,7 +286,9 @@ class SyncEngine @Inject constructor(
             session.peerKnown = message.summary()
             reportedState.update { it + (session.peer to session.peerKnown.control) }
             session.drainNormal()
-            session.enqueueNormal(composeDeltaReply(session))
+            val reply = composeDeltaReply(session)
+            reply.urgent?.let(session::enqueueUrgent)
+            reply.points?.let(session::enqueueNormal)
         }
 
         private suspend fun onDelta(
@@ -359,12 +360,13 @@ class SyncEngine @Inject constructor(
         private suspend fun hello(): Hello = Hello.of(store.summary(), group.tag, group.me)
 
         /**
-         * Ответ на сводку соседа: события, которых у него нет (по возрастанию номера внутри автора,
-         * не больше `config.maxEventsPerDelta`), все состояния новее соседских и одна порция точек.
-         * Если после этого что-то для соседа остаётся, ставится `more` — он пришлёт свежую сводку
-         * и получит следующую порцию.
+         * Ответ на сводку соседа из двух Delta. Срочная несёт события, которых у него нет (по возрастанию номера
+         * внутри автора, не больше `config.maxEventsPerDelta`), и все состояния новее соседских. Обычная несёт одну
+         * порцию точек. Так после встречи тревоги и свежие состояния не ждут в одном сообщении с накопленным треком:
+         * большое сообщение по Bluetooth идёт секунды, а теряется целиком. В каждой Delta свой `more`, если её вид
+         * записей не влез; сосед на него пришлёт свежую сводку и получит следующую порцию. Пустая часть не отправляется.
          */
-        private suspend fun composeDeltaReply(session: PeerSession): Delta {
+        private suspend fun composeDeltaReply(session: PeerSession): DeltaReply {
             val my = store.summary()
             val known = session.peerKnown
 
@@ -372,11 +374,11 @@ class SyncEngine @Inject constructor(
             val states = store.statesNewerThan(known.states).map { it.toWire(clock) }
             val (locations, moreLocations) = collectLocations(my, known, session)
 
-            return Delta(
-                control = control,
-                states = states,
-                locations = locations,
-                more = moreControl || moreLocations,
+            return DeltaReply(
+                urgent = Delta(control = control, states = states, more = moreControl)
+                    .takeIf { control.isNotEmpty() || states.isNotEmpty() || moreControl },
+                points = Delta(locations = locations, more = moreLocations)
+                    .takeIf { locations.isNotEmpty() || moreLocations },
             )
         }
 
@@ -492,6 +494,9 @@ class SyncEngine @Inject constructor(
             }
         }
     }
+
+    /** Ответ на сводку соседа: [urgent] уходит срочной очередью, [points] обычной; null, если отправлять нечего. */
+    private class DeltaReply(val urgent: Delta?, val points: Delta?)
 
     private companion object {
 

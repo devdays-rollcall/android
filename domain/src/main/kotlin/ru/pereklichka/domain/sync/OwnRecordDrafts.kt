@@ -47,10 +47,10 @@ data class ControlEventDraft(
          */
         const val MAX_NAME_LENGTH: Int = 40
 
+        /** Укорачивает имя, не разрезая суррогатную пару: половина эмодзи в JSON превратилась бы в мусор. */
         private fun limitName(name: String): String {
             val trimmed = name.trim()
             if (trimmed.length <= MAX_NAME_LENGTH) return trimmed
-            // Не разрезать суррогатную пару: половина эмодзи в JSON превратилась бы в мусор.
             val end = if (trimmed[MAX_NAME_LENGTH - 1].isHighSurrogate()) MAX_NAME_LENGTH - 1 else MAX_NAME_LENGTH
             return trimmed.substring(0, end).trimEnd()
         }

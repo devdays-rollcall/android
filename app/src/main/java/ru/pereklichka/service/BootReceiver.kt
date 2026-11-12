@@ -18,6 +18,8 @@ import javax.inject.Inject
  * Приёмнику BOOT_COMPLETED система разрешает запустить foreground service из фона, а тип connectedDevice
  * не попадает под запрет Android 15 для этого приёмника. На Xiaomi и Honor BOOT_COMPLETED приходит,
  * только если приложению включили автозапуск.
+ *
+ * Чтение базы и первый расчёт вида укладываются в 10 с, которые `goAsync` даёт приёмнику.
  */
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
@@ -33,7 +35,6 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED || useFakeGroupData) return
-        // Чтение базы и первый расчёт вида укладываются в 10 с, которые goAsync даёт приёмнику.
         val pending = goAsync()
         scope.launch {
             try {

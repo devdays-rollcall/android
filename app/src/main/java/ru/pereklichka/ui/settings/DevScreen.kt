@@ -173,7 +173,7 @@ private fun DevContent(
                     "Точки: всего / ждут / отклонены" to state.counts.run {
                         "${formatCount(points)} / ${formatCount(unsentPoints)} / ${formatCount(rejectedPoints)}"
                     },
-                    "Трек стёртых групп ждёт" to formatCount(state.counts.queuedPoints),
+                    "Трек прошлых маршрутов ждёт" to formatCount(state.counts.pastUnsentPoints),
                 ),
             )
         }
@@ -233,7 +233,10 @@ private fun formatTime(wallMs: Long): String {
     return time.format(DateTimeFormatter.ofPattern(pattern, RU))
 }
 
-/** Белая карточка из строк с названием слева и значением справа, между строками разделители. */
+/**
+ * Белая карточка из строк с названием слева и значением справа, между строками разделители. Значение прижато вправо,
+ * а длинный id обрезается, чтобы подпись слева не сжималась в столбик.
+ */
 @Composable
 private fun KeyValueCard(rows: List<Pair<String, String>>, monospaceKeys: Set<String> = emptySet()) {
     Card {
@@ -254,7 +257,6 @@ private fun KeyValueCard(rows: List<Pair<String, String>>, monospaceKeys: Set<St
                     val mono = key in monospaceKeys
                     Text(
                         value,
-                        // Значение прижато вправо, а длинный id обрезается, чтобы подпись слева не сжималась в столбик.
                         modifier = Modifier.widthIn(max = 180.dp),
                         style = if (mono) {
                             MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)

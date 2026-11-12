@@ -4,8 +4,6 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import ru.pereklichka.data.db.AppDatabase
-import ru.pereklichka.data.db.GroupInfoEntity
-import ru.pereklichka.data.db.OutboxGroupEntity
 import ru.pereklichka.data.db.toEntity
 import ru.pereklichka.data.db.toModel
 import ru.pereklichka.domain.model.GroupInfo
@@ -16,17 +14,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Создаёт активную группу, вступает в неё, отдаёт её остальным частям приложения и стирает при выходе.
+ * Создаёт активную группу, вступает в неё, отдаёт её остальным частям приложения, переводит в прошлые маршруты
+ * и удаляет.
  *
- * Смена группы и выход ([leaveGroup]) очищают таблицы активной группы, а повторное вступление в ту же группу ничего
- * не меняет. Неотправленные точки трека перед очисткой уходят в очередь `outbox_point` вместе с токеном группы,
- * и `UploadWorker` отправит их, когда появится интернет. После очистки телефон нумерует свои записи с единицы,
- * поэтому `member_id` новый для каждой группы: под старым id соседи увидели бы на тех же номерах другие записи
- * и отбросили бы их как конфликт.
+ * Новая группа и вступление в другую ничего не стирают: прежняя активная группа становится прошлым маршрутом
+ * со всеми своими записями, и её неотправленный трек `UploadWorker` отправит с её токеном. Повторное вступление
+ * в активную группу ничего не меняет. `member_id` новый для каждой группы, и он же служит ключом её записей
+ * в базе (`GroupInfo.key`), поэтому записи разных групп и разных вступлений в одну группу не смешиваются.
  *
- * Менять группу можно, только пока служба не работает для другой группы, иначе движок старой группы успеет
- * записать чужие Delta в чистые таблицы. Интерфейс это соблюдает: создание и вступление доступны лишь без
- * активной группы, а [leaveGroup] вызывает только `RouteService` после остановки сеанса.
+ * Менять активную группу можно, только пока служба не работает для другой группы, иначе движок старой группы успеет
+ * записать чужие Delta в новую. Интерфейс это соблюдает: создание и вступление сначала просят службу закрыть прежнюю
+ * группу, а [archiveActiveGroup] и [deleteActiveGroup] вызывает только `RouteService` после остановки сеанса.
  */
 @Singleton
 class GroupRepository @Inject constructor(
@@ -34,12 +32,12 @@ class GroupRepository @Inject constructor(
     private val clock: Clock,
 ) {
     /** Активная группа или null, пока её нет; новое значение после каждого изменения. */
-    val activeGroup: Flow<GroupInfo?> = db.groupDao().observe().map { it?.toModel() }
+    val activeGroup: Flow<GroupInfo?> = db.groupDao().observeActive().map { it?.toModel() }
 
     /** Активная группа на этот момент или null. */
-    suspend fun activeGroup(): GroupInfo? = db.groupDao().get()?.toModel()
+    suspend fun activeGroup(): GroupInfo? = db.groupDao().active()?.toModel()
 
-    /** Новая группа, где я руководитель. Старые данные стираются. */
+    /** Новая группа, где я руководитель. Прежняя активная группа становится прошлым маршрутом. */
     suspend fun createGroup(groupName: String): GroupInfo {
         require(groupName.isNotBlank()) { "Пустое название группы" }
         val token = GroupToken.generate()
@@ -49,7 +47,10 @@ class GroupRepository @Inject constructor(
         )
     }
 
-    /** Вступление по QR. Если это та же группа, возвращает её как есть, иначе стирает старые данные. */
+    /**
+     * Вступление по QR. Если это активная группа, возвращает её как есть, иначе прежняя активная группа становится
+     * прошлым маршрутом.
+     */
     suspend fun join(qr: QrPayload): GroupInfo {
         activeGroup()?.takeIf { it.token == qr.token }?.let { return it }
         return replaceActiveGroup(
@@ -57,33 +58,39 @@ class GroupRepository @Inject constructor(
         )
     }
 
-    /**
-     * Стирает группу со всеми событиями, точками и состояниями одной транзакцией: «Новая группа» после маршрута.
-     * Неотправленные точки остаются в очереди на отправку.
-     */
-    suspend fun leaveGroup() = db.withTransaction { deleteAll() }
+    /** Переводит активную группу в прошлые маршруты: «Выйти из группы» и смена группы. Записи остаются в базе. */
+    suspend fun archiveActiveGroup() = db.groupDao().deactivate()
 
-    /** Есть ли в очереди неотправленный трек стёртых групп: тогда отправку на сервер снимать нельзя. */
-    suspend fun hasQueuedTrack(): Boolean = db.outboxDao().hasAnyPoints()
+    /** Удаляет активную группу со всеми записями: руководитель отменил сбор, в который никто не вступил. */
+    suspend fun deleteActiveGroup() = db.withTransaction {
+        db.groupDao().active()?.let { deleteRows(it.myMemberId) }
+    }
+
+    /**
+     * Удаляет прошлый маршрут с ключом [key] со всеми событиями, точками и состояниями одной транзакцией. Активную
+     * группу не трогает: её записи ещё пишет служба.
+     */
+    suspend fun deletePastGroup(key: String) = db.withTransaction {
+        db.groupDao().get(key)?.takeIf { !it.active }?.let { deleteRows(key) }
+    }
+
+    /** Есть ли неотправленный трек в какой-нибудь группе: тогда отправку на сервер снимать нельзя. */
+    suspend fun hasUnsentTrack(): Boolean = db.locationDao().hasUnsent()
+
+    /** Прошлые маршруты, чей трек ещё не весь ушёл на сервер, старые первыми. */
+    suspend fun pastGroupsWithUnsentTrack(): List<GroupInfo> = db.groupDao().pastWithUnsentPoints().map { it.toModel() }
 
     private suspend fun replaceActiveGroup(group: GroupInfo): GroupInfo = db.withTransaction {
-        deleteAll()
-        db.groupDao().insert(group.toEntity())
+        db.groupDao().deactivate()
+        db.groupDao().insert(group.toEntity(active = true))
         group
     }
 
-    private suspend fun deleteAll() {
-        db.groupDao().get()?.let { queueUnsentTrack(it) }
-        db.controlEventDao().deleteAll()
-        db.locationDao().deleteAll()
-        db.memberStateDao().deleteAll()
-        db.groupDao().deleteAll()
-    }
-
-    /** Переносит неотправленные точки группы [group] в очередь стёртых групп. Вызывать внутри транзакции. */
-    private suspend fun queueUnsentTrack(group: GroupInfoEntity) {
-        val outbox = db.outboxDao()
-        outbox.copyUnsentPoints(group.tag)
-        if (outbox.hasPoints(group.tag)) outbox.upsertGroup(OutboxGroupEntity(group.tag, group.token, group.myMemberId))
+    /** Удаляет группу [key] и её записи. Вызывать внутри транзакции. */
+    private suspend fun deleteRows(key: String) {
+        db.controlEventDao().deleteGroup(key)
+        db.locationDao().deleteGroup(key)
+        db.memberStateDao().deleteGroup(key)
+        db.groupDao().delete(key)
     }
 }

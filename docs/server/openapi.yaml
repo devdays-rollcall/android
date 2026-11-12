@@ -10,7 +10,7 @@ info:
     Ключ группы передается в заголовке `Authorization: Bearer <group_token>`.
     Он создается на устройстве лидера из 32 криптографически случайных байтов
     и кодируется в base64url без padding. Один и тот же ключ используют все
-    устройства группы. Ключ просмотра позволяет читать события и управлять предупреждениями.
+    устройства группы. Ключ просмотра дает только доступ к чтению.
 servers:
   - url: /
 security:
@@ -77,7 +77,7 @@ paths:
           $ref: '#/components/responses/Unavailable'
     get:
       operationId: getEvents
-      summary: Read stored events with a group or read-only token
+      summary: Read stored events with a group or viewing token
       description: |
         Возвращает сохраненные события группы в порядке их записи в базу,
         не по времени измерения. Для построения маршрута сортируйте точки
@@ -117,7 +117,54 @@ paths:
           $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /api/v1/share-links:
+    post:
+      operationId: createShareLink
+      summary: Create a viewing token for an existing group
+      description: |
+        Создает отдельный случайный ключ просмотра для существующей группы.
+        Требуется ключ группы. Ключ просмотра позволяет включать предупреждения и подтверждать их снятие, но не позволяет отправлять
+        события или создавать другие ключи. Срок действия и отзыв не предусмотрены.
+      responses:
+        '201':
+          description: Создан ключ просмотра, начинающийся с `view_`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareToken'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /api/v1/alert:
+    get:
+      operationId: getAlert
+      summary: Read the group warning and notification subscription address
+      parameters:
+        - name: X-Observer-Key
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Идентификатор браузера для проверки его регистрации и голоса.
+      security:
+        - groupToken: []
+        - viewToken: []
+      responses:
+        '200':
+          description: Текущее предупреждение и адрес подписки ntfy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertState'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
     post:
       operationId: raiseAlert
       summary: Activate a warning and notify the group observers
@@ -136,42 +183,77 @@ paths:
           schema:
             type: string
             format: uuid
-          description: UUID участника, отправившего SOS.
-      description: |
-        Включает общее предупреждение группы и отправляет уведомление через ntfy.
-        Для SOS передайте заголовок X-Alert-Source со значением sos. Поле notified подтверждает приём сообщения ntfy,
-        но не доставку на каждый телефон. Группа должна существовать на сервере.
+          description: UUID участника, отправившего SOS; отсутствует у старых клиентов.
       security:
         - groupToken: []
         - viewToken: []
       responses:
         '200':
-          description: Предупреждение включено; notified означает, что ntfy принял сообщение.
+          description: Предупреждение активно; поле notified показывает, принял ли ntfy сообщение.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AlertResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Ключ просмотра не позволяет отправить SOS.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/Unavailable'
-  /api/v1/share-links:
-    post:
-      operationId: createShareLink
-      summary: Create a read-only token for an existing group
-      description: |
-        Создает отдельный случайный ключ просмотра для существующей группы.
-        Требуется ключ группы. Ключ просмотра нельзя использовать для отправки
-        событий или создания других ключей. Срок действия и отзыв не предусмотрены.
+    delete:
+      operationId: clearAlert
+      summary: Clear an active warning
+      parameters:
+        - name: X-Alert-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Идентификатор предупреждения, которое нужно снять.
+      security:
+        - groupToken: []
+        - viewToken: []
       responses:
-        '201':
-          description: Создан ключ просмотра, начинающийся с `view_`.
+        '200':
+          description: Текущее состояние после снятия предупреждения любым наблюдателем.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ShareToken'
+                $ref: '#/components/schemas/AlertState'
+        '409':
+          description: Предупреждение уже изменилось; обновите состояние.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/observers:
+    post:
+      operationId: registerObserver
+      deprecated: true
+      summary: Register a browser as a group observer
+      parameters:
+        - $ref: '#/components/parameters/ObserverKey'
+      security:
+        - groupToken: []
+        - viewToken: []
+      responses:
+        '204':
+          description: Браузер зарегистрирован; повторная регистрация не создаёт нового наблюдателя.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -179,6 +261,14 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
 components:
+  parameters:
+    ObserverKey:
+      name: X-Observer-Key
+      in: header
+      required: true
+      description: Случайный ключ браузера, 32 байта в base64url без padding.
+      schema:
+        type: string
   securitySchemes:
     groupToken:
       type: http
@@ -189,7 +279,7 @@ components:
     viewToken:
       type: http
       scheme: bearer
-      description: Ключ с префиксом `view_`, созданный сервером для чтения событий группы.
+      description: Ключ с префиксом `view_` для чтения событий, включения и снятия предупреждения.
   responses:
     BadRequest:
       description: Некорректный JSON, формат пачки, `limit` или `cursor`.
@@ -228,6 +318,57 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    AlertState:
+      type: object
+      required: [active, alert_id, subscription_url, observers, approvals, required_approvals, registered, approved]
+      properties:
+        active:
+          type: boolean
+        alert_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Идентификатор текущего предупреждения; null, если оно снято.
+        source:
+          type: string
+          enum: [observer, sos, unknown]
+          nullable: true
+          description: Источник текущего предупреждения; неизвестен для прежних предупреждений.
+        member_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Участник последнего SOS; отсутствует, если его ID неизвестен.
+        username:
+          type: string
+          nullable: true
+          description: Последнее известное имя участника, отправившего SOS.
+        observers:
+          type: integer
+          description: Сохранено для совместимости; регистрация для снятия больше не нужна.
+        approvals:
+          type: integer
+          description: Сохранено для совместимости; голосование отключено.
+        required_approvals:
+          type: integer
+          description: Для снятия достаточно одного наблюдателя.
+        registered:
+          type: boolean
+          description: Сохранено для совместимости; регистрация больше не нужна.
+        approved:
+          type: boolean
+          description: Сохранено для совместимости; голосование отключено.
+        subscription_url:
+          type: string
+          format: uri
+          description: Секретный адрес топика ntfy; любой, кто его знает, может читать и отправлять сообщения.
+    AlertResult:
+      type: object
+      required: [notified]
+      properties:
+        notified:
+          type: boolean
+          description: Сервис ntfy подтвердил приём уведомления; доставка отдельным подписчикам не гарантируется.
     ShareToken:
       type: object
       description: Отдельный ключ просмотра, созданный сервером для группы.
@@ -251,13 +392,6 @@ components:
           description: События участников. Пустой массив означает heartbeat отправителя.
           items:
             $ref: '#/components/schemas/EventInput'
-    AlertResult:
-      type: object
-      required: [notified]
-      properties:
-        notified:
-          type: boolean
-          description: Сервис ntfy подтвердил приём уведомления.
     EventInput:
       type: object
       description: Событие, созданное устройством участника и передаваемое на сервер.
@@ -271,6 +405,12 @@ components:
           type: string
           format: uuid
           description: UUIDv4 участника, создавшего событие. Сохраняется на устройстве и не меняется в группе.
+        username:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 100
+          description: Имя участника на момент события; можно не передавать.
         type:
           type: string
           enum: [location]
@@ -295,6 +435,12 @@ components:
           type: string
           format: uuid
           description: UUID участника, создавшего событие.
+        username:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 100
+          description: Имя участника на момент события; можно не передавать.
         type:
           type: string
           enum: [location]

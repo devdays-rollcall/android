@@ -71,7 +71,7 @@ import javax.inject.Singleton
  *
  * Задача: docs/team/olga-transport.md
  */
-@SuppressLint("MissingPermission") // Без разрешений вызовы Nearby пишут отказ в лог, см. выше.
+@SuppressLint("MissingPermission")
 @Singleton
 class NearbyPeerTransport @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -138,7 +138,7 @@ class NearbyPeerTransport @Inject constructor(
         .setConnectionType(ConnectionType.NON_DISRUPTIVE)
         .build()
 
-    // У DiscoveryOptions параметра connectionType нет: искать соседей можно без трогания Wi-Fi и так.
+    /** Без `connectionType`: у `DiscoveryOptions` его нет, а поиск соседей Wi-Fi и так не трогает. */
     private val discoveryOptions = DiscoveryOptions.Builder()
         .setStrategy(Strategy.P2P_CLUSTER)
         .build()
@@ -147,11 +147,13 @@ class NearbyPeerTransport @Inject constructor(
         .setConnectionType(ConnectionType.NON_DISRUPTIVE)
         .build()
 
+    /**
+     * Запускает транспорт для [config]. Участник из списка блокировки экрана «Для разработчиков», попавший в него
+     * при живом соединении, отключается, а его сообщения отбрасывает `onPayloadReceived`.
+     */
     override fun start(config: TransportConfig) {
         this.config = config
         Log.i(TAG, "start: я ${config.me.short()}, serviceId ${config.serviceId}")
-        // Список блокировки с экрана «Для разработчиков»: попавший в него при живом соединении отключается,
-        // а его сообщения отбрасывает onPayloadReceived.
         blockedJob?.cancel()
         blockedJob = scope.launch {
             config.blocked.collect { blocked ->
@@ -166,14 +168,18 @@ class NearbyPeerTransport @Inject constructor(
         radioJob = scope.launch { radioLoop(config) }
     }
 
+    /**
+     * Останавливает транспорт. Сначала сбрасывается состояние, потом идут вызовы Nearby: шаг цикла, который шёл
+     * одновременно со stop, после своего startAdvertising или startDiscovery увидит `running = false` и остановит их
+     * сам. Канал событий заменяется новым, потому что Disconnected об оборванных соединениях и поздние события
+     * следующему движку не нужны.
+     */
     override fun stop() {
         Log.i(TAG, "stop")
         radioJob?.cancel()
         radioJob = null
         blockedJob?.cancel()
         blockedJob = null
-        // Сначала состояние, потом вызовы Nearby: шаг цикла, который шёл одновременно со stop, после своего
-        // startAdvertising или startDiscovery увидит running = false и остановит их сам.
         synchronized(lock) {
             running = false
             advertising = false
@@ -192,8 +198,6 @@ class NearbyPeerTransport @Inject constructor(
         nearby("stopAdvertising") { connections.stopAdvertising() }
         nearby("stopDiscovery") { connections.stopDiscovery() }
         nearby("stopAllEndpoints") { connections.stopAllEndpoints() }
-        // Движок этого запуска уже остановлен. Disconnected об оборванных соединениях и поздние события
-        // следующему движку не нужны, он начинает с чистого листа.
         val finished = eventsChannel
         eventsChannel = Channel(Channel.UNLIMITED)
         finished.close()
@@ -216,10 +220,12 @@ class NearbyPeerTransport @Inject constructor(
         }
     }
 
+    /**
+     * Рвёт соединение с [peer]. На своей стороне Nearby onDisconnected после disconnectFromEndpoint не вызывает,
+     * поэтому событие Disconnected шлёт сам [dropEndpoint].
+     */
     override fun disconnect(peer: MemberId) {
         val endpointId = synchronized(lock) { memberToEndpoint[peer] } ?: return
-        // На своей стороне Nearby onDisconnected после disconnectFromEndpoint не вызывает,
-        // поэтому dropEndpoint сам шлёт событие Disconnected в events.
         dropEndpoint(endpointId, notifyNearby = true)
     }
 
@@ -238,17 +244,18 @@ class NearbyPeerTransport @Inject constructor(
      * поднимает advertising после отказа. Discovery ведёт по политике: постоянно, пока соединений меньше трёх,
      * а при трёх — окнами [ConnectionPolicy.DISCOVERY_WINDOW_MS] раз в [ConnectionPolicy.DISCOVERY_PERIOD_MS],
      * чтобы замечать телефоны, которых не слышит никто из моей части сети.
+     *
+     * Nearby сам Bluetooth не включает: его включает человек по баннеру на экране, а цикл это подхватывает.
+     * Приёмник состояния Bluetooth регистрируется и при включённом радио: если его выключат и включат заново,
+     * Nearby надо перезапустить, иначе после STATE_ON оно останется мёртвым.
      */
     private suspend fun radioLoop(cfg: TransportConfig) {
         var playServices = false
         while (currentCoroutineContext().isActive) {
             if (!playServices && radioCheck.isPlayServicesAvailable()) {
                 playServices = true
-                // Приёмник нужен и при включённом Bluetooth: если радио выключат и включат заново,
-                // Nearby надо перезапустить, иначе после STATE_ON оно останется мёртвым.
                 registerBluetoothReceiver(cfg)
             }
-            // Nearby сам Bluetooth не включает: человек включает его по баннеру на экране, а мы подхватываем.
             if (playServices && !running && radioCheck.isBluetoothEnabled()) beginNearby(cfg)
             startAdvertisingIfNeeded()
             val connected = synchronized(lock) { memberToEndpoint.size }
@@ -264,6 +271,7 @@ class NearbyPeerTransport @Inject constructor(
         }
     }
 
+    /** Поднимает advertising, если он нужен. Причина отказа (нет разрешений, выключено радио) видна только в логе. */
     private fun startAdvertisingIfNeeded() {
         val cfg = config ?: return
         synchronized(lock) {
@@ -276,7 +284,6 @@ class NearbyPeerTransport @Inject constructor(
         task?.addOnSuccessListener { Log.i(TAG, "advertising поднят") }
         task?.addOnFailureListener { e ->
             if (e.statusCode() == ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING) return@addOnFailureListener
-            // Причина (нет разрешений, выключено радио) видна только в логе.
             Log.w(TAG, "advertising не поднялся: ${e.message}")
             synchronized(lock) { if (config === cfg) advertising = false }
         }
@@ -334,16 +341,18 @@ class NearbyPeerTransport @Inject constructor(
         startDiscoveryIfNeeded()
     }
 
+    /**
+     * Найденный телефон своей группы. Если наш запрос к нему ещё ждёт результата, второй не планируется: при неудаче
+     * повтор запланирует [onRequestFailure]. Первым стучится меньший `member_id`, больший ждёт, так реже бывают
+     * встречные запросы, на которых Nearby отклоняет одно из двух соединений.
+     */
     private val discoveryCallback = object : EndpointDiscoveryCallback() {
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
             val cfg = config ?: return
             val member = MemberId(info.endpointName)
             Log.i(TAG, "найден ${member.short()} ($endpointId)")
-            // Наш запрос к нему ещё ждёт результата. Если он не удастся, повтор запланирует onRequestFailure.
             if (!synchronized(lock) { requests.onFound(endpointId) }) return
             if (!mayConnect(member)) return
-            // Первым стучится меньший member_id, больший ждёт: так реже бывают встречные запросы,
-            // на которых Nearby отклоняет одно из двух соединений.
             scheduleRequest(endpointId, member, ConnectionPolicy.requestDelayMs(cfg.me, member))
         }
 
@@ -381,20 +390,27 @@ class NearbyPeerTransport @Inject constructor(
         }
     }
 
-    /** Планирует повтор запроса, если его требует [ConnectionRequests.onFailure]. */
+    /**
+     * Планирует повтор запроса, если его требует [ConnectionRequests.onFailure]. При STATUS_ENDPOINT_IO_ERROR радио
+     * перезапускается по совету разработчиков Nearby.
+     */
     private fun onRequestFailure(endpointId: String, member: MemberId, statusCode: Int?) {
         val retryDelayMs = synchronized(lock) { requests.onFailure(endpointId, statusCode) } ?: return
         if (statusCode == ConnectionsStatusCodes.STATUS_ENDPOINT_IO_ERROR) {
-            // Совет разработчиков Nearby при этой ошибке: остановить advertising и discovery и поднять заново.
             restartRadio()
         }
         scheduleRequest(endpointId, member, retryDelayMs)
     }
 
+    /**
+     * Жизнь соединения. Входящее принимается без сверки кода аутентификации Nearby, если его разрешает политика.
+     * Соединение, которое мы отклонили сами, повторять не нужно, а за повтор неудачного отвечает только инициатор,
+     * это решает [ConnectionRequests.onFailure]. Прежнее соединение с тем же участником, которое Nearby ещё не закрыл,
+     * рвётся сразу: его поздний onDisconnected оборвал бы сеанс движка на новом соединении.
+     */
     private val connectionLifecycle = object : ConnectionLifecycleCallback() {
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
             val member = MemberId(info.endpointName)
-            // Принимаем без сверки кода аутентификации Nearby, если соединение разрешает политика.
             val accept = mayConnect(member)
             Log.i(TAG, "входящее от ${member.short()}: ${if (accept) "принимаем" else "отклоняем"}")
             if (accept) {
@@ -408,23 +424,26 @@ class NearbyPeerTransport @Inject constructor(
         override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
             val member = synchronized(lock) { pendingMembers[endpointId] }
             if (member == null) {
-                // Соединение отклонили мы сами в onConnectionInitiated, повторять запрос не нужно.
                 synchronized(lock) { requests.forget(endpointId) }
                 return
             }
             Log.i(TAG, "соединение с ${member.short()}: код ${result.status.statusCode}")
             if (result.status.isSuccess) {
-                synchronized(lock) {
+                val previous = synchronized(lock) {
                     pendingMembers.remove(endpointId)
                     requests.onConnected(endpointId)
                     endpointToMember[endpointId] = member
-                    memberToEndpoint[member] = endpointId
+                    memberToEndpoint.put(member, endpointId)?.takeIf { it != endpointId }
+                        ?.also { endpointToMember.remove(it) }
+                }
+                if (previous != null) {
+                    Log.i(TAG, "${member.short()}: новое соединение заменяет прежнее ($previous)")
+                    nearby("disconnectFromEndpoint") { connections.disconnectFromEndpoint(previous) }
                 }
                 peers.update { it + member }
                 eventsChannel.trySend(TransportEvent.Connected(member))
                 restartDiscovery()
             } else {
-                // За повтор отвечает только инициатор, это решает ConnectionRequests.onFailure.
                 synchronized(lock) { pendingMembers.remove(endpointId) }
                 onRequestFailure(endpointId, member, result.status.statusCode)
             }
@@ -435,6 +454,10 @@ class NearbyPeerTransport @Inject constructor(
         }
     }
 
+    /**
+     * Приём байтов и итог отправки. Итог отдаётся ждущему [send] прямо из `onPayloadTransferUpdate`: через
+     * [eventsChannel] движок прочитал бы его только после возврата из send, а send ждёт именно его.
+     */
     private val payloadCallback = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             val member = synchronized(lock) { endpointToMember[endpointId] } ?: return
@@ -448,22 +471,24 @@ class NearbyPeerTransport @Inject constructor(
             val ok = when (update.status) {
                 PayloadTransferUpdate.Status.SUCCESS -> true
                 PayloadTransferUpdate.Status.FAILURE, PayloadTransferUpdate.Status.CANCELED -> false
-                else -> return // передача ещё идёт
+                else -> return
             }
-            // Результат отдаём ждущему send прямо здесь: через eventsChannel движок прочитал бы его
-            // только после возврата из send, а send ждёт именно его.
             synchronized(lock) { pendingSends.remove(update.payloadId) }?.complete(ok)
         }
     }
 
-    /** Разрывает соединение с endpointId, шлёт событие и перезапускает discovery, чтобы найти его заново. */
+    /**
+     * Разрывает соединение с endpointId, шлёт событие и перезапускает discovery, чтобы найти его заново. Соединение,
+     * которое уже заменило новое с тем же участником, сеанс движка не трогает.
+     */
     private fun dropEndpoint(endpointId: String, notifyNearby: Boolean) {
         if (notifyNearby) nearby("disconnectFromEndpoint") { connections.disconnectFromEndpoint(endpointId) }
         val member = synchronized(lock) {
             pendingMembers.remove(endpointId)
             requests.forget(endpointId)
             requestJobs.remove(endpointId)?.cancel()
-            endpointToMember.remove(endpointId)?.also { memberToEndpoint.remove(it) }
+            endpointToMember.remove(endpointId)?.takeIf { memberToEndpoint[it] == endpointId }
+                ?.also { memberToEndpoint.remove(it) }
         }
         if (member != null) {
             Log.i(TAG, "разрыв с ${member.short()}${if (notifyNearby) " по нашей инициативе" else ""}")
@@ -473,11 +498,13 @@ class NearbyPeerTransport @Inject constructor(
         }
     }
 
-    /** true, если с [member] можно соединиться по [ConnectionPolicy] и текущему списку блокировки. */
+    /**
+     * true, если с [member] можно соединиться по [ConnectionPolicy] и текущему списку блокировки. Устанавливаемые
+     * соединения занимают слот: без них несколько одновременных запросов проходили бы мимо лимита и упирались бы
+     * в отказ Nearby.
+     */
     private fun mayConnect(member: MemberId): Boolean {
         val cfg = config ?: return false
-        // Устанавливаемые соединения занимают слот: без них несколько одновременных
-        // запросов проходили бы мимо лимита и упирались бы в отказ Nearby.
         val connecting = synchronized(lock) { pendingMembers.values.toSet() }
         return ConnectionPolicy.mayConnect(
             peer = member,
@@ -487,31 +514,35 @@ class NearbyPeerTransport @Inject constructor(
         )
     }
 
-    /** Останавливает и снова поднимает радио: после STATUS_ENDPOINT_IO_ERROR и после повторного включения Bluetooth. */
+    /**
+     * Останавливает и снова поднимает радио: после STATUS_ENDPOINT_IO_ERROR и после повторного включения Bluetooth.
+     * Флаг advertising сбрасывается после остановки, иначе цикл мог бы поднять advertising между сбросом
+     * и stopAdvertising.
+     */
     private fun restartRadio() {
         if (!running) return
         nearby("stopAdvertising") { connections.stopAdvertising() }
-        // Флаг сбрасывается после остановки: иначе цикл мог бы поднять advertising между сбросом и stopAdvertising.
         synchronized(lock) { advertising = false }
         stopDiscoveryIfRunning()
         startAdvertisingIfNeeded()
         startDiscoveryIfNeeded()
     }
 
-    /** Ждём включения Bluetooth человеком: Nearby сам его не включает. */
+    /**
+     * Ждёт включения Bluetooth человеком: Nearby сам его не включает. Приёмник живёт до stop(): после включения радио
+     * Nearby либо поднимается, либо перезапускается, если оно работало и умерло вместе с Bluetooth. Приёмник,
+     * зарегистрированный после stop() этого запуска, уже никто бы не снял, поэтому он не регистрируется.
+     */
     private fun registerBluetoothReceiver(cfg: TransportConfig) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
                 if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR) == BluetoothAdapter.STATE_ON) {
-                    // Приёмник живёт до stop(): после включения радио Nearby либо поднимаем,
-                    // либо перезапускаем, если оно работало и умерло вместе с Bluetooth.
                     val current = config ?: return
                     if (!running) beginNearby(current) else restartRadio()
                 }
             }
         }
         synchronized(lock) {
-            // Приёмник, зарегистрированный после stop() этого запуска, уже никто бы не снял.
             if (bluetoothReceiver != null || config !== cfg) return
             try {
                 context.registerReceiver(receiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))

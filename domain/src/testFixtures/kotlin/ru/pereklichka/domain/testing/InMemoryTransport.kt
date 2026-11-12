@@ -140,9 +140,7 @@ class InMemoryTransport internal constructor(
     override fun stop() {
         network.disconnectAll(me)
         isStarted = false
-        while (eventsChannel.tryReceive().isSuccess) {
-            // Отбрасываем события, которые движок не успел прочитать до остановки.
-        }
+        while (eventsChannel.tryReceive().isSuccess) Unit
     }
 
     override suspend fun send(peer: MemberId, bytes: ByteArray): Boolean = network.send(me, peer, bytes)

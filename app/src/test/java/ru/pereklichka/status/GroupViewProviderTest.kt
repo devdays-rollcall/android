@@ -25,7 +25,7 @@ import ru.pereklichka.domain.testing.FakeClock
 import ru.pereklichka.service.OwnLocation
 import kotlin.test.assertEquals
 
-/** Вид группы идёт за активной группой: появляется с ней и пропадает, когда «Новая группа» её стирает. */
+/** Вид группы идёт за активной группой: появляется с ней и пропадает, когда группа уходит в прошлые маршруты. */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class GroupViewProviderTest {
@@ -35,7 +35,7 @@ class GroupViewProviderTest {
     private val clock = FakeClock { 0 }
     private val repository = GroupRepository(db, clock)
 
-    // Room отвечает из своего потока, поэтому вид считается на настоящем времени, а не в виртуальном runTest.
+    /** Room отвечает из своего потока, поэтому вид считается на настоящем времени, а не в виртуальном runTest. */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val provider = GroupViewProvider(
         RoomMeshStore(db, repository, clock), repository, PresenceTracker(clock), OwnLocation(), AppSettings(context), clock, scope,
@@ -48,12 +48,12 @@ class GroupViewProviderTest {
     }
 
     @Test
-    fun `после стирания группы вид становится null`() = runBlocking {
+    fun `когда группа уходит в прошлые маршруты, вид становится null`() = runBlocking {
         val subscription = scope.launch { provider.view.collect { } }
         val group = repository.createGroup("Поход")
         withTimeout(5_000) { provider.view.first { it?.group?.tag == group.tag } }
 
-        repository.leaveGroup()
+        repository.archiveActiveGroup()
 
         withTimeout(5_000) { provider.view.first { it == null } }
         assertEquals(null, provider.view.value)

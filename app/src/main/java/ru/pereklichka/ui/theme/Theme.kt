@@ -18,10 +18,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Палитра из макета (первый вариант): тёмно-зелёный основной цвет, тёплый фон, оранжево-красный только для тревог.
-// Контраст высокий, потому что экраны читают на солнце. В экранах hex не пишем: берём MaterialTheme.colorScheme
-// и MaterialTheme.statusColors.
-
+/**
+ * Палитра из макета (первый вариант): тёмно-зелёный основной цвет, тёплый фон, оранжево-красный только для тревог.
+ * Контраст высокий, потому что экраны читают на солнце. В экранах hex не пишем: берём `MaterialTheme.colorScheme`
+ * и `MaterialTheme.statusColors`.
+ */
 private val LightColors = lightColorScheme(
     primary = Color(0xFF1F3D36),
     onPrimary = Color.White,
@@ -110,7 +111,7 @@ private val LocalStatusColors = staticCompositionLocalOf { LightStatus }
 val MaterialTheme.statusColors: StatusColors
     @Composable @ReadOnlyComposable get() = LocalStatusColors.current
 
-// Шрифт системный, без загрузки из сети: приложение работает без интернета. Размеры чуть крупнее стандартных.
+/** Шрифт системный, без загрузки из сети: приложение работает без интернета. Размеры чуть крупнее стандартных. */
 private val AppTypography = Typography(
     headlineSmall = TextStyle(fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Bold),
     titleLarge = TextStyle(fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold),
@@ -122,7 +123,7 @@ private val AppTypography = Typography(
     labelMedium = TextStyle(fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold),
 )
 
-// Кнопки и поля скруглены на 14 dp, карточки на 16 dp, как в макете.
+/** Кнопки и поля скруглены на 14 dp, карточки на 16 dp, как в макете. */
 private val AppShapes = Shapes(
     small = RoundedCornerShape(8.dp),
     medium = RoundedCornerShape(14.dp),

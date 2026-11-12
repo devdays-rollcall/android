@@ -114,8 +114,8 @@ class MeshSimulation(private val test: TestScope, seed: Int) {
 
     inner class SimPhone(val name: String) {
         val id = MemberId(name)
+        /** Часы телефона. Настенные у разных телефонов расходятся до 10 минут, и на результат это влиять не должно. */
         private val clock = FakeClock { test.testScheduler.currentTime }.apply {
-            // Часы телефонов расходятся до 10 минут, на результат это влиять не должно.
             wallShiftMs = random.nextLong(-600_000, 600_000)
         }
         private val group = GroupInfo(tag = "sim", token = "token", name = "Симуляция", leaderId = MemberId("A"), me = id,
@@ -162,6 +162,11 @@ class MeshSimulation(private val test: TestScope, seed: Int) {
 
         suspend fun sos(): ControlEvent = store.appendOwnEvent(ControlEventDraft(EventType.SOS))
 
+        suspend fun rollcall(): ControlEvent = store.appendOwnEvent(ControlEventDraft(EventType.ROLLCALL))
+
+        /** Номер последнего состояния [of] в хранилище этого телефона, 0 если состояния нет. */
+        suspend fun stateSeq(of: SimPhone): Long = store.summary().states[of.id] ?: 0
+
         suspend fun hasEvent(id: EventId): Boolean = store.snapshot().first().events.any { it.value.id == id }
 
         suspend fun pointCount(author: SimPhone): Long = store.summary().locations[author.id] ?: 0
@@ -180,8 +185,8 @@ class MeshSimulation(private val test: TestScope, seed: Int) {
 
         private fun newEngine() = SyncEngine(countingStore, transport, presence, codec, clock, config)
 
+        /** Пишет точку трека: человек смещается на север примерно на 15 м за 12,5 с. */
         private suspend fun writePoint() {
-            // Около 15 м на север за 12,5 с.
             position = position.copy(latitude = position.latitude + 0.000135)
             val fix = Fix(position, accuracyM = 5.0, altitudeM = 2_100.0, speedMps = 1.2, bearingDeg = 0.0,
                 timeUtcMs = clock.wallMs(), elapsedRealtimeMs = clock.elapsedMs())

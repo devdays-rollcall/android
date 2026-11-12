@@ -134,15 +134,18 @@ fun QrViewfinder(onCode: (String) -> Unit, modifier: Modifier = Modifier) {
 private fun hasCameraPermission(context: Context) =
     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
+/** Открывает настройки приложения. Если на телефоне их нет, остаётся только кнопка «Разрешить камеру». */
 private fun Context.openAppSettings() {
     try {
         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()))
     } catch (e: ActivityNotFoundException) {
-        // Настроек приложения на телефоне нет: остаётся только кнопка «Разрешить камеру».
     }
 }
 
-/** Картинка камеры с распознаванием QR. Камера включается в onResume и выключается в onPause экрана. */
+/**
+ * Картинка камеры с распознаванием QR. Камера включается в onResume и выключается в onPause экрана. Колбэк
+ * распознавания приходит в главном потоке.
+ */
 @Composable
 private fun CameraPreview(onCode: (String) -> Unit, torchOn: Boolean) {
     val context = LocalContext.current
@@ -151,7 +154,6 @@ private fun CameraPreview(onCode: (String) -> Unit, torchOn: Boolean) {
     val barcodeView = remember(context) {
         BarcodeView(context).apply {
             decoderFactory = DefaultDecoderFactory(listOf(BarcodeFormat.QR_CODE))
-            // Колбэк приходит в главном потоке.
             decodeContinuous { result -> result.text?.let { latestOnCode(it) } }
         }
     }

@@ -62,7 +62,7 @@ class SettingsViewModel @Inject constructor(
 
     private val refreshes = MutableStateFlow(0)
 
-    // Новое значение refreshes перезапускает цикл, и проверки читаются сразу, не дожидаясь очередного тика.
+    /** Проверки телефона по таймеру. Новое значение [refreshes] перезапускает цикл, и проверки читаются сразу. */
     private val ticks = refreshes.flatMapLatest {
         flow {
             while (true) {

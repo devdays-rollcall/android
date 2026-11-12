@@ -11,9 +11,8 @@ import ru.pereklichka.domain.model.MemberState
 import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.time.Stamped
 
-// Перевод строк базы в модели domain и обратно. Пользуются ими RoomMeshStore и GroupRepository.
-// Строки хранят id и перечисления текстом, а незнакомое значение маппер превращает в EventType.UNKNOWN
-// или null, поэтому чтение не падает.
+/** Ключ группы в базе: `group_info.myMemberId` и `groupKey` в остальных таблицах, то есть мой `member_id` в ней. */
+val GroupInfo.key: String get() = me.value
 
 fun GroupInfoEntity.toModel(): GroupInfo = GroupInfo(
     tag = tag,
@@ -24,15 +23,20 @@ fun GroupInfoEntity.toModel(): GroupInfo = GroupInfo(
     createdAtWallMs = createdAtWallMs,
 )
 
-fun GroupInfo.toEntity(): GroupInfoEntity = GroupInfoEntity(
+fun GroupInfo.toEntity(active: Boolean): GroupInfoEntity = GroupInfoEntity(
+    myMemberId = me.value,
     tag = tag,
     token = token,
     name = name,
     leaderId = leaderId.value,
-    myMemberId = me.value,
     createdAtWallMs = createdAtWallMs,
+    active = active,
 )
 
+/**
+ * Событие из строки базы. Тип и вид снятия хранятся текстом: незнакомый тип становится [EventType.UNKNOWN],
+ * незнакомый вид снятия null, поэтому чтение не падает.
+ */
 fun ControlEventEntity.toModel(): Stamped<ControlEvent> = stamp.toStamped(
     ControlEvent(
         id = EventId(id),
@@ -48,7 +52,8 @@ fun ControlEventEntity.toModel(): Stamped<ControlEvent> = stamp.toStamped(
     ),
 )
 
-fun Stamped<ControlEvent>.toEntity(): ControlEventEntity = ControlEventEntity(
+fun Stamped<ControlEvent>.toEntity(groupKey: String): ControlEventEntity = ControlEventEntity(
+    groupKey = groupKey,
     id = value.id.value,
     author = value.author.value,
     seq = value.seq,
@@ -77,23 +82,9 @@ fun LocationPointEntity.toModel(): LocationPoint = LocationPoint(
     batteryPercent = batteryPercent,
 )
 
-/** Точка стёртой группы из очереди на отправку, NULL в координатах снова становится NaN. */
-fun OutboxPointEntity.toModel(): LocationPoint = LocationPoint(
-    id = EventId(id),
-    author = MemberId(author),
-    seq = seq,
-    latitude = latitude ?: Double.NaN,
-    longitude = longitude ?: Double.NaN,
-    recordedAtMs = recordedAtMs,
-    accuracyM = accuracyM,
-    altitudeM = altitudeM,
-    speedMps = speedMps,
-    bearingDeg = bearingDeg,
-    batteryPercent = batteryPercent,
-)
-
 /** Строка для новой точки. [LocationPointEntity.rejected] ставится, если точка не проходит `hasValidValues()`. */
-fun LocationPoint.toEntity(): LocationPointEntity = LocationPointEntity(
+fun LocationPoint.toEntity(groupKey: String): LocationPointEntity = LocationPointEntity(
+    groupKey = groupKey,
     id = id.value,
     author = author.value,
     seq = seq,
@@ -120,7 +111,8 @@ fun MemberStateEntity.toModel(): Stamped<MemberState> = stamp.toStamped(
     ),
 )
 
-fun Stamped<MemberState>.toEntity(): MemberStateEntity = MemberStateEntity(
+fun Stamped<MemberState>.toEntity(groupKey: String): MemberStateEntity = MemberStateEntity(
+    groupKey = groupKey,
     memberId = value.member.value,
     seq = value.seq,
     latitude = value.position?.latitude,

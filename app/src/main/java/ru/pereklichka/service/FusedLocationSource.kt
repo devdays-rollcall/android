@@ -47,8 +47,11 @@ class FusedLocationSource @Inject constructor(@ApplicationContext private val co
         }
     }
 
-    /** Обновления до отписки. Ошибка запуска закрывает поток исключением, его ловит [fixes]. */
-    @SuppressLint("MissingPermission") // Разрешение проверяет hasFineLocation перед подпиской.
+    /**
+     * Обновления до отписки. Ошибка запуска закрывает поток исключением, его ловит [fixes]. Разрешение проверяет
+     * [hasFineLocation] перед подпиской, а SecurityException значит, что его отозвали между проверкой и запросом.
+     */
+    @SuppressLint("MissingPermission")
     private fun updates(): Flow<Fix> = callbackFlow {
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
@@ -61,7 +64,6 @@ class FusedLocationSource @Inject constructor(@ApplicationContext private val co
             client.requestLocationUpdates(request, callback, Looper.getMainLooper())
                 .addOnFailureListener { close(it) }
         } catch (e: SecurityException) {
-            // Разрешение отозвали между проверкой и запросом.
             close(e)
         }
         awaitClose { client.removeLocationUpdates(callback) }

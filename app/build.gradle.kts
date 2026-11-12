@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -18,6 +20,20 @@ android {
         versionName = "0.1"
     }
 
+    val keystoreFile = rootProject.file("keystore.properties")
+    if (keystoreFile.exists()) {
+        val keystore = Properties().apply { keystoreFile.inputStream().use(::load) }
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystore.getProperty("storeFile"))
+                storePassword = keystore.getProperty("storePassword")
+                keyAlias = keystore.getProperty("keyAlias")
+                keyPassword = keystore.getProperty("keyPassword")
+            }
+        }
+        buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -28,10 +44,8 @@ android {
     }
 
     testOptions {
-        // Robolectric читает ресурсы и манифест приложения.
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
-            // Robolectric лезет во внутренности FileDescriptor, а JDK 25 из Android Studio без этого его не пускает.
             it.jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
         }
     }

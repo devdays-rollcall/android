@@ -20,9 +20,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,10 +49,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import ru.pereklichka.R
+import ru.pereklichka.data.PastRoute
+import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.permissions.RequiredPermissions
+import ru.pereklichka.service.Exchange
 import ru.pereklichka.ui.FakeGroupViews
+import ru.pereklichka.ui.PastRouteItem
 import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.ButtonKind
 import ru.pereklichka.ui.components.CustomTopScreen
@@ -60,6 +66,7 @@ import ru.pereklichka.ui.components.ListRow
 import ru.pereklichka.ui.components.SectionHeader
 import ru.pereklichka.ui.components.SymIcon
 import ru.pereklichka.ui.components.TrackStatus
+import ru.pereklichka.ui.components.pastRouteSubtitle
 import ru.pereklichka.ui.components.plural
 import ru.pereklichka.ui.components.routeChipText
 import ru.pereklichka.ui.components.trackLine
@@ -70,11 +77,16 @@ import ru.pereklichka.ui.theme.statusColors
  * Старт: создать группу или вступить по QR-коду. Первый экран, пока группы нет. Шестерёнка справа вверху
  * открывает настройки: без группы их больше неоткуда открыть.
  *
- * Сюда же ведёт «Назад» с экрана завершённой группы. Тогда группа ещё хранится на телефоне ([hasStoredGroup]),
- * и вместо подсказок «как это работает» видна карточка [lastGroup]: нажатие открывает группу, а подпись говорит,
- * ушёл ли трек на сервер ([trackStatus]). Создание группы и вступление в другую сначала просят подтвердить, что эта
- * группа сотрётся. Стирает её `GroupViewModel` только в момент, когда новая группа записывается, поэтому «Назад»
- * с экрана создания или сканера прошлую группу не теряет.
+ * Сюда же ведут «Назад» и «Новый маршрут» с экрана завершённой группы. Тогда группа ещё активна и видна карточкой
+ * [lastGroup]: нажатие открывает её, а подпись говорит, ушёл ли трек на сервер ([trackStatus]). Ниже список
+ * [pastRoutes], каждый открывается на просмотр ([onOpenPastRoute]). Подсказки «как это работает» видны, пока
+ * на телефоне нет ни одной группы.
+ *
+ * Создание группы и вступление в другую ничего не стирают: прежняя группа становится прошлым маршрутом в момент,
+ * когда новая записывается (`GroupViewModel`), поэтому «Назад» с экрана создания или сканера её не трогает.
+ * Подтверждение нужно в двух случаях: маршрут прежней группы ещё не завершён или телефон ещё передаёт
+ * завершение остальным ([exchange]), и смена группы этот обмен прервёт. Пока открыт диалог подтверждения, экран
+ * помнит, куда человек шёл: к созданию группы или к вступлению.
  *
  * Строка под кнопками показывает готовность телефона. Если выданы разрешения на обмен
  * (`RequiredPermissions.exchange`) и геолокацию (`location`), в ней «Телефон готов к походу», иначе нажимаемая
@@ -87,9 +99,11 @@ import ru.pereklichka.ui.theme.statusColors
 @Composable
 fun StartScreen(
     lastGroup: GroupView?,
-    hasStoredGroup: Boolean,
     trackStatus: TrackStatus?,
+    pastRoutes: List<PastRouteItem>,
+    exchange: Exchange,
     onOpenGroup: () -> Unit,
+    onOpenPastRoute: (key: String) -> Unit,
     onCreateGroup: () -> Unit,
     onJoinGroup: () -> Unit,
     onPermissions: () -> Unit,
@@ -109,38 +123,77 @@ fun StartScreen(
             onPermissions()
         }
     }
-    // Куда идти после подтверждения, что старая группа сотрётся: к созданию группы или к вступлению.
     var pending by rememberSaveable { mutableStateOf<Boolean?>(null) }
-    val replacing = { create: Boolean ->
-        when {
-            !hasStoredGroup -> if (create) onCreateGroup() else onJoinGroup()
-            else -> pending = create
-        }
-    }
+    val warning = lastGroup?.let { replaceWarning(it, exchange) }
+    val proceed = { create: Boolean -> if (create) onCreateGroup() else onJoinGroup() }
+    val replacing = { create: Boolean -> if (warning == null) proceed(create) else pending = create }
     StartContent(
         missing,
         lastGroup,
         trackStatus,
+        pastRoutes,
         onOpenGroup,
+        onOpenPastRoute,
         onCreateGroup = { replacing(true) },
         onJoinGroup = { replacing(false) },
         onPermissions,
         onSettings,
     )
     val create = pending
-    if (create != null && hasStoredGroup) {
-        NewGroupDialog(
-            title = if (create) "Создать новую группу?" else "Вступить в другую группу?",
-            groupName = lastGroup?.group?.name ?: "",
-            unsentPoints = trackStatus?.unsent,
-            confirmLabel = "Продолжить",
+    if (create != null && warning != null) {
+        ReplaceGroupDialog(
+            warning,
+            groupName = lastGroup.group.name,
+            create = create,
             onConfirm = {
                 pending = null
-                if (create) onCreateGroup() else onJoinGroup()
+                proceed(create)
             },
             onDismiss = { pending = null },
         )
     }
+}
+
+/** Почему смену группы надо подтвердить: маршрут ещё идёт или завершение ещё не дошло до всех. */
+private enum class ReplaceWarning { ROUTE_NOT_FINISHED, FINISH_NOT_DELIVERED }
+
+/** null, если прежнюю группу можно закрыть без вопросов: маршрут завершён, и обмен уже выключен. */
+private fun replaceWarning(group: GroupView, exchange: Exchange): ReplaceWarning? = when {
+    group.route != RouteState.FINISHED -> ReplaceWarning.ROUTE_NOT_FINISHED
+    exchange is Exchange.On -> ReplaceWarning.FINISH_NOT_DELIVERED
+    else -> null
+}
+
+/** Подтверждение смены группы [groupName]: создания новой ([create]) или вступления в другую. */
+@Composable
+private fun ReplaceGroupDialog(
+    warning: ReplaceWarning,
+    groupName: String,
+    create: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val action = if (create) "создать новую группу" else "вступить в другую группу"
+    val (title, text, dismiss) = when (warning) {
+        ReplaceWarning.ROUTE_NOT_FINISHED -> Triple(
+            "Маршрут ещё не завершён",
+            "Если $action, телефон перестанет обмениваться с группой «$groupName», и она станет прошлым маршрутом.",
+            "Отмена",
+        )
+        ReplaceWarning.FINISH_NOT_DELIVERED -> Triple(
+            "Завершение ещё не у всех",
+            "Телефон ещё передаёт остальным, что маршрут «$groupName» завершён. Если $action сейчас, обмен " +
+                "прекратится, и кто-то из группы может так и не узнать о завершении.",
+            "Подождать",
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(text) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Продолжить") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(dismiss) } },
+    )
 }
 
 /**
@@ -158,7 +211,9 @@ private fun StartContent(
     missingPermissions: Int,
     lastGroup: GroupView?,
     trackStatus: TrackStatus?,
+    pastRoutes: List<PastRouteItem>,
     onOpenGroup: () -> Unit,
+    onOpenPastRoute: (key: String) -> Unit,
     onCreateGroup: () -> Unit,
     onJoinGroup: () -> Unit,
     onPermissions: () -> Unit,
@@ -182,9 +237,9 @@ private fun StartContent(
     ) {
         Hero()
         Spacer(Modifier.height(4.dp))
-        if (lastGroup != null) {
-            LastGroupCard(lastGroup, trackStatus, onOpenGroup)
-        } else {
+        if (lastGroup != null) LastGroupCard(lastGroup, trackStatus, onOpenGroup)
+        if (pastRoutes.isNotEmpty()) PastRoutesCard(pastRoutes, onOpenPastRoute)
+        if (lastGroup == null && pastRoutes.isEmpty()) {
             HowItWorks(R.drawable.sym_qr_code_2, "Руководитель создаёт группу", "и показывает QR-код участникам")
             HowItWorks(R.drawable.sym_bluetooth, "Телефоны находят друг друга сами", "по Bluetooth и Wi-Fi, интернет не нужен")
             HowItWorks(R.drawable.sym_notifications_active, "Отставшего видно сразу", "и тревога дойдёт до всей группы")
@@ -192,13 +247,13 @@ private fun StartContent(
     }
 }
 
-/** Карточка группы, которая ещё хранится на телефоне: «Маршрут завершён · 12 точек трека ждут интернета». */
+/** Карточка активной группы: «Маршрут завершён · 12 точек трека ждут интернета». */
 @Composable
 private fun LastGroupCard(group: GroupView, trackStatus: TrackStatus?, onOpen: () -> Unit) {
     val track = trackStatus?.let(::trackLine)
     val ok = MaterialTheme.statusColors.ok
     Column {
-        SectionHeader("Последняя группа")
+        SectionHeader("Последний маршрут", Modifier.padding(bottom = 10.dp))
         ListCard(
             listOf(
                 {
@@ -210,6 +265,28 @@ private fun LastGroupCard(group: GroupView, trackStatus: TrackStatus?, onOpen: (
                     )
                 },
             ),
+        )
+    }
+}
+
+/** Прошлые маршруты, новые первыми: «Эльбрус · 12 ноября · 2 ч 14 мин · трек отправлен». */
+@Composable
+private fun PastRoutesCard(routes: List<PastRouteItem>, onOpen: (key: String) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val nowWallMs = remember { System.currentTimeMillis() }
+    Column {
+        SectionHeader("Прошлые маршруты", Modifier.padding(bottom = 10.dp))
+        ListCard(
+            routes.map { item ->
+                {
+                    ListRow(
+                        item.route.group.name,
+                        subtitle = pastRouteSubtitle(item.route, trackLine(item.track), nowWallMs),
+                        onClick = { onOpen(item.key) },
+                        leading = { IconCircle(R.drawable.sym_flag, scheme.surfaceContainerHigh, scheme.onSurfaceVariant) },
+                    )
+                }
+            },
         )
     }
 }
@@ -322,24 +399,36 @@ private fun Readiness(missing: Int, onPermissions: () -> Unit) {
 @Preview(name = "Старт, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun StartPreview() {
-    PereklichkaTheme { StartContent(0, null, null, {}, {}, {}, {}, {}) }
+    PereklichkaTheme { StartContent(0, null, null, emptyList(), {}, {}, {}, {}, {}, {}) }
 }
 
 @Preview(name = "Старт без разрешений")
 @Composable
 private fun StartNoPermissionsPreview() {
-    PereklichkaTheme { StartContent(2, null, null, {}, {}, {}, {}, {}) }
+    PereklichkaTheme { StartContent(2, null, null, emptyList(), {}, {}, {}, {}, {}, {}) }
 }
 
-@Preview(name = "Старт с завершённой группой")
+@Preview(name = "Старт с завершённой группой и прошлым маршрутом")
 @Composable
 private fun StartLastGroupPreview() {
     PereklichkaTheme {
+        val group = FakeGroupViews.leader.group
+        val weekAgo = group.createdAtWallMs - 7 * 86_400_000L
+        val past = PastRoute(
+            group.copy(name = "Казбек", me = MemberId("past")),
+            startedAtWallMs = weekAgo,
+            finishedAtWallMs = weekAgo + 8_040_000L,
+            members = 5,
+            points = 410,
+            unsentPoints = 0,
+            iLeft = false,
+        )
         StartContent(
             0,
             FakeGroupViews.leader.copy(route = RouteState.FINISHED),
             TrackStatus(points = 240, unsent = 12, hasServer = true),
-            {}, {}, {}, {}, {},
+            listOf(PastRouteItem(past, TrackStatus(points = 410, unsent = 0, hasServer = true))),
+            {}, {}, {}, {}, {}, {},
         )
     }
 }

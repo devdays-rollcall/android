@@ -20,6 +20,7 @@ import ru.pereklichka.actions.GroupActions
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.db.LocationDao
+import ru.pereklichka.data.db.key
 import ru.pereklichka.di.FakeGroupData
 import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.MemberId
@@ -41,8 +42,8 @@ import javax.inject.Inject
  * передают их в [GroupActions]. Один экземпляр на всю навигацию создаёт `AppNavHost`.
  *
  * В фейковом режиме (`DataModeModule`) [view] берётся из [FakeGroupViews], а действия и отправка SOS на сервер
- * ничего не делают. Создание группы, вступление и «Новая группа» при этом настоящие: они пишут группу в базу
- * или стирают её и управляют службой, только событие JOINED пропускают.
+ * ничего не делают. Создание группы, вступление и выход при этом настоящие: они пишут группу в базу, закрывают её
+ * и управляют службой, только событие JOINED пропускают.
  *
  * Задача: docs/team/valentin-ui.md (экраны вызывают эти методы)
  */
@@ -81,8 +82,8 @@ class GroupViewModel @Inject constructor(
 
     /** Отправка трека активной группы для стартовой карточки и экрана завершения; null, пока база не ответила. */
     val trackStatus: StateFlow<TrackStatus?> = combine(
-        locationDao.observeCount(),
-        locationDao.observeUnsentCount(),
+        locationDao.observeActiveCount(),
+        locationDao.observeActiveUnsentCount(),
         settings.serverUrl,
     ) { points, unsent, serverUrl -> TrackStatus(points, unsent, hasServer = serverUrl.isNotBlank()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), initialValue = null)
@@ -99,16 +100,24 @@ class GroupViewModel @Inject constructor(
 
     /**
      * Есть ли активная группа сейчас; null, пока база не ответила. По нему навигация уходит с экранов создания
-     * и вступления, когда группа появилась, и на старт, когда «Новая группа» её стёрла.
+     * и вступления, когда группа появилась, и на старт, когда служба закрыла её после выхода или отмены сбора.
      */
     val hasGroup: StateFlow<Boolean?> = repository.activeGroup.map { it != null }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
+
+    /**
+     * Ключ активной группы (`GroupInfo.key`); null, пока группы нет или база не ответила. При смене группы [hasGroup]
+     * проходит true, false и снова true за несколько миллисекунд, и экран может застать только последнее значение,
+     * поэтому навигация следит ещё и за ключом.
+     */
+    val activeGroupKey: StateFlow<String?> = repository.activeGroup.map { it?.key }
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
     private val serviceStartedState = MutableStateFlow<Boolean?>(null)
 
     /**
      * Запущена ли служба по последнему вызову [RouteService.start]. false, если запуск не удался из-за разрешений
-     * или службу остановили «Выключить» и «Новая группа»; null, пока службу в этом процессе не запускали. По нему
+     * или службу остановили «Выключить» и выход из группы; null, пока службу в этом процессе не запускали. По нему
      * экраны предупреждают о разрешениях, а работает ли служба на самом деле, показывает [exchange].
      */
     val serviceStarted: StateFlow<Boolean?> = serviceStartedState.asStateFlow()
@@ -119,7 +128,7 @@ class GroupViewModel @Inject constructor(
 
     /**
      * Участник нажал «Выйти из группы», и служба сообщает группе о выходе (до `RouteService.QUIT_CONFIRM_MS`).
-     * Снимается, когда группа стёрта.
+     * Снимается, когда группа ушла в прошлые маршруты.
      */
     val quitting: StateFlow<Boolean> = quittingState.asStateFlow()
 
@@ -130,9 +139,15 @@ class GroupViewModel @Inject constructor(
     /**
      * Группа создаётся или идёт вступление: кнопка экрана неактивна, пока навигация не уведёт дальше. После успеха
      * флаг остаётся true, потому что навигация уходит с экрана позже, когда Room сообщит о новой группе, а повторное
-     * нажатие в этот промежуток стёрло бы только что созданную группу. Снимают флаг ошибка записи и «Новая группа».
+     * нажатие в этот промежуток закрыло бы только что созданную группу. Снимают флаг ошибка записи, выход из группы
+     * и [resetSettingUp], когда со старта снова открывают создание или сканер.
      */
     val settingUp: StateFlow<Boolean> = settingUpState.asStateFlow()
+
+    /** Снимает [settingUp], оставшийся от прошлого создания или вступления: со старта снова открывают создание или сканер. */
+    fun resetSettingUp() {
+        settingUpState.value = false
+    }
 
     /**
      * Поднимает службу, когда приложение на экране: после убийства процесса, принудительной остановки или выдачи
@@ -159,9 +174,9 @@ class GroupViewModel @Inject constructor(
     }
 
     /**
-     * Если на телефоне хранится прошлая группа (стартовый экран уже спросил, стирать ли её), сначала стирает её
-     * через службу и ждёт конца стирания: новая группа, записанная раньше, стёрлась бы вместе со старой. Так прошлая
-     * группа пропадает только тогда, когда человек правда создаёт новую или вступает в другую.
+     * Если на телефоне есть активная группа, сначала закрывает её через службу и ждёт, пока она уйдёт в прошлые
+     * маршруты: иначе движок прежней группы успел бы записать Delta соседей в новую. Так прежняя группа перестаёт
+     * быть активной только тогда, когда человек правда создаёт новую или вступает в другую.
      */
     private fun setUpGroup(write: suspend () -> Unit) {
         if (settingUpState.value) return
@@ -187,19 +202,24 @@ class GroupViewModel @Inject constructor(
     fun finishRoute() = act { actions.finishRoute() }
 
     /**
-     * «Отменить сбор» у руководителя. Если никто не вступил, группа просто стирается. Иначе сбор завершается
-     * у всех событием ROUTE_FINISHED, и вступившие увидят «Сбор отменён», а группа остаётся завершённой.
+     * «Отменить сбор» у руководителя. Если никто не вступил, группа удаляется: хранить в прошлых маршрутах нечего.
+     * Иначе сбор завершается у всех событием ROUTE_FINISHED, и вступившие увидят «Сбор отменён», а группа остаётся
+     * завершённой.
      */
     fun cancelGathering() {
         val others = view.value?.members?.any { !it.isMe } ?: return
-        if (others) finishRoute() else leaveGroup()
+        if (others) finishRoute() else discardGroup()
     }
 
-    /** «Выйти из группы» у участника: служба сообщает группе о выходе и стирает группу, навигация уйдёт на старт. */
+    /**
+     * «Выйти из группы» у участника: служба сообщает группе о выходе и переводит группу в прошлые маршруты,
+     * навигация уйдёт на старт.
+     */
     fun quitGroup() {
         if (useFakeGroupData) return leaveGroup()
         quittingState.value = true
         serviceStartedState.value = false
+        settingUpState.value = false
         RouteService.quit(context)
     }
 
@@ -210,13 +230,20 @@ class GroupViewModel @Inject constructor(
     }
 
     /**
-     * «Новая группа» после маршрута, отмена сбора без участников и «Выйти сразу», пока служба ждёт подтверждения
-     * выхода: служба останавливается и стирает группу, а навигация по [hasGroup] уходит на старт.
+     * «Выйти сразу», пока служба ждёт подтверждения выхода: служба останавливается и переводит группу в прошлые
+     * маршруты, а навигация по [hasGroup] уходит на старт.
      */
     fun leaveGroup() {
         serviceStartedState.value = false
         settingUpState.value = false
         RouteService.leave(context)
+    }
+
+    /** Отмена сбора, в который никто не вступил: служба останавливается и удаляет группу. */
+    private fun discardGroup() {
+        serviceStartedState.value = false
+        settingUpState.value = false
+        RouteService.discard(context)
     }
 
     fun startRollcall() = act { actions.startRollcall() }
@@ -229,24 +256,31 @@ class GroupViewModel @Inject constructor(
 
     fun raiseAlarm(target: MemberId) = act { actions.raiseAlarm(target) }
 
-    /** SOS уходит и в mesh к телефонам группы, и на сервер мониторинга, когда появится сеть. */
-    fun sos() {
-        act { actions.sos() }
-        act { sendSosToServer() }
+    /**
+     * SOS уходит и в mesh к телефонам группы, и на сервер мониторинга, когда появится сеть. На сервер его поставит
+     * и служба (`SosRelay`), но отсюда он встаёт сразу, даже если служба не запущена. Задача уникальна по id SOS,
+     * поэтому второй раз он не уйдёт.
+     */
+    fun sos() = act {
+        val sos = actions.sos()
+        val group = repository.activeGroup() ?: return@act
+        uploadScheduler.sendSos(group, sos.id, sos.author, settings.serverUrl.value)
     }
 
-    /** «Отправить на сервер ещё раз», если прошлая отправка SOS на сервер не удалась. В mesh SOS уже ушёл. */
-    fun resendSosToServer() = act { sendSosToServer() }
-
-    private suspend fun sendSosToServer() {
-        val group = repository.activeGroup() ?: return
-        uploadScheduler.sendSos(group, settings.serverUrl.value)
+    /** «Отправить на сервер ещё раз», если прошлая отправка моего SOS на сервер не удалась. В mesh SOS уже ушёл. */
+    fun resendSosToServer() = act {
+        val group = repository.activeGroup() ?: return@act
+        view.value?.alarms.orEmpty().filter { it.isSos && it.target == group.me }.forEach {
+            uploadScheduler.sendSos(group, it.id, it.target, settings.serverUrl.value, replace = true)
+        }
     }
 
-    /** Снятие тревоги о себе отменяет и SOS, который ещё ждёт сети. */
+    /** Снятие SOS отменяет и его отправку на сервер, если она ещё ждёт сети. */
     fun resolve(target: MemberId, kind: ResolveKind) = act {
+        val resolved = view.value?.alarms.orEmpty().filter { it.isSos && it.target == target }
         actions.resolve(target, kind)
-        repository.activeGroup()?.takeIf { it.me == target }?.let { uploadScheduler.cancelSos(it.tag) }
+        val group = repository.activeGroup() ?: return@act
+        resolved.forEach { uploadScheduler.cancelSos(group.tag, it.id) }
     }
 
     private fun act(action: suspend () -> Unit) {

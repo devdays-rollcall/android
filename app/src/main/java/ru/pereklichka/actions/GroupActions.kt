@@ -33,9 +33,9 @@ class GroupActions @Inject constructor(
     private val db: AppDatabase,
 ) {
     /**
-     * Создаёт новую группу, где я руководитель, и пишет моё событие JOINED. Старые данные стираются.
-     * Группа и JOINED пишутся одной транзакцией: если процесс умрёт посередине, не останется группы, в которой
-     * у руководителя нет имени. Транзакция `RoomMeshStore` при этом вкладывается в общую.
+     * Создаёт новую группу, где я руководитель, и пишет моё событие JOINED. Прежняя группа становится прошлым
+     * маршрутом. Группа и JOINED пишутся одной транзакцией: если процесс умрёт посередине, не останется группы,
+     * в которой у руководителя нет имени. Транзакция `RoomMeshStore` при этом вкладывается в общую.
      */
     suspend fun createGroup(groupName: String, myName: String): GroupInfo {
         require(myName.isNotBlank()) { "Пустое имя" }
@@ -46,11 +46,13 @@ class GroupActions @Inject constructor(
         }
     }
 
-    /** Вступает в группу по QR и пишет JOINED. Повторное вступление в ту же группу второй JOINED не пишет. */
+    /**
+     * Вступает в группу по QR и пишет JOINED. Повторное вступление в ту же группу второй JOINED не пишет. JOINED
+     * ищется в хранилище, поэтому если прошлое вступление прервалось после записи группы, он допишется сейчас.
+     */
     suspend fun joinGroup(qr: QrPayload, myName: String) {
         require(myName.isNotBlank()) { "Пустое имя" }
         val group = repository.join(qr)
-        // JOINED ищется в хранилище: если прошлое вступление прервалось после записи группы, он допишется сейчас.
         if (store.summary().control[group.me] == null) {
             store.appendOwnEvent(ControlEventDraft(EventType.JOINED, name = myName.trim()))
         }
@@ -96,10 +98,8 @@ class GroupActions @Inject constructor(
         store.appendOwnEvent(ControlEventDraft(EventType.ALARM, target = target))
     }
 
-    /** SOS: тревога о себе, автор события и есть тот, о ком тревога. */
-    suspend fun sos() {
-        store.appendOwnEvent(ControlEventDraft(EventType.SOS))
-    }
+    /** SOS: тревога о себе, автор события и есть тот, о ком тревога. Возвращает событие для отправки на сервер. */
+    suspend fun sos(): ControlEvent = store.appendOwnEvent(ControlEventDraft(EventType.SOS))
 
     /**
      * Снимает тревоги о [target], которые сейчас видит человек: ссылки берутся из текущего `GroupView`.

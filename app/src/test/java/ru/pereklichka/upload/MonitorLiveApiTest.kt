@@ -2,6 +2,7 @@ package ru.pereklichka.upload
 
 import java.security.SecureRandom
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.Base64
 import java.util.UUID
 import kotlinx.coroutines.delay
@@ -13,6 +14,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
+/**
+ * Проверяет боевой сервер по адресу из `MONITOR_LIVE_URL`. Время точек обрезается до миллисекунд, как их шлёт
+ * телефон: сервер хранит время с точностью до микросекунд, а часы JVM на Windows дают сотни наносекунд.
+ */
 class MonitorLiveApiTest {
 
     @Test
@@ -25,9 +30,9 @@ class MonitorLiveApiTest {
         val authorization = EventsApi.bearer(Base64.getUrlEncoder().withoutPadding().encodeToString(random))
         val sender = UUID.randomUUID().toString()
         val member = UUID.randomUUID().toString()
-        val recordedAt = Instant.now().toString()
+        val recordedAt = Instant.now().truncatedTo(ChronoUnit.MILLIS).toString()
         val events = listOf(
-            EventInputDto(UUID.randomUUID().toString(), member, EventTypeDto.LOCATION, recordedAt, LocationDataDto(43.3499, 42.4453, accuracyM = 0.0, altitudeM = 0.0, speedMps = 0.0, bearingDeg = 0.0, batteryPercent = 0)),
+            EventInputDto(UUID.randomUUID().toString(), member, EventTypeDto.LOCATION, recordedAt, LocationDataDto(43.3499, 42.4453, accuracyM = 0.0, altitudeM = 0.0, speedMps = 0.0, bearingDeg = 0.0, batteryPercent = 0), username = "Аня"),
             EventInputDto(UUID.randomUUID().toString(), member, EventTypeDto.LOCATION, recordedAt, LocationDataDto(43.3501, 42.4455, accuracyM = 8.5, altitudeM = 1200.0, speedMps = 1.5, bearingDeg = 90.0, batteryPercent = 100)),
         )
 
@@ -60,6 +65,7 @@ class MonitorLiveApiTest {
             assertEquals(Instant.parse(input.recordedAt), Instant.parse(actual.recordedAt))
             assertNotNull(Instant.parse(actual.receivedAt))
             assertEquals(input.data, actual.data)
+            assertEquals(input.username, actual.username)
         }
 
         val share = api.createShareLink(EventsApi.shareLinksUrl(baseUrl), authorization)

@@ -2,11 +2,16 @@ package ru.pereklichka.ui.navigation
 
 import kotlinx.serialization.Serializable
 
-// Маршруты навигации для AppNavHost, по одному на экран. Что на каждом экране, написано в KDoc экрана
-// и в docs/team/valentin-ui.md.
-
+/**
+ * Стартовый экран. Маршруты навигации в этом файле нужны `AppNavHost`, по одному на экран. Что на каждом экране,
+ * написано в KDoc экрана и в docs/team/valentin-ui.md.
+ */
 @Serializable
 object StartRoute
+
+/** Прошлый маршрут с ключом группы [key] (`GroupInfo.key`). */
+@Serializable
+data class PastRouteRoute(val key: String)
 
 @Serializable
 object CreateGroupRoute

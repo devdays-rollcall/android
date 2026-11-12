@@ -75,7 +75,6 @@ import ru.pereklichka.ui.components.StatusAvatar
 import ru.pereklichka.ui.components.StatusChip
 import ru.pereklichka.ui.components.StatusKind
 import ru.pereklichka.ui.components.SymIcon
-import ru.pereklichka.ui.components.TrackStatus
 import ru.pereklichka.ui.components.WarningBanner
 import ru.pereklichka.ui.components.rememberPhoneWarnings
 import ru.pereklichka.ui.components.routeChipText
@@ -99,13 +98,13 @@ private const val MAX_ALARM_BANNERS = 3
  *
  * Нижняя панель зависит от состояния маршрута. В «Сборе» руководитель видит «QR и «Выходим»». Пока маршрут идёт,
  * у всех «Отойду» и круглая SOS, а у руководителя ещё «Перекличка». После завершения у всех «Выключить», пока обмен
- * работает ([exchange]), и «Новая группа». В меню разрешения, настройки, у руководителя «Отменить сбор» в «Сборе»
- * и «Завершить маршрут» на маршруте, у участника «Выйти из группы» до завершения. Пока служба сообщает группе
- * о выходе ([quitting]), поверх экрана висит ожидание с «Выйти сразу».
+ * работает ([exchange]), и «Новый маршрут», который ведёт на старт. В меню разрешения, настройки, у руководителя
+ * «Отменить сбор» в «Сборе» и «Завершить маршрут» на маршруте, у участника «Выйти из группы» до завершения. Пока
+ * служба сообщает группе о выходе ([quitting]), поверх экрана висит ожидание с «Выйти сразу».
  *
  * Пока маршрут не завершён, экран группы главный, и «Назад» сворачивает приложение. После завершения в шапке
  * появляется стрелка, и она, как и системная кнопка «Назад», ведёт на стартовый экран ([onToStart]). Группа при этом
- * остаётся на телефоне, чтобы трек ушёл на сервер, когда появится интернет.
+ * остаётся активной, пока человек не создаст новую или не вступит в другую, а потом становится прошлым маршрутом.
  */
 @Composable
 fun GroupScreen(
@@ -120,14 +119,13 @@ fun GroupScreen(
     onPermissions: () -> Unit,
     onLobby: () -> Unit,
     onStopService: () -> Unit,
-    onNewGroup: () -> Unit,
+    onLeaveNow: () -> Unit,
     onToStart: () -> Unit,
     onQuit: () -> Unit = {},
     onCancelGathering: () -> Unit = {},
     quitting: Boolean = false,
     serviceStarted: Boolean? = null,
     exchange: Exchange = Exchange.Off(),
-    trackStatus: TrackStatus? = null,
     warnings: List<PhoneWarning> = rememberPhoneWarnings(view, serviceStarted),
 ) {
     val finished = view.route == RouteState.FINISHED
@@ -149,7 +147,7 @@ fun GroupScreen(
             )
         },
         bottomBar = {
-            GroupBottomBar(view, exchange, trackStatus, onRollcall, onAway, onSos, onLobby, onStopService, onNewGroup)
+            GroupBottomBar(view, exchange, onRollcall, onAway, onSos, onLobby, onStopService, onNewRoute = onToStart)
         },
     ) { innerPadding ->
         GroupList(view, warnings, innerPadding, onMember, onRollcall, onAlarms, onPermissions)
@@ -159,9 +157,14 @@ fun GroupScreen(
     if (confirmCancel) {
         CancelGatheringDialog(view, onConfirm = { confirmCancel = false; onCancelGathering() }, onDismiss = { confirmCancel = false })
     }
-    if (quitting) QuittingDialog(onLeaveNow = onNewGroup)
+    if (quitting) QuittingDialog(onLeaveNow = onLeaveNow)
 }
 
+/**
+ * Шапка экрана группы. Кнопка QR у руководителя есть в любом состоянии маршрута: участник вступает по QR с его
+ * телефона и после «Выходим». В меню руководитель отменяет сбор до «Выходим» и завершает маршрут после, а участник
+ * выходит из группы до завершения, после него на экране и так есть «Новый маршрут».
+ */
 @Composable
 private fun GroupTopBar(
     view: GroupView,
@@ -196,7 +199,6 @@ private fun GroupTopBar(
             )
             RouteChip(view, Modifier.padding(top = 4.dp))
         }
-        // Участник вступает по QR с телефона руководителя в любом состоянии маршрута, не только в «Сборе».
         if (view.iAmLeader) {
             IconButton(onClick = onLobby) { SymIcon(R.drawable.sym_qr_code_2, contentDescription = "QR группы") }
         }
@@ -205,8 +207,6 @@ private fun GroupTopBar(
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(text = { Text("Разрешения") }, onClick = { menuOpen = false; onPermissions() })
                 DropdownMenuItem(text = { Text("Настройки") }, onClick = { menuOpen = false; onSettings() })
-                // Руководитель отменяет сбор до «Выходим» и завершает маршрут после, а участник выходит из группы
-                // до завершения: после него на экране и так есть «Новая группа».
                 when {
                     view.iAmLeader && view.route == RouteState.LOBBY -> DropdownMenuItem(
                         text = { Text("Отменить сбор", color = MaterialTheme.colorScheme.error) },
@@ -328,7 +328,10 @@ private fun MemberList(members: List<MemberView>, onMember: (MemberId) -> Unit) 
     }
 }
 
-/** Своя карточка над списком: аватар без кольца, «Никита · вы», роль и «слышу 3 из 4», справа плашка, если статус не «Норма». */
+/**
+ * Своя карточка над списком: аватар без кольца, «Никита · вы», роль и «слышу 3 из 4», справа плашка, если статус
+ * не «Норма». Своя «Норма» ничего не сообщает и только сжимала бы подпись.
+ */
 @Composable
 private fun SelfCard(view: GroupView, me: MemberView, onClick: () -> Unit) {
     val subtitle = selfSubtitle(view)
@@ -350,23 +353,25 @@ private fun SelfCard(view: GroupView, me: MemberView, onClick: () -> Unit) {
                 Text("${me.name} · вы", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, fontSize = 14.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // «Норма» о себе ничего не сообщает и сжимает подпись, поэтому плашка видна только при другом статусе.
             if (statusOf(me).kind != StatusKind.OK) StatusChip(me)
         }
     }
 }
 
+/**
+ * Нижняя панель экрана группы по состоянию маршрута. В «Сборе» у руководителя кнопка «QR и «Выходим»»: после
+ * перезапуска приложение открывается на этом экране, и без неё он не вернулся бы к QR.
+ */
 @Composable
 private fun GroupBottomBar(
     view: GroupView,
     exchange: Exchange,
-    trackStatus: TrackStatus?,
     onRollcall: () -> Unit,
     onAway: () -> Unit,
     onSos: () -> Unit,
     onLobby: () -> Unit,
     onStopService: () -> Unit,
-    onNewGroup: () -> Unit,
+    onNewRoute: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(Modifier.navigationBarsPadding()) {
@@ -376,11 +381,9 @@ private fun GroupBottomBar(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 when (view.route) {
-                    RouteState.FINISHED -> FinishedActions(view, exchange, trackStatus, onStopService, onNewGroup)
+                    RouteState.FINISHED -> FinishedActions(view, exchange, onStopService, onNewRoute)
                     RouteState.LOBBY -> {
                         Hint("Маршрут ещё не начался")
-                        // После перезапуска приложение открывается на этом экране, и без кнопки руководитель
-                        // не вернулся бы к QR и «Выходим».
                         if (view.iAmLeader) BigButtonFull("QR и «Выходим»", onLobby, icon = R.drawable.sym_qr_code_2)
                     }
                     RouteState.ACTIVE -> Row(

@@ -38,7 +38,7 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
 
     private val mutex = Mutex()
 
-    // Индекс в списке равен номеру записи минус один: непрерывный префикс заложен в саму структуру.
+    /** События по авторам. Индекс в списке равен номеру записи минус один, так непрерывный префикс заложен в саму структуру. */
     private val control = HashMap<MemberId, MutableList<Stamped<ControlEvent>>>()
     private val points = HashMap<MemberId, MutableList<LocationPoint>>()
     private val states = HashMap<MemberId, Stamped<MemberState>>()
@@ -122,14 +122,17 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
     /** true, если точка помечена как непригодная для сервера. В `RoomMeshStore` этому соответствует флаг `rejected`. */
     suspend fun isRejected(pointId: EventId): Boolean = mutex.withLock { pointId in rejectedPointIds }
 
+    /**
+     * Принимает события из Delta. Сортировка нужна, чтобы записи одного автора, пришедшие вперемешку, встали в префикс
+     * по порядку. Событие незнакомого типа тоже принимается: декодер уже сделал его `EventType.UNKNOWN`, и правила его
+     * пропустят.
+     */
     private fun applyControl(incoming: List<Stamped<ControlEvent>>, counter: ApplyCounter) {
-        // Сортировка нужна, чтобы записи одного автора, пришедшие в Delta вперемешку, встали в префикс по порядку.
         for (stamped in incoming.sortedWith(compareBy({ it.value.author.value }, { it.value.seq }))) {
             val event = stamped.value
             val stream = control[event.author].orEmpty()
             when (admit(stream, { it.value.id }, event.author, event.seq, event.id)) {
                 Admission.ACCEPT -> {
-                    // Событие незнакомого типа тоже принимается: оно уже стало EventType.UNKNOWN, правила его пропустят.
                     control.getOrPut(event.author) { mutableListOf() } += stamped
                     storedIds += event.id
                     counter.newControl++
@@ -141,6 +144,7 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
         }
     }
 
+    /** Принимает точки из Delta. Точка с плохими значениями хранится ради префикса, но на сервер не уйдёт. */
     private fun applyLocations(incoming: List<LocationPoint>, counter: ApplyCounter) {
         for (point in incoming.sortedWith(compareBy({ it.author.value }, { it.seq }))) {
             val stream = points[point.author].orEmpty()
@@ -148,7 +152,6 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
                 Admission.ACCEPT -> {
                     points.getOrPut(point.author) { mutableListOf() } += point
                     storedIds += point.id
-                    // Плохое содержимое не повод разрывать префикс: точка хранится, но на сервер не уйдёт.
                     if (!point.hasValidValues()) rejectedPointIds += point.id
                     counter.newLocations++
                 }
@@ -159,13 +162,13 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
         }
     }
 
+    /** Принимает состояния из Delta. Моё состояние новее моего бывает, только если кто-то пишет от моего имени. */
     private fun applyStates(incoming: List<Stamped<MemberState>>, counter: ApplyCounter) {
         for (stamped in incoming) {
             val member = stamped.value.member
             val isNewer = stamped.value.seq > (states[member]?.value?.seq ?: 0)
             when {
                 !isNewer -> counter.duplicates++
-                // Своё состояние новее моего бывает, только если кто-то пишет от моего имени.
                 member == me -> counter.conflicts++
                 else -> {
                     states[member] = stamped
@@ -178,6 +181,8 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
     /**
      * Решает, можно ли поставить запись автора [author] с номером [seq] в его поток [stream]. Это правило
      * «ровно следующий номер» вместе с проверками на конфликт. Порядок веток важен, `RoomMeshStore` повторяет его.
+     * Моих записей с номером больше моего максимума не бывает, поэтому такая запись означает, что кто-то пишет
+     * от моего имени.
      */
     private inline fun <T> admit(
         stream: List<T>,
@@ -188,7 +193,6 @@ class InMemoryMeshStore(private val group: GroupInfo, private val clock: Clock) 
     ): Admission = when {
         seq < 1 -> Admission.OUT_OF_ORDER
         seq <= stream.size -> if (idOf(stream[(seq - 1).toInt()]) == id) Admission.DUPLICATE else Admission.CONFLICT
-        // Своих записей с номером больше моего максимума не бывает: значит, кто-то пишет от моего имени.
         author == me -> Admission.CONFLICT
         seq != stream.size + 1L -> Admission.OUT_OF_ORDER
         id in storedIds -> Admission.CONFLICT

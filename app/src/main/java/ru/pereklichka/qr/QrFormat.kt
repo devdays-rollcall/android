@@ -42,7 +42,7 @@ object QrFormat {
         }
     }
 
-    // Строковое имя кодировки вместо Charset: перегрузка с Charset появилась только в Android 13.
+    /** Кодировка передаётся строкой: перегрузка с `Charset` появилась только в Android 13. */
     private fun encodePart(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     private fun decodePart(value: String): String? = try {

@@ -2,12 +2,18 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "b308ea33b7872619551fcd8ea4644edf",
+    "identityHash": "068af814b5814505801322e4f767efa9",
     "entities": [
       {
         "tableName": "group_info",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tag` TEXT NOT NULL, `token` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderId` TEXT NOT NULL, `myMemberId` TEXT NOT NULL, `createdAtWallMs` INTEGER NOT NULL, PRIMARY KEY(`tag`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`myMemberId` TEXT NOT NULL, `tag` TEXT NOT NULL, `token` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderId` TEXT NOT NULL, `createdAtWallMs` INTEGER NOT NULL, `active` INTEGER NOT NULL, PRIMARY KEY(`myMemberId`))",
         "fields": [
+          {
+            "fieldPath": "myMemberId",
+            "columnName": "myMemberId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
           {
             "fieldPath": "tag",
             "columnName": "tag",
@@ -33,14 +39,14 @@
             "notNull": true
           },
           {
-            "fieldPath": "myMemberId",
-            "columnName": "myMemberId",
-            "affinity": "TEXT",
+            "fieldPath": "createdAtWallMs",
+            "columnName": "createdAtWallMs",
+            "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "createdAtWallMs",
-            "columnName": "createdAtWallMs",
+            "fieldPath": "active",
+            "columnName": "active",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -48,14 +54,31 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "tag"
+            "myMemberId"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_group_info_active",
+            "unique": false,
+            "columnNames": [
+              "active"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_group_info_active` ON `${TABLE_NAME}` (`active`)"
+          }
+        ]
       },
       {
         "tableName": "control_event",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `author` TEXT NOT NULL, `seq` INTEGER NOT NULL, `type` TEXT NOT NULL, `target` TEXT, `refs` TEXT NOT NULL, `name` TEXT, `durationMs` INTEGER, `resolveKind` TEXT, `createdAtWallMs` INTEGER NOT NULL, `ignored` INTEGER NOT NULL, `ageAtReceiptMs` INTEGER NOT NULL, `receivedAtElapsedMs` INTEGER NOT NULL, `receivedBootId` TEXT NOT NULL, `receivedAtWallMs` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`groupKey` TEXT NOT NULL, `id` TEXT NOT NULL, `author` TEXT NOT NULL, `seq` INTEGER NOT NULL, `type` TEXT NOT NULL, `target` TEXT, `refs` TEXT NOT NULL, `name` TEXT, `durationMs` INTEGER, `resolveKind` TEXT, `createdAtWallMs` INTEGER NOT NULL, `ignored` INTEGER NOT NULL, `ageAtReceiptMs` INTEGER NOT NULL, `receivedAtElapsedMs` INTEGER NOT NULL, `receivedBootId` TEXT NOT NULL, `receivedAtWallMs` INTEGER NOT NULL, PRIMARY KEY(`groupKey`, `id`))",
         "fields": [
+          {
+            "fieldPath": "groupKey",
+            "columnName": "groupKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
           {
             "fieldPath": "id",
             "columnName": "id",
@@ -146,26 +169,34 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
+            "groupKey",
             "id"
           ]
         },
         "indices": [
           {
-            "name": "index_control_event_author_seq",
+            "name": "index_control_event_groupKey_author_seq",
             "unique": true,
             "columnNames": [
+              "groupKey",
               "author",
               "seq"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_control_event_author_seq` ON `${TABLE_NAME}` (`author`, `seq`)"
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_control_event_groupKey_author_seq` ON `${TABLE_NAME}` (`groupKey`, `author`, `seq`)"
           }
         ]
       },
       {
         "tableName": "location_point",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `author` TEXT NOT NULL, `seq` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `recordedAtMs` INTEGER NOT NULL, `accuracyM` REAL, `altitudeM` REAL, `speedMps` REAL, `bearingDeg` REAL, `batteryPercent` INTEGER, `uploaded` INTEGER NOT NULL, `rejected` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`groupKey` TEXT NOT NULL, `id` TEXT NOT NULL, `author` TEXT NOT NULL, `seq` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `recordedAtMs` INTEGER NOT NULL, `accuracyM` REAL, `altitudeM` REAL, `speedMps` REAL, `bearingDeg` REAL, `batteryPercent` INTEGER, `uploaded` INTEGER NOT NULL, `rejected` INTEGER NOT NULL, PRIMARY KEY(`groupKey`, `id`))",
         "fields": [
+          {
+            "fieldPath": "groupKey",
+            "columnName": "groupKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
           {
             "fieldPath": "id",
             "columnName": "id",
@@ -241,35 +272,44 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
+            "groupKey",
             "id"
           ]
         },
         "indices": [
           {
-            "name": "index_location_point_author_seq",
+            "name": "index_location_point_groupKey_author_seq",
             "unique": true,
             "columnNames": [
+              "groupKey",
               "author",
               "seq"
             ],
             "orders": [],
-            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_location_point_author_seq` ON `${TABLE_NAME}` (`author`, `seq`)"
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_location_point_groupKey_author_seq` ON `${TABLE_NAME}` (`groupKey`, `author`, `seq`)"
           },
           {
-            "name": "index_location_point_uploaded",
+            "name": "index_location_point_groupKey_uploaded",
             "unique": false,
             "columnNames": [
+              "groupKey",
               "uploaded"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_location_point_uploaded` ON `${TABLE_NAME}` (`uploaded`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_location_point_groupKey_uploaded` ON `${TABLE_NAME}` (`groupKey`, `uploaded`)"
           }
         ]
       },
       {
         "tableName": "member_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`memberId` TEXT NOT NULL, `seq` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `accuracyM` REAL, `fixAgeMs` INTEGER, `batteryPercent` INTEGER, `heardAgoMs` TEXT NOT NULL, `ageAtReceiptMs` INTEGER NOT NULL, `receivedAtElapsedMs` INTEGER NOT NULL, `receivedBootId` TEXT NOT NULL, `receivedAtWallMs` INTEGER NOT NULL, PRIMARY KEY(`memberId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`groupKey` TEXT NOT NULL, `memberId` TEXT NOT NULL, `seq` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `accuracyM` REAL, `fixAgeMs` INTEGER, `batteryPercent` INTEGER, `heardAgoMs` TEXT NOT NULL, `ageAtReceiptMs` INTEGER NOT NULL, `receivedAtElapsedMs` INTEGER NOT NULL, `receivedBootId` TEXT NOT NULL, `receivedAtWallMs` INTEGER NOT NULL, PRIMARY KEY(`groupKey`, `memberId`))",
         "fields": [
+          {
+            "fieldPath": "groupKey",
+            "columnName": "groupKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
           {
             "fieldPath": "memberId",
             "columnName": "memberId",
@@ -341,132 +381,15 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
+            "groupKey",
             "memberId"
           ]
         }
-      },
-      {
-        "tableName": "outbox_group",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tag` TEXT NOT NULL, `token` TEXT NOT NULL, `senderId` TEXT NOT NULL, PRIMARY KEY(`tag`))",
-        "fields": [
-          {
-            "fieldPath": "tag",
-            "columnName": "tag",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "token",
-            "columnName": "token",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "senderId",
-            "columnName": "senderId",
-            "affinity": "TEXT",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "tag"
-          ]
-        }
-      },
-      {
-        "tableName": "outbox_point",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `groupTag` TEXT NOT NULL, `author` TEXT NOT NULL, `seq` INTEGER NOT NULL, `latitude` REAL, `longitude` REAL, `recordedAtMs` INTEGER NOT NULL, `accuracyM` REAL, `altitudeM` REAL, `speedMps` REAL, `bearingDeg` REAL, `batteryPercent` INTEGER, PRIMARY KEY(`id`))",
-        "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "groupTag",
-            "columnName": "groupTag",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "author",
-            "columnName": "author",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "seq",
-            "columnName": "seq",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "latitude",
-            "columnName": "latitude",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "longitude",
-            "columnName": "longitude",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "recordedAtMs",
-            "columnName": "recordedAtMs",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "accuracyM",
-            "columnName": "accuracyM",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "altitudeM",
-            "columnName": "altitudeM",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "speedMps",
-            "columnName": "speedMps",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "bearingDeg",
-            "columnName": "bearingDeg",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "batteryPercent",
-            "columnName": "batteryPercent",
-            "affinity": "INTEGER"
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_outbox_point_groupTag",
-            "unique": false,
-            "columnNames": [
-              "groupTag"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_point_groupTag` ON `${TABLE_NAME}` (`groupTag`)"
-          }
-        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b308ea33b7872619551fcd8ea4644edf')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '068af814b5814505801322e4f767efa9')"
     ]
   }
 }

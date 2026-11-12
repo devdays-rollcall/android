@@ -30,25 +30,25 @@ class MappersTest {
             ageAtReceiptMs = 1_000, receivedAtElapsedMs = 2_000, receivedBootId = "7", receivedAtWallMs = 3_000,
         )
 
-        assertEquals(event, event.toEntity().toModel())
-        assertFalse(event.toEntity().ignored)
+        assertEquals(event, event.toEntity("g").toModel())
+        assertFalse(event.toEntity("g").ignored)
     }
 
     @Test
     fun `событие незнакомого типа помечено «не учитывать», а незнакомый тип из базы становится UNKNOWN`() {
         val unknown = Stamped(ControlEvent(EventId("e"), bob, 1, createdAtWallMs = 0, EventType.UNKNOWN), 0, 0, "1", 0)
 
-        assertTrue(unknown.toEntity().ignored)
-        assertEquals(EventType.UNKNOWN, unknown.toEntity().copy(type = "CHECKPOINT").toModel().value.type)
+        assertTrue(unknown.toEntity("g").ignored)
+        assertEquals(EventType.UNKNOWN, unknown.toEntity("g").copy(type = "CHECKPOINT").toModel().value.type)
     }
 
     @Test
     fun `точка с недопустимыми значениями получает пометку rejected`() {
         val point = LocationPoint(EventId("p"), bob, 1, 43.35, 42.44, recordedAtMs = 0, bearingDeg = 360.0)
 
-        assertTrue(point.toEntity().rejected)
-        assertFalse(point.copy(bearingDeg = 10.0).toEntity().rejected)
-        assertEquals(point, point.toEntity().toModel())
+        assertTrue(point.toEntity("g").rejected)
+        assertFalse(point.copy(bearingDeg = 10.0).toEntity("g").rejected)
+        assertEquals(point, point.toEntity("g").toModel())
     }
 
     @Test
@@ -59,7 +59,7 @@ class MappersTest {
         )
         val group = GroupInfo("tag", "token", "Поход", leaderId = bob, me = MemberId("me"), createdAtWallMs = 1)
 
-        assertEquals(state, state.toEntity().toModel())
-        assertEquals(group, group.toEntity().toModel())
+        assertEquals(state, state.toEntity("g").toModel())
+        assertEquals(group, group.toEntity(active = true).toModel())
     }
 }

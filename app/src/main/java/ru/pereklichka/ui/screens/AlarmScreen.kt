@@ -73,8 +73,9 @@ private const val LOW_BATTERY = 20
  * Тревога: по странице на каждую активную тревогу из `view.alarms`. Страницы листаются свайпом, а плашка
  * «1 из N тревог» в шапке переключает на следующую. Сверху на красном фоне кто пропал, кто и когда объявил тревогу,
  * стрелка и расстояние до его последней позиции, последняя связь и заряд. Ниже подсказки «Что делать» и кнопки
- * снятия: «Я в порядке» у самого человека, «Вижу его, всё в порядке» у остальных, «Ложная тревога» у руководителя
- * и автора тревоги. Если мой телефон слышит пропавшего напрямую (`view.prompts`), первая подсказка говорит, что он рядом.
+ * снятия: «Я в порядке» у самого человека, «Я рядом, помощь не нужна» у остальных, а у руководителя и автора
+ * тревоги ещё «SOS отправлен по ошибке» или «Тревога объявлена по ошибке». Первые две кнопки значат, что человека
+ * нашли и с ним всё хорошо, последняя значит, что беды и не было. Если мой телефон слышит пропавшего напрямую (`view.prompts`), первая подсказка говорит, что он рядом.
  *
  * Уйти с экрана можно, не снимая тревогу: руководителю нужны перекличка, карточка пропавшего и SOS, а пропустить
  * тревогу не дадут красный баннер на экране группы и уведомление. Строка «Карточка участника» открывает экран
@@ -135,7 +136,10 @@ fun AlarmScreen(
     }
 }
 
-/** Одна тревога: красная шапка и под ней лист с подсказками, прокручиваются вместе; кнопки снятия прижаты к низу. */
+/**
+ * Одна тревога: красная шапка и под ней лист с подсказками, прокручиваются вместе; кнопки снятия прижаты к низу.
+ * Снять тревогу как объявленную по ошибке может руководитель или тот, кто её объявил, у SOS это сам человек.
+ */
 @Composable
 private fun AlarmPage(
     view: GroupView,
@@ -145,7 +149,6 @@ private fun AlarmPage(
 ) {
     val aboutMe = alarm.target == view.me
     val member = view.members.firstOrNull { it.id == alarm.target }
-    // Ложную тревогу снимает руководитель или тот, кто её объявил (у SOS это сам человек).
     val canCancel = view.iAmLeader || alarm.raisedBy == view.me
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -170,13 +173,16 @@ private fun AlarmPage(
                 BigButtonFull("Я в порядке", { onResolve(alarm.target, ResolveKind.SELF_OK) }, icon = R.drawable.sym_check, large = true)
             } else {
                 BigButtonFull(
-                    "Вижу его, всё в порядке",
+                    "Я рядом, помощь не нужна",
                     { onResolve(alarm.target, ResolveKind.SEEN_OK) },
                     icon = R.drawable.sym_visibility,
                     large = true,
                 )
             }
-            if (canCancel) BigButtonFull("Ложная тревога", { onResolve(alarm.target, ResolveKind.FALSE_ALARM) }, ButtonKind.SECONDARY)
+            if (canCancel) {
+                val mistake = if (alarm.isSos) "SOS отправлен по ошибке" else "Тревога объявлена по ошибке"
+                BigButtonFull(mistake, { onResolve(alarm.target, ResolveKind.FALSE_ALARM) }, ButtonKind.SECONDARY)
+            }
         }
     }
 }
@@ -319,7 +325,7 @@ private fun whatToDo(
             val ok = MaterialTheme.statusColors.ok
             ListRow(
                 "Его телефон рядом с вами",
-                subtitle = "Если видите его, нажмите «Вижу его»",
+                subtitle = "Если видите его, нажмите «Я рядом, помощь не нужна»",
                 leading = { IconCircle(R.drawable.sym_bluetooth_searching, ok.container, ok.content) },
             )
         }

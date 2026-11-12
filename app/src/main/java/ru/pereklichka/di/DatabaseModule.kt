@@ -8,13 +8,13 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import ru.pereklichka.data.db.AppDatabase
+import ru.pereklichka.data.db.ControlEventDao
 import ru.pereklichka.data.db.LocationDao
-import ru.pereklichka.data.db.OutboxDao
 import javax.inject.Singleton
 
 /**
- * Модуль Hilt для базы Room. [LocationDao] и [OutboxDao] выдаются отдельно для `UploadWorker`, остальные DAO берутся
- * из [AppDatabase] там, где нужны транзакции.
+ * Модуль Hilt для базы Room. [LocationDao] и [ControlEventDao] выдаются отдельно для `UploadWorker`: ему нужны точки
+ * и имена авторов из JOINED. Остальные DAO берутся из [AppDatabase] там, где нужны транзакции.
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -29,5 +29,5 @@ object DatabaseModule {
     fun locationDao(db: AppDatabase): LocationDao = db.locationDao()
 
     @Provides
-    fun outboxDao(db: AppDatabase): OutboxDao = db.outboxDao()
+    fun controlEventDao(db: AppDatabase): ControlEventDao = db.controlEventDao()
 }

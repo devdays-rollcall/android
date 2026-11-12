@@ -67,7 +67,7 @@ import ru.pereklichka.ui.theme.statusColors
  * с подтверждением и «Вернуться к группе». Если служба не запущена или не хватает разрешений, над сводкой
  * предупреждение со входом на экран разрешений. После завершения сводка показывает, сколько шёл маршрут и когда
  * завершён, а внизу то же, что на экране группы ([FinishedActions]): «Выключить», пока обмен работает,
- * и «Новая группа».
+ * и «Новый маршрут».
  */
 @Composable
 fun FinishRouteScreen(
@@ -77,7 +77,7 @@ fun FinishRouteScreen(
     trackStatus: TrackStatus?,
     onFinish: () -> Unit,
     onStopService: () -> Unit,
-    onNewGroup: () -> Unit,
+    onNewRoute: () -> Unit,
     onPermissions: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -89,7 +89,7 @@ fun FinishRouteScreen(
         onBack = onBack,
         bottom = {
             if (finished) {
-                FinishedActions(view, exchange, trackStatus, onStopService, onNewGroup)
+                FinishedActions(view, exchange, onStopService, onNewRoute)
             } else {
                 BigButtonFull("Завершить для всей группы", { confirm = true }, ButtonKind.DANGER, R.drawable.sym_flag, large = true)
                 TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -128,18 +128,16 @@ fun FinishRouteScreen(
 /**
  * Низ экрана после завершения маршрута, общий для списка группы и экрана завершения. Пока служба передаёт
  * завершение остальным ([exchange] равен [Exchange.On]), видно, сколько минут она ещё может работать, и «Выключить»
- * останавливает её сразу, а группа остаётся на телефоне. «Новая группа» после подтверждения стирает группу и ведёт
- * на старт.
+ * останавливает её сразу, а группа остаётся на телефоне. «Новый маршрут» ведёт на старт, где можно создать группу
+ * или вступить в другую. Сама группа при этом ничего не теряет: она станет прошлым маршрутом, когда появится новая.
  */
 @Composable
 internal fun FinishedActions(
     view: GroupView,
     exchange: Exchange,
-    trackStatus: TrackStatus?,
     onStopService: () -> Unit,
-    onNewGroup: () -> Unit,
+    onNewRoute: () -> Unit,
 ) {
-    var confirmNewGroup by rememberSaveable { mutableStateOf(false) }
     val minutesLeft = rememberMinutesLeft((exchange as? Exchange.On)?.stopsAtElapsedMs)
     Text(
         finishedText(exchange, minutesLeft, hasOthers = view.members.any { !it.isMe }, cancelled = view.routeStartedAgo == null),
@@ -149,18 +147,7 @@ internal fun FinishedActions(
         modifier = Modifier.fillMaxWidth().padding(vertical = MaterialTheme.spacing.s),
     )
     if (exchange is Exchange.On) BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY, R.drawable.sym_power_settings_new)
-    BigButtonFull("Новая группа", { confirmNewGroup = true }, icon = R.drawable.sym_add)
-
-    if (confirmNewGroup) {
-        NewGroupDialog(
-            title = "Начать новую группу?",
-            groupName = view.group.name,
-            unsentPoints = trackStatus?.unsent,
-            confirmLabel = "Стереть",
-            onConfirm = { confirmNewGroup = false; onNewGroup() },
-            onDismiss = { confirmNewGroup = false },
-        )
-    }
+    BigButtonFull("Новый маршрут", onNewRoute, icon = R.drawable.sym_add)
 }
 
 /**
@@ -194,37 +181,6 @@ private fun rememberMinutesLeft(stopsAtElapsedMs: Long?): Long? {
         value = null
     }
     return leftMs?.let { ((it + 59_999) / 60_000).coerceAtLeast(1) }
-}
-
-/**
- * Подтверждение, что группа [groupName] с её списком сотрётся с телефона: «Новая группа» на экране группы,
- * создание и вступление со стартового экрана. Неотправленный трек при этом остаётся в очереди на отправку, и если
- * [unsentPoints] больше нуля, диалог говорит, сколько точек уйдёт на сервер позже.
- */
-@Composable
-internal fun NewGroupDialog(
-    title: String,
-    groupName: String,
-    unsentPoints: Int?,
-    confirmLabel: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val track = if (unsentPoints != null && unsentPoints > 0) {
-        " $unsentPoints ${plural(unsentPoints, "точка", "точки", "точек")} трека " +
-            "${plural(unsentPoints, "уйдёт", "уйдут", "уйдут")} на сервер, когда появится интернет."
-    } else {
-        ""
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text("Группа «$groupName» с её списком сотрётся с этого телефона.$track") },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(confirmLabel, color = MaterialTheme.colorScheme.error) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
-    )
 }
 
 /** «Эльбрус · в пути 2 ч 14 мин» и три плитки по участникам, кроме меня: на связи, в отлучке, не слышно. */

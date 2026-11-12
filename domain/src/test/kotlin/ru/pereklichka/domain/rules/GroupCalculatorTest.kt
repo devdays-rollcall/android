@@ -260,6 +260,7 @@ class GroupCalculatorTest {
         assertEquals(Age(60_000, false), compute(history).routeFinishedAgo)
     }
 
+    /** Участник не ждёт подтверждения ни от себя, ни от руководителя: у руководителя завершение есть всегда. */
     @Test
     fun `завершение подтверждают соседи, чья сводка уже содержит его`() {
         val history = History().apply { joinAll() }
@@ -273,10 +274,10 @@ class GroupCalculatorTest {
             c to mapOf(a to 5L),
         )
         assertEquals(setOf(b, c, d), compute(history).finishNotConfirmedBy(reported)?.toSet())
-        // Участник не ждёт ни себя, ни руководителя: у того завершение есть всегда.
         assertEquals(setOf(c, d), compute(history, me = b).finishNotConfirmedBy(reported)?.toSet())
     }
 
+    /** Свой телефон себя из списка не убирает, пока выход расходится по группе. */
     @Test
     fun `вышедший участник пропадает из списка вместе с тревогами о нём`() {
         val history = History().apply {
@@ -289,7 +290,6 @@ class GroupCalculatorTest {
         val view = compute(history)
         assertFalse(view.members.any { it.id == a })
         assertEquals(listOf(c), view.alarms.map { it.target })
-        // Свой телефон себя из списка не убирает, пока выход расходится по группе.
         assertTrue(compute(history, me = a).members.any { it.id == a })
     }
 

@@ -5,15 +5,21 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** Активная группа, одна строка на всю базу. Пишет её только `GroupRepository`. */
-@Entity(tableName = "group_info")
+/**
+ * Группа на телефоне: активная, с которой идёт обмен, или прошлый маршрут. Ключ строки [myMemberId], то есть мой
+ * `member_id` в группе. Он новый при каждом создании и вступлении, поэтому повторное вступление по тому же QR после
+ * выхода даёт отдельную строку, и записи двух вступлений не смешиваются. Записи группы в остальных таблицах несут
+ * этот ключ в колонке `groupKey`. [active] стоит не больше чем у одной строки. Пишет таблицу только `GroupRepository`.
+ */
+@Entity(tableName = "group_info", indices = [Index(value = ["active"])])
 data class GroupInfoEntity(
-    @PrimaryKey val tag: String,
+    @PrimaryKey val myMemberId: String,
+    val tag: String,
     val token: String,
     val name: String,
     val leaderId: String,
-    val myMemberId: String,
     val createdAtWallMs: Long,
+    val active: Boolean,
 )
 
 /** Колонки отметки свежести (`Stamped`), встраиваются в строки событий и состояний. */
@@ -25,13 +31,18 @@ data class StampColumns(
 )
 
 /**
- * Строка события любого автора. Пара (author, seq) уникальна, поэтому база не даст записать в поток автора
- * два события с одним номером. [ignored] стоит у события незнакомого типа, чтобы такие строки было видно в базе.
- * Правила отсеивают их по `EventType.UNKNOWN` после чтения.
+ * Строка события любого автора в группе [groupKey]. Тройка (groupKey, author, seq) уникальна, поэтому база не даст
+ * записать в поток автора два события с одним номером. [ignored] стоит у события незнакомого типа, чтобы такие строки
+ * было видно в базе. Правила отсеивают их по `EventType.UNKNOWN` после чтения.
  */
-@Entity(tableName = "control_event", indices = [Index(value = ["author", "seq"], unique = true)])
+@Entity(
+    tableName = "control_event",
+    primaryKeys = ["groupKey", "id"],
+    indices = [Index(value = ["groupKey", "author", "seq"], unique = true)],
+)
 data class ControlEventEntity(
-    @PrimaryKey val id: String,
+    val groupKey: String,
+    val id: String,
     val author: String,
     val seq: Long,
     val type: String,
@@ -46,18 +57,20 @@ data class ControlEventEntity(
 )
 
 /**
- * Строка точки трека любого автора. [uploaded] ставит `UploadWorker` после ответа 202, [rejected] стоит у точки,
- * которую нельзя отправлять на сервер. Других изменений у точки после записи не бывает.
+ * Строка точки трека любого автора в группе [groupKey]. [uploaded] ставит `UploadWorker` после ответа 202,
+ * [rejected] стоит у точки, которую нельзя отправлять на сервер. Других изменений у точки после записи не бывает.
  *
  * Широта и долгота допускают NULL: SQLite хранит NaN как NULL, а чужую точку с NaN всё равно нужно сохранить,
  * иначе поток её автора встанет. Маппер возвращает NULL обратно как NaN.
  */
 @Entity(
     tableName = "location_point",
-    indices = [Index(value = ["author", "seq"], unique = true), Index(value = ["uploaded"])],
+    primaryKeys = ["groupKey", "id"],
+    indices = [Index(value = ["groupKey", "author", "seq"], unique = true), Index(value = ["groupKey", "uploaded"])],
 )
 data class LocationPointEntity(
-    @PrimaryKey val id: String,
+    val groupKey: String,
+    val id: String,
     val author: String,
     val seq: Long,
     val latitude: Double?,
@@ -72,10 +85,11 @@ data class LocationPointEntity(
     val rejected: Boolean = false,
 )
 
-/** Строка последнего состояния участника, одна на участника. */
-@Entity(tableName = "member_state")
+/** Строка последнего состояния участника, одна на участника в группе [groupKey]. */
+@Entity(tableName = "member_state", primaryKeys = ["groupKey", "memberId"])
 data class MemberStateEntity(
-    @PrimaryKey val memberId: String,
+    val groupKey: String,
+    val memberId: String,
     val seq: Long,
     val latitude: Double?,
     val longitude: Double?,
@@ -89,33 +103,20 @@ data class MemberStateEntity(
 /** Строка запроса «последний номер по каждому автору». */
 data class AuthorMaxSeq(val author: String, val maxSeq: Long)
 
-/**
- * Группа, которую стёрли с телефона, пока часть её трека ещё не ушла на сервер. По [token] и [senderId] `UploadWorker`
- * отправляет её точки из [OutboxPointEntity], а когда они кончаются, удаляет и строку группы.
- */
-@Entity(tableName = "outbox_group")
-data class OutboxGroupEntity(
-    @PrimaryKey val tag: String,
-    val token: String,
-    val senderId: String,
-)
+/** Строка запроса имён из событий JOINED. */
+data class AuthorName(val author: String, val name: String)
 
 /**
- * Неотправленная точка стёртой группы [groupTag]: те же колонки, что у [LocationPointEntity], без пометок. Строку
- * удаляет `UploadWorker`, когда сервер принял точку или её нельзя отправить. В обмен с соседями эти точки не идут.
+ * Строка списка прошлых маршрутов: группа и сводка по её записям. Время начала и конца маршрута берётся
+ * из событий руководителя по часам этого телефона (время приёма минус возраст записи при приёме), [members]
+ * считает участников с событием JOINED, [iLeft] значит, что я сам вышел из группы событием LEFT.
  */
-@Entity(tableName = "outbox_point", indices = [Index(value = ["groupTag"])])
-data class OutboxPointEntity(
-    @PrimaryKey val id: String,
-    val groupTag: String,
-    val author: String,
-    val seq: Long,
-    val latitude: Double?,
-    val longitude: Double?,
-    val recordedAtMs: Long,
-    val accuracyM: Double?,
-    val altitudeM: Double?,
-    val speedMps: Double?,
-    val bearingDeg: Double?,
-    val batteryPercent: Int?,
+data class PastRouteRow(
+    @Embedded val group: GroupInfoEntity,
+    val startedAtWallMs: Long?,
+    val finishedAtWallMs: Long?,
+    val members: Int,
+    val points: Int,
+    val unsentPoints: Int,
+    val iLeft: Boolean,
 )

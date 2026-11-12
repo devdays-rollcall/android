@@ -13,7 +13,9 @@ import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.GroupInfo
+import ru.pereklichka.domain.model.MemberId
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,18 +49,33 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
         enqueueUpload(if (running) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE)
     }
 
-    fun sendSos(group: GroupInfo, serverUrl: String) {
+    /**
+     * Отправить на сервер SOS [sosId] участника [target] группы [group], когда будет сеть. Ставят его автор сразу после нажатия
+     * и [ru.pereklichka.status.SosRelay] на каждом телефоне, где этот SOS виден. На одном телефоне один SOS уходит
+     * один раз: задача уникальна по его id, и повторный вызов её не трогает. [replace] ставит задачу заново, это
+     * кнопка «Отправить ещё раз» после неудачи.
+     */
+    fun sendSos(group: GroupInfo, sosId: EventId, target: MemberId, serverUrl: String, replace: Boolean = false) {
         val request = OneTimeWorkRequestBuilder<SosWorker>()
-            .setInputData(workDataOf(SosWorker.TOKEN to group.token, SosWorker.MEMBER to group.me.value, SosWorker.URL to serverUrl))
+            .setInputData(
+                workDataOf(
+                    SosWorker.TOKEN to group.token,
+                    SosWorker.MEMBER to target.value,
+                    SosWorker.SENDER to group.me.value,
+                    SosWorker.ALARM to sosId.value,
+                    SosWorker.URL to serverUrl,
+                ),
+            )
             .setConstraints(needsNetwork)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(sosName(group.tag), ExistingWorkPolicy.KEEP, request)
+        val policy = if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
+        WorkManager.getInstance(context).enqueueUniqueWork(sosName(group.tag, sosId), policy, request)
     }
 
-    /** Снимает SOS группы [groupTag], который ещё ждёт сети: человек отменил свой SOS, и сервер о нём не узнает. */
-    fun cancelSos(groupTag: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(sosName(groupTag))
+    /** Снимает отправку SOS [sosId], которая ещё ждёт сети: его сняли, и сервер о нём не узнает. */
+    fun cancelSos(groupTag: String, sosId: EventId) {
+        WorkManager.getInstance(context).cancelUniqueWork(sosName(groupTag, sosId))
     }
 
     /** Страховка на случай, если сигнал о сети не пришёл: раз в 15 минут, это минимум WorkManager. */
@@ -69,7 +86,10 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(UPLOAD_PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    /** Снимает периодическую отправку: после «Новой группы», если в очереди стёртых групп не осталось трека. */
+    /**
+     * Снимает периодическую отправку, когда служба закрыла группу, а неотправленного трека не осталось ни у одной
+     * группы.
+     */
     fun cancelPeriodic() {
         WorkManager.getInstance(context).cancelUniqueWork(UPLOAD_PERIODIC)
     }
@@ -83,7 +103,7 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
     }
 
     companion object {
-        fun sosName(groupTag: String) = "sos-$groupTag"
+        fun sosName(groupTag: String, sosId: EventId) = "sos-$groupTag-${sosId.value}"
 
         private const val UPLOAD_NOW = "upload-now"
         private const val UPLOAD_PERIODIC = "upload-periodic"

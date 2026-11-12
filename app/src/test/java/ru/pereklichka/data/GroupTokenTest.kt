@@ -42,10 +42,12 @@ class GroupTokenTest {
         assertEquals("ru.pereklichka.g.$tag", GroupToken.serviceIdOf(tag))
     }
 
+    /**
+     * Эталон посчитан отдельно на Python (hmac, hashlib): HMAC-SHA256 строки pereklichka-mesh с ключом из 32 нулевых
+     * байтов, первые 8 байтов. Если значение изменилось, телефоны разных сборок перестанут находить друг друга.
+     */
     @Test
     fun `тег токена из нулей не меняется между версиями`() {
-        // Эталон посчитан отдельно на Python (hmac, hashlib): HMAC-SHA256 строки pereklichka-mesh с ключом из 32 нулевых
-        // байтов, первые 8 байтов. Если значение изменилось, телефоны разных сборок перестанут находить друг друга.
         assertEquals("2390d604a0ba9160", GroupToken.tagOf("A".repeat(GroupToken.LENGTH)))
     }
 }

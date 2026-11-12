@@ -78,7 +78,8 @@ private val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
  * Руководитель видит кольцо «1 из 4 ответили» с оставшимся временем окна (`RollcallView.remainingMs`), ниже
  * «Ещё не ответили» (сначала неслышимые, потом молчащие рядом) и «Ответили». Для неответивших строка говорит, дошло ли
  * уведомление: это видно по сводкам соседей [reportedBySeq] (см. `receivedBy`), где уже есть событие переклички.
- * Если переклички нет, руководитель может её начать.
+ * Если переклички нет, руководитель может её начать, но только когда в группе есть кто-то, кроме него: без участников
+ * отвечать некому, и перекличка три минуты висела бы с «0 из 0».
  *
  * Участник видит большую круглую «Я здесь», пока его нет в `answered`, и внизу «Отойду ненадолго». SOS здесь нет,
  * он остаётся на экране группы.
@@ -105,7 +106,6 @@ fun RollcallScreen(
                         onStartRollcall,
                         icon = R.drawable.sym_campaign,
                         large = true,
-                        // Без участников отвечать некому, и перекличка три минуты висела бы с «0 из 0».
                         enabled = view.members.any { !it.isMe },
                     )
                 !view.iAmLeader && view.route == RouteState.ACTIVE ->
@@ -324,12 +324,12 @@ private fun RollcallParticipantPreview() {
     PereklichkaTheme { RollcallScreen(FakeGroupViews.participant, {}, {}, {}, {}) }
 }
 
+/** Даниил подтвердил перекличку в своей сводке, остальные ещё нет. */
 @Preview(name = "Перекличка: руководитель")
 @Preview(name = "Перекличка: руководитель, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun RollcallLeaderPreview() {
     val view = FakeGroupViews.leader
-    // Даниил подтвердил перекличку в своей сводке, остальные ещё нет.
     val reported = view.members.firstOrNull { it.name == "Даниил" }
         ?.let { mapOf(it.id to mapOf(view.group.leaderId to view.rollcall!!.seq)) }
         .orEmpty()

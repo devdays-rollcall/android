@@ -12,8 +12,9 @@ import retrofit2.Response
 import java.io.IOException
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
+import ru.pereklichka.data.db.ControlEventDao
 import ru.pereklichka.data.db.LocationDao
-import ru.pereklichka.data.db.OutboxDao
+import ru.pereklichka.data.db.key
 import ru.pereklichka.data.db.toModel
 import ru.pereklichka.domain.model.GroupInfo
 import ru.pereklichka.domain.model.LocationPoint
@@ -23,9 +24,9 @@ import ru.pereklichka.status.GroupViewProvider
 
 /**
  * Отправляет на сервер неотправленные точки всей группы пачками по [BATCH_SIZE] от имени этого телефона. Сначала
- * уходят точки активной группы, потом очередь стёртых групп (`outbox_point`): у каждой стёртой группы свои токен
- * и отправитель, сохранённые при стирании. Точку из очереди, которую сервер принял или которую нельзя отправить,
- * worker удаляет, а группу без точек убирает из очереди.
+ * уходят точки активной группы, потом прошлых маршрутов, старые первыми: у каждой группы свой токен, а отправитель
+ * это мой `member_id` в ней. Принятую точку worker помечает `uploaded`, и в базе она остаётся. В каждое событие
+ * кладётся имя автора точки из его JOINED, чтобы карта на сайте подписала участника.
  *
  * Сбой сети, ответ 429 и 5xx, неожиданный код 2xx или 3xx и ответ, который не разобрать (портал Wi-Fi без
  * интернета отвечает 200 своей страницей), дают `Result.retry()`. На 413 пачка уменьшается вдвое до конца запуска.
@@ -37,13 +38,17 @@ import ru.pereklichka.status.GroupViewProvider
  * [HEARTBEAT_INTERVAL_MS] после последнего ответа 202. Время этого ответа хранит [UploadStatus], оно
  * переживает перезапуск процесса. Один запуск длится не дольше [RUN_LIMIT_MS]: WorkManager останавливает задачу
  * через 10 минут, поэтому оставшиеся точки уходят в следующем запуске через `Result.retry()`.
+ *
+ * Отказ сервера по одному прошлому маршруту (например, 401 на старый токен) не держит остальные: их трек уходит
+ * дальше, а запуск всё равно кончается ошибкой. Повтор после сбоя сети заканчивает запуск сразу. Heartbeat активной
+ * группы уходит, только если после отправки её точек она всё ещё активна: человек мог начать новую группу.
  */
 @HiltWorker
 class UploadWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val locationDao: LocationDao,
-    private val outboxDao: OutboxDao,
+    private val controlEventDao: ControlEventDao,
     private val groupRepository: GroupRepository,
     private val api: EventsApi,
     private val settings: AppSettings,
@@ -62,89 +67,75 @@ class UploadWorker @AssistedInject constructor(
         }
         val startedAtMs = clock.elapsedMs()
 
-        val group = groupRepository.activeGroup()
-        if (group != null) {
-            // Точки всей группы, свои и полученные от соседей: сервер записывает автора каждой точки отдельно от
-            // отправителя и отсеивает повторы по id, поэтому одни и те же точки могут прийти от нескольких телефонов.
-            val active = object : PointQueue {
-                override suspend fun next(limit: Int) = locationDao.unsent(limit).map { it.toModel() }
-                override suspend fun accept(ids: List<String>) = locationDao.markUploaded(ids)
-                override suspend fun reject(ids: List<String>) = locationDao.markRejected(ids)
-                override suspend fun isCurrent() = groupRepository.activeGroup() == group
-            }
-            send(url, group.token, group.me.value, active, startedAtMs)?.let { return it }
-            if (groupRepository.activeGroup() == group) sendHeartbeatIfDue(url, group)?.let { return it }
+        val active = groupRepository.activeGroup()
+        if (active != null) {
+            send(url, active, startedAtMs)?.let { return it }
+            if (groupRepository.activeGroup() == active) sendHeartbeatIfDue(url, active)?.let { return it }
         }
-        for (old in outboxDao.groups()) {
-            val queued = object : PointQueue {
-                override suspend fun next(limit: Int) = outboxDao.points(old.tag, limit).map { it.toModel() }
-                override suspend fun accept(ids: List<String>) = outboxDao.deletePoints(ids)
-                override suspend fun reject(ids: List<String>) = outboxDao.deletePoints(ids)
-                override suspend fun isCurrent() = true
+        var failure: Result? = null
+        for (past in groupRepository.pastGroupsWithUnsentTrack()) {
+            when (val result = send(url, past, startedAtMs)) {
+                null -> Unit
+                Result.failure() -> failure = result
+                else -> return result
             }
-            send(url, old.token, old.senderId, queued, startedAtMs)?.let { return it }
-            outboxDao.deleteGroupIfEmpty(old.tag)
         }
-        return Result.success()
-    }
-
-    /** Неотправленные точки одной группы и что с ними делать после ответа сервера. */
-    private interface PointQueue {
-        /** Следующие не больше [limit] точек по порядку (автор, номер); пусто, когда отправлять нечего. */
-        suspend fun next(limit: Int): List<LocationPoint>
-        suspend fun accept(ids: List<String>)
-        suspend fun reject(ids: List<String>)
-
-        /** false, если группу сменили посреди запуска и её точки отправлять больше не нужно. */
-        suspend fun isCurrent(): Boolean
+        return failure ?: Result.success()
     }
 
     /**
-     * Отправляет точки [queue] с токеном [token] от имени [senderId]. null, когда точки кончились или группа
-     * перестала быть текущей; иначе результат, с которым запуск надо закончить.
+     * Отправляет неотправленные точки группы [group] с её токеном от моего имени в ней. Точки всей группы, свои
+     * и полученные от соседей: сервер записывает автора каждой точки отдельно от отправителя и отсеивает повторы
+     * по id, поэтому одни и те же точки могут прийти от нескольких телефонов. null, когда точки кончились;
+     * иначе результат, с которым запуск надо закончить.
+     *
+     * Имена авторов читаются один раз на группу, и JOINED, пришедший посреди запуска, попадёт в следующий. Размер
+     * пачки уменьшает только 413, а уменьшенный размер поиска действует, пока после 400 или 422 ищется виновная точка.
      */
-    private suspend fun send(url: String, token: String, senderId: String, queue: PointQueue, startedAtMs: Long): Result? {
-        // batchSize уменьшает только 413, searchSize задан, пока после 400 или 422 ищется виновная точка.
+    private suspend fun send(url: String, group: GroupInfo, startedAtMs: Long): Result? {
+        val names = controlEventDao.joinedNames(group.key).associate { it.author to it.name }
         var batchSize = BATCH_SIZE
         var searchSize: Int? = null
-        while (queue.isCurrent()) {
-            val points = queue.next(minOf(batchSize, searchSize ?: batchSize))
+        while (true) {
+            val points = locationDao.unsent(group.key, minOf(batchSize, searchSize ?: batchSize)).map { it.toModel() }
             if (points.isEmpty()) return null
             if (clock.elapsedMs() - startedAtMs >= RUN_LIMIT_MS) return Result.retry()
 
             val invalid = points.filterNot { it.isUploadable() }
             if (invalid.isNotEmpty()) {
-                queue.reject(invalid.map { it.id.value })
+                locationDao.markRejected(group.key, invalid.map { it.id.value })
                 continue
             }
 
             val ids = points.map { it.id.value }
-            val response = post(url, token, EventBatchDto(senderId, points.map { it.toEventInput() })) ?: return Result.retry()
+            val batch = EventBatchDto(group.me.value, points.map { it.toEventInput(names[it.author.value]) })
+            val response = post(url, group.token, batch) ?: return Result.retry()
             when (val code = response.code()) {
                 202 -> {
                     if (response.body()?.accepted != points.size) return Result.retry()
-                    queue.accept(ids)
+                    locationDao.markUploaded(group.key, ids)
                     onAccepted()
                 }
-                413 -> if (points.size > 1) batchSize = points.size / 2 else queue.reject(ids)
+                413 -> if (points.size > 1) batchSize = points.size / 2 else locationDao.markRejected(group.key, ids)
                 400, 422 -> when {
                     points.size > 1 -> searchSize = points.size / 2
                     code == 400 -> return rejected(code)
                     else -> {
-                        queue.reject(ids)
+                        locationDao.markRejected(group.key, ids)
                         searchSize = null
                     }
                 }
                 else -> return otherResponse(code)
             }
         }
-        return null
     }
 
-    /** null, если heartbeat ушёл или не нужен; иначе результат, с которым запуск надо закончить. */
+    /**
+     * null, если heartbeat ушёл или не нужен; иначе результат, с которым запуск надо закончить. Отрицательный
+     * промежуток с последнего ответа 202 значит, что часы перевели назад, и тогда heartbeat уходит.
+     */
     private suspend fun sendHeartbeatIfDue(url: String, group: GroupInfo): Result? {
         val sinceAcceptedMs = clock.wallMs() - (uploadStatus.lastAcceptedWallMs.value ?: 0L)
-        // Отрицательный промежуток значит, что часы перевели назад, и тогда heartbeat уходит.
         if (sinceAcceptedMs in 0 until HEARTBEAT_INTERVAL_MS) return null
         if (viewProvider.awaitRoute() != RouteState.ACTIVE) return null
 

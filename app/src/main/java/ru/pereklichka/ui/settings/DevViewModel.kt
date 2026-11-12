@@ -48,8 +48,8 @@ data class DevState(
 )
 
 /**
- * Сколько записей в базе: события, точки (всего, ждут отправки, отклонены), состояния участников и точки стёртых
- * групп, которые ещё ждут отправки в очереди.
+ * Сколько записей в базе у активной группы: события, точки (всего, ждут отправки, отклонены), состояния участников.
+ * [pastUnsentPoints] считает неотправленные точки всех прошлых маршрутов.
  */
 data class DatabaseCounts(
     val events: Int = 0,
@@ -57,7 +57,7 @@ data class DatabaseCounts(
     val unsentPoints: Int = 0,
     val rejectedPoints: Int = 0,
     val states: Int = 0,
-    val queuedPoints: Int = 0,
+    val pastUnsentPoints: Int = 0,
 )
 
 /**
@@ -77,7 +77,7 @@ class DevViewModel @Inject constructor(
     viewProvider: GroupViewProvider,
 ) : ViewModel() {
 
-    // Сколько назад слышали каждого: считается по монотонным часам, поэтому перечитывается по таймеру.
+    /** Сколько назад слышали каждого. Считается по монотонным часам, поэтому перечитывается по таймеру. */
     private val heardAgo = flow {
         while (true) {
             emit(presence.heardAgo())
@@ -86,12 +86,12 @@ class DevViewModel @Inject constructor(
     }
 
     private val counts = combine(
-        db.controlEventDao().observeCount(),
-        db.locationDao().observeCount(),
-        db.locationDao().observeUnsentCount(),
-        db.locationDao().observeRejectedCount(),
-        db.memberStateDao().observeCount(),
-        db.outboxDao().observeCount(),
+        db.controlEventDao().observeActiveCount(),
+        db.locationDao().observeActiveCount(),
+        db.locationDao().observeActiveUnsentCount(),
+        db.locationDao().observeActiveRejectedCount(),
+        db.memberStateDao().observeActiveCount(),
+        db.locationDao().observePastUnsentCount(),
     ) { values -> DatabaseCounts(values[0], values[1], values[2], values[3], values[4], values[5]) }
 
     private val upload = combine(settings.serverUrl, uploadStatus.lastAcceptedWallMs, uploadStatus.lastError, ::Triple)
@@ -103,7 +103,6 @@ class DevViewModel @Inject constructor(
     ) { (group, dbCounts, uploadInfo), (peers, sync, heard), (blocked, view) ->
         val (serverUrl, acceptedAt, error) = uploadInfo
         val names = view?.members?.associate { it.id to it.name }.orEmpty()
-        // Себя в список блокировки не выводим: GroupView.members включает свой телефон.
         val roster = (view?.members?.map { it.id }.orEmpty() + heard.keys + blocked)
             .distinct()
             .filter { it != group?.me }

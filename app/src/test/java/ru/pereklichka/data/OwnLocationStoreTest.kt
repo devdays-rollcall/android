@@ -6,6 +6,7 @@ import org.junit.After
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import ru.pereklichka.data.db.key
 import ru.pereklichka.domain.model.Fix
 import ru.pereklichka.domain.model.LatLon
 import ru.pereklichka.domain.testing.FakeClock
@@ -33,7 +34,7 @@ class OwnLocationStoreTest {
 
         assertEquals(group.me, first.author)
         assertEquals(group.me, second.author)
-        assertEquals(listOf(1L, 2L), db.locationDao().unsent(10).map { it.seq })
-        assertEquals(listOf(first.id.value, second.id.value), db.locationDao().unsent(10).map { it.id })
+        assertEquals(listOf(1L, 2L), db.locationDao().unsent(group.key, 10).map { it.seq })
+        assertEquals(listOf(first.id.value, second.id.value), db.locationDao().unsent(group.key, 10).map { it.id })
     }
 }

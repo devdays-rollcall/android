@@ -26,14 +26,17 @@ class StatusMonitor @Inject constructor(
      * успел показать, и тем останавливает звук тревоги, потому что снять эти уведомления потом будет некому.
      */
     suspend fun run(group: GroupInfo) {
-        showNotifications(viewProvider.view.filterNotNull().filter { it.group.tag == group.tag }, notifier)
+        showNotifications(viewProvider.view.filterNotNull().filter { it.group == group }, notifier)
     }
 }
 
-/** Тело [StatusMonitor.run] без провайдера вида. Проверяет `StatusMonitorTest`. */
+/**
+ * Тело [StatusMonitor.run] без провайдера вида. Проверяет `StatusMonitorTest`. Показанные ключи учитываются, чтобы
+ * при отмене убрать их уведомления. `AlarmResolved` приходит через `show`, но уведомление своего ключа убирает,
+ * поэтому ключ из учёта вычёркивается.
+ */
 internal suspend fun showNotifications(views: Flow<GroupView>, notifier: Notifier) {
     var previous: GroupView? = null
-    // AlarmResolved приходит через show, но уведомление своего ключа убирает.
     val shown = mutableSetOf<String>()
     try {
         views.collect { current ->

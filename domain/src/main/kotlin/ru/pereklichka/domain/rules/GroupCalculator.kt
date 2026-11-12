@@ -50,17 +50,22 @@ class GroupCalculator(private val thresholds: Thresholds) {
         private val group = snapshot.group
         private val me = group.me
 
-        // События неизвестного типа хранятся ради префикса, но в правилах не участвуют.
+        /** События без неизвестного типа: такие хранятся ради префикса, но в правилах не участвуют. */
         private val events: List<Stamped<ControlEvent>> = snapshot.events
             .filter { it.value.type != EventType.UNKNOWN }
             .distinctBy { it.value.id }
         private val eventsById = events.associateBy { it.value.id }
-        // Имя из JOINED с наибольшим номером у автора: порядок событий в снимке произвольный.
+
+        /** Имя из JOINED с наибольшим номером у автора: порядок событий в снимке произвольный. */
         private val names: Map<MemberId, String> = events
             .filter { it.value.type == EventType.JOINED }
             .groupBy { it.value.author }
             .mapValues { (author, joined) -> joined.maxBy { it.value.seq }.value.name ?: author.value }
-        // Ушедший пропадает из списка у всех, кроме себя самого: свой телефон стирает группу, когда выход разошёлся.
+
+        /**
+         * Ушедшие. Ушедший пропадает из списка у всех, кроме себя самого: свой телефон после выхода закрывает группу,
+         * и в прошлом маршруте он видит себя в списке.
+         */
         private val left: Set<MemberId> = events
             .filter { it.value.type == EventType.LEFT && it.value.author != group.leaderId && it.value.author != me }
             .map { it.value.author }
@@ -133,7 +138,6 @@ class GroupCalculator(private val thresholds: Thresholds) {
                 val stateAge = state.ageNow(clock)
                 Age(stateAge.ms + (state.value.fixAgeMs ?: 0), stateAge.approximate)
             }
-            // Расстояние и направление до самого себя смысла не имеют.
             val origin = myFix?.position?.takeIf { !isMe }
             return MemberView(
                 id = id,
@@ -187,6 +191,11 @@ class GroupCalculator(private val thresholds: Thresholds) {
             return remainingMs.takeIf { it > 0 }
         }
 
+        /**
+         * Перекличка руководителя, пока не истекло её окно. «Рядом» в списке молчащих значит «не LOST». Порог «слышен
+         * сейчас» (30 с) не годится: через три-четыре посредника оценка контакта доходит до 30 с, и человек рядом попал
+         * бы в «не слышно».
+         */
         private fun rollcallView(members: List<MemberView>): RollcallView? {
             val rollcall = events
                 .filter { it.value.author == group.leaderId && it.value.type == EventType.ROLLCALL }
@@ -199,8 +208,6 @@ class GroupCalculator(private val thresholds: Thresholds) {
                 .filter { it.value.type == EventType.ROLLCALL_ANSWER && rollcall.value.id in it.value.refs }
                 .map { it.value.author }
                 .toSet()
-            // «Рядом» здесь значит «не LOST». Порог «слышен сейчас» (30 с) не годится: через три-четыре посредника
-            // оценка контакта доходит до 30 с, и человек рядом попал бы в «не слышно».
             val (answered, silent) = members.filter { !it.isLeader }.partition { it.id in answeredIds }
             val (notHeard, silentNearby) = silent.partition { it.presence == Presence.LOST }
             return RollcallView(
@@ -236,7 +243,7 @@ class GroupCalculator(private val thresholds: Thresholds) {
 
         private fun isHeardDirectlyNow(id: MemberId): Boolean = PresenceTracker.isHeardNow(heardAgo[id])
 
-        // Тревога может прийти раньше JOINED её цели, тогда вместо имени показываем id.
+        /** Имя участника или его id: тревога может прийти раньше JOINED её цели. */
         private fun nameOf(id: MemberId): String = names[id] ?: id.value
     }
 

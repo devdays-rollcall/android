@@ -37,7 +37,7 @@ sealed interface NotifyEvent {
         override val key: String get() = alarmKey(alarmId)
     }
 
-    /** Участника «Не слышно». Приходит только руководителю на маршруте. */
+    /** Участника «Не слышно». Приходит всем участникам, пока маршрут идёт. */
     data class MemberLost(val member: MemberId, val name: String) : NotifyEvent {
         override val key: String get() = lostKey(member)
     }

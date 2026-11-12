@@ -19,6 +19,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.di.ApplicationScope
+import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.rules.GroupCalculator
 import ru.pereklichka.domain.rules.GroupView
@@ -40,12 +41,13 @@ import javax.inject.Singleton
  * в момент пересчёта, так что новый сосед появляется в виде с задержкой до 2 с.
  *
  * Подписаны `GroupViewModel`, [StatusMonitor] и `RouteService`. `GroupActions` берёт текущее значение,
- * а `UploadWorker`, `BootReceiver` и `RouteService` при перезапуске без экрана спрашивают маршрут через [awaitRoute].
+ * а `UploadWorker`, `BootReceiver` и `RouteService` при перезапуске без экрана спрашивают маршрут через [awaitRoute],
+ * `SosWorker` спрашивает, не сняли ли SOS, через [awaitAlarmActive].
  *
  * Пока на [view] никто не подписан, пересчёт стоит, а значение сбрасывается в null: устаревший вид после паузы
  * дал бы [StatusMonitor] ложные уведомления. null значит, что группы нет или первый расчёт ещё не готов.
- * Когда «Новая группа» стирает группу, вид тоже становится null: снимок хранилища без группы молчит, и без
- * отдельной подписки на группу экраны держали бы вид стёртой группы.
+ * Когда служба закрывает активную группу, вид тоже становится null: снимок хранилища без активной группы молчит,
+ * и без отдельной подписки на группу экраны держали бы вид закрытой группы.
  */
 @Singleton
 class GroupViewProvider @Inject constructor(
@@ -58,12 +60,12 @@ class GroupViewProvider @Inject constructor(
     @ApplicationScope scope: CoroutineScope,
 ) {
     @OptIn(ExperimentalCoroutinesApi::class)
-    val view: StateFlow<GroupView?> = groups.activeGroup.map { it?.tag }.distinctUntilChanged().flatMapLatest { tag ->
-        if (tag == null) {
+    val view: StateFlow<GroupView?> = groups.activeGroup.distinctUntilChanged().flatMapLatest { group ->
+        if (group == null) {
             flowOf(null)
         } else {
             combine(
-                store.snapshot().filter { it.group.tag == tag },
+                store.snapshot().filter { it.group == group },
                 settings.demoMode.map { demo -> GroupCalculator(if (demo) Thresholds.DEMO else Thresholds()) },
                 ownLocation.lastFix,
                 refreshTicks(),
@@ -84,6 +86,13 @@ class GroupViewProvider @Inject constructor(
      * а `UploadWorker` при null heartbeat не шлёт.
      */
     suspend fun awaitRoute(): RouteState? = withTimeoutOrNull(FIRST_VIEW_TIMEOUT_MS) { view.filterNotNull().first().route }
+
+    /**
+     * Активна ли сейчас тревога или SOS [id] по первому готовому расчёту. null, если вид не появился за
+     * [FIRST_VIEW_TIMEOUT_MS]. Нужен `SosWorker`: снятый SOS на сервер не отправляется.
+     */
+    suspend fun awaitAlarmActive(id: EventId): Boolean? =
+        withTimeoutOrNull(FIRST_VIEW_TIMEOUT_MS) { view.filterNotNull().first().alarms.any { it.id == id } }
 
     private fun refreshTicks() = flow {
         while (true) {

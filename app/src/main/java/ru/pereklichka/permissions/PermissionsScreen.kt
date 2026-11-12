@@ -76,6 +76,9 @@ import ru.pereklichka.ui.theme.statusColors
  * Если система больше не показывает диалог разрешения (человек отказал дважды или выбрал «Больше не спрашивать»),
  * кнопка пункта называется «Настройки» и открывает настройки приложения. Состояние перечитывается при каждом
  * возврате на экран. Камеру экран не спрашивает, её спрашивает экран вступления.
+ *
+ * «Разрешить всегда» спрашивается отдельным запросом, а не вместе с обычной геолокацией: с Android 11 система
+ * по этому запросу открывает страницу настроек, и только после выданной точной геолокации.
  */
 @Composable
 fun PermissionsScreen(onDone: () -> Unit) {
@@ -106,8 +109,6 @@ fun PermissionsScreen(onDone: () -> Unit) {
         notificationsBlocked = blocked(activity, it)
         state = readState(context, powerTools)
     }
-    // «Разрешить всегда» нельзя спросить вместе с обычной геолокацией: с Android 11 система по этому запросу
-    // открывает страницу настроек, и только после выданной точной геолокации.
     val backgroundLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         backgroundAsked = true
         state = readState(context, powerTools)

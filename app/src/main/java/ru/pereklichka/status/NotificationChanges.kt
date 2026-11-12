@@ -13,9 +13,9 @@ data class NotificationChanges(val show: List<NotifyEvent>, val dismiss: List<St
  * Решает, какие уведомления дать при переходе от [previous] к [current]. Вызывает [StatusMonitor], проверяет
  * `NotificationChangesTest`. Побочных эффектов у функции нет.
  *
- * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. «Не слышно» (MemberLost) получает только
- * руководитель и только на маршруте, потому что в «Сборе» люди ещё не вышли, а после завершения уже разошлись.
- * Об участниках, которых не было слышно уже в момент ROUTE_STARTED, руководитель тоже узнаёт, а после
+ * Новая тревога или SOS даёт AlarmRaised, пропавшая AlarmResolved. «Не слышно» (MemberLost) получает каждый
+ * участник, но только на маршруте, потому что в «Сборе» люди ещё не вышли, а после завершения уже разошлись.
+ * Об участниках, которых не было слышно уже в момент ROUTE_STARTED, тоже приходит уведомление, а после
  * ROUTE_FINISHED все уведомления «Не слышно» убираются. Новая перекличка, на которую я не ответил, даёт
  * RollcallStarted, новая подсказка о близости NearbyConfirm. Когда до конца моей отлучки остаётся не больше
  * [AWAY_REMINDER_MS], приходит AwayEnding. Когда повод пропал, уведомление убирается: отлучку отменили, продлили
@@ -74,7 +74,7 @@ private fun GroupView.myAwayEnding(): Boolean {
 }
 
 private fun GroupView.lostMembersToReport(): Set<MemberId> =
-    if (iAmLeader && route == RouteState.ACTIVE) members.filter { it.presence == Presence.LOST }.map { it.id }.toSet() else emptySet()
+    if (route == RouteState.ACTIVE) members.filter { it.presence == Presence.LOST }.map { it.id }.toSet() else emptySet()
 
 /** Идёт перекличка, на которую мне нужно ответить. Руководитель её сам объявил и не отвечает. */
 private fun GroupView.awaitsMyAnswer(): Boolean {

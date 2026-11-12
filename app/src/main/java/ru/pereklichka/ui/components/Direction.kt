@@ -23,6 +23,9 @@ import ru.pereklichka.domain.rules.MemberView
 /**
  * Стрелка на участника: азимут от севера, повёрнутая стрелка. Экран не знает, куда смотрит телефон, поэтому
  * стрелка показывает сторону света, как на карте, где север сверху. Без азимута стрелки нет.
+ *
+ * Стрелка рисуется и поворачивается внутри Canvas. Векторная иконка в повёрнутом слое (`Modifier.rotate`)
+ * на эмуляторе Android 15 и в Robolectric рисовалась под случайным углом при азимутах вроде 333°.
  */
 @Composable
 fun DirectionArrow(
@@ -31,8 +34,6 @@ fun DirectionArrow(
     size: Dp = 24.dp,
     tint: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    // Стрелка рисуется и поворачивается внутри Canvas. Векторная иконка в повёрнутом слое (Modifier.rotate)
-    // на эмуляторе Android 15 и в Robolectric рисовалась под случайным углом при азимутах вроде 333°.
     Canvas(modifier.size(size)) {
         val w = this.size.width
         val h = this.size.height

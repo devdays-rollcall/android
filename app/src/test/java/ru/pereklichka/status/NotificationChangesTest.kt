@@ -56,12 +56,16 @@ class NotificationChangesTest {
     }
 
     @Test
-    fun `«Не слышно» звучит только у руководителя на маршруте`() {
+    fun `«Не слышно» звучит у каждого участника, но только на маршруте`() {
         val bobLost = leaderView.withPresence(bob, Presence.LOST)
 
         assertEquals(listOf(NotifyEvent.MemberLost(bob, "Боб")), notificationChanges(leaderView, bobLost).show)
         assertEquals(listOf(NotifyEvent.lostKey(bob)), notificationChanges(bobLost, leaderView).dismiss)
-        assertEquals(emptyList(), notificationChanges(annView, annView.withPresence(bob, Presence.LOST)).show)
+        assertEquals(listOf(NotifyEvent.MemberLost(bob, "Боб")), notificationChanges(annView, annView.withPresence(bob, Presence.LOST)).show)
+        assertEquals(
+            listOf(NotifyEvent.MemberLost(leader, "Руководитель")),
+            notificationChanges(annView, annView.withPresence(leader, Presence.LOST)).show,
+        )
         assertEquals(
             emptyList(),
             notificationChanges(leaderView.copy(route = RouteState.LOBBY), bobLost.copy(route = RouteState.LOBBY)).show,

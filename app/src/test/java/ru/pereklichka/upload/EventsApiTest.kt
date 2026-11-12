@@ -62,6 +62,16 @@ class EventsApiTest {
         assertEquals(AcceptedDto(1), response.body())
     }
 
+    /** Эмодзи занимает две единицы UTF-16, а сервер считает кодовые точки, поэтому длина проверяется на эмодзи. */
+    @Test
+    fun `имя автора без пробелов по краям, пустое не уходит, длинное укорачивается до 100 знаков`() {
+        val point = LocationPoint(EventId("id"), MemberId("member"), 1, 43.35, 42.44, recordedAtMs = 0)
+        assertEquals("Аня", point.toEventInput("  Аня ").username)
+        assertEquals(null, point.toEventInput("   ").username)
+        assertEquals(null, point.toEventInput(null).username)
+        assertEquals("😀".repeat(MAX_USERNAME_LENGTH), point.toEventInput("😀".repeat(150)).username)
+    }
+
     @Test
     fun `пустая пачка для heartbeat`() = runTest {
         server.enqueue(MockResponse.Builder().code(202).body("""{"accepted":0}""").build())

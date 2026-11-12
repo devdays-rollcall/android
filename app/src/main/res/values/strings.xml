@@ -10,7 +10,9 @@
     <string name="channel_alarms">Тревоги</string>
     <string name="channel_alarms_description">Тревоги и SOS участников группы. Звучат как будильник</string>
     <string name="channel_members">Участники</string>
-    <string name="channel_members_description">«Не слышно», подсказки, что рядом участник с тревогой, и вопрос «Вернулись?» в конце отлучки</string>
+    <string name="channel_members_description">Подсказки, что рядом участник с тревогой, и вопрос «Вернулись?» в конце отлучки</string>
+    <string name="channel_lost">Не слышно</string>
+    <string name="channel_lost_description">На маршруте: группа давно не слышала участника. Три коротких гудка с вибрацией</string>
     <string name="channel_rollcall">Перекличка</string>
     <string name="channel_rollcall_description">Руководитель начал перекличку</string>
 </resources>

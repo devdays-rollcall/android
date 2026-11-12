@@ -27,13 +27,19 @@ import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.RoomMeshStore
 import ru.pereklichka.data.db.LocationPointEntity
+import ru.pereklichka.data.db.key
+import ru.pereklichka.data.db.toEntity
 import ru.pereklichka.data.inMemoryDatabase
 import ru.pereklichka.di.NetworkModule
+import ru.pereklichka.domain.model.ControlEvent
+import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.EventType
 import ru.pereklichka.domain.model.GroupInfo
+import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.sync.ControlEventDraft
 import ru.pereklichka.domain.testing.FakeClock
+import ru.pereklichka.domain.time.Stamped
 import ru.pereklichka.service.OwnLocation
 import ru.pereklichka.status.GroupViewProvider
 import java.util.Collections
@@ -58,8 +64,10 @@ class UploadWorkerTest {
     private val uploadStatus = UploadStatus(context)
     private val settings = AppSettings(context)
 
-    // Вид считается на настоящем времени: виртуальное время runTest сработало бы на таймауте awaitRoute,
-    // пока Room отвечает из своего потока.
+    /**
+     * Область расчёта вида на настоящем времени: виртуальное время runTest сработало бы на таймауте `awaitRoute`,
+     * пока Room отвечает из своего потока.
+     */
     private val viewScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val viewProvider = GroupViewProvider(store, repository, PresenceTracker(clock), OwnLocation(), settings, clock, viewScope)
     private val server = MockWebServer()
@@ -95,7 +103,7 @@ class UploadWorkerTest {
 
         assertEquals(ListenableWorker.Result.success(), result)
         assertEquals(listOf(200, 50), batches.map { it.events.size })
-        assertEquals(0, db.locationDao().unsent(1_000).size)
+        assertEquals(0, db.locationDao().unsent(group.key, 1_000).size)
         assertTrue(batches.all { it.senderId == group.me.value })
         assertEquals("Bearer ${group.token}", server.takeRequest().headers["Authorization"])
     }
@@ -108,7 +116,7 @@ class UploadWorkerTest {
         val result = runWorker()
 
         assertEquals(ListenableWorker.Result.retry(), result)
-        assertEquals(10, db.locationDao().unsent(1_000).size)
+        assertEquals(10, db.locationDao().unsent(group.key, 1_000).size)
     }
 
     @Test
@@ -122,7 +130,7 @@ class UploadWorkerTest {
 
         assertEquals(200, batches.first().events.size)
         assertTrue(batches.drop(1).all { it.events.size <= 100 })
-        assertEquals(0, db.locationDao().unsent(1_000).size)
+        assertEquals(0, db.locationDao().unsent(group.key, 1_000).size)
     }
 
     @Test
@@ -136,8 +144,8 @@ class UploadWorkerTest {
 
         runWorker()
 
-        assertEquals(true, db.locationDao().isRejected(badId))
-        assertEquals(0, db.locationDao().unsent(1_000).size)
+        assertEquals(true, db.locationDao().isRejected(group.key, badId))
+        assertEquals(0, db.locationDao().unsent(group.key, 1_000).size)
         assertEquals((1..20).map { pid("point-$it") }.toSet() - badId, acceptedIds.toSet())
     }
 
@@ -154,8 +162,8 @@ class UploadWorkerTest {
 
         val badBatch = batches.indexOfFirst { it.events.singleOrNull()?.id == badId }
         assertEquals(listOf(200, 87), batches.drop(badBatch + 1).map { it.events.size })
-        assertEquals(true, db.locationDao().isRejected(badId))
-        assertEquals(0, db.locationDao().unsent(1_000).size)
+        assertEquals(true, db.locationDao().isRejected(group.key, badId))
+        assertEquals(0, db.locationDao().unsent(group.key, 1_000).size)
     }
 
     @Test
@@ -168,7 +176,7 @@ class UploadWorkerTest {
 
         assertEquals(ListenableWorker.Result.retry(), runWorker())
         assertEquals(listOf(200, 200), batches.map { it.events.size })
-        assertEquals(600, db.locationDao().unsent(1_000).size)
+        assertEquals(600, db.locationDao().unsent(group.key, 1_000).size)
     }
 
     @Test
@@ -177,7 +185,7 @@ class UploadWorkerTest {
         respond { MockResponse.Builder().code(200).body("<html>Войдите в сеть</html>").build() }
 
         assertEquals(ListenableWorker.Result.retry(), runWorker())
-        assertEquals(3, db.locationDao().unsent(10).size)
+        assertEquals(3, db.locationDao().unsent(group.key, 10).size)
         assertEquals(null, uploadStatus.lastError.value)
     }
 
@@ -187,7 +195,7 @@ class UploadWorkerTest {
         respond { MockResponse.Builder().code(204).build() }
 
         assertEquals(ListenableWorker.Result.retry(), runWorker())
-        assertEquals(3, db.locationDao().unsent(10).size)
+        assertEquals(3, db.locationDao().unsent(group.key, 10).size)
     }
 
     @Test
@@ -251,7 +259,7 @@ class UploadWorkerTest {
         respond { MockResponse.Builder().code(401).body(error("unauthorized")).build() }
 
         assertEquals(ListenableWorker.Result.failure(), runWorker())
-        assertEquals(5, db.locationDao().unsent(1_000).size)
+        assertEquals(5, db.locationDao().unsent(group.key, 1_000).size)
         assertNotNull(uploadStatus.lastError.value, "Ошибка 401 должна попасть на экран настроек")
     }
 
@@ -264,14 +272,14 @@ class UploadWorkerTest {
         runWorker()
 
         assertTrue(batches.flatMap { it.events }.none { it.id == "not-a-uuid" })
-        assertEquals(true, db.locationDao().isRejected("not-a-uuid"))
+        assertEquals(true, db.locationDao().isRejected(group.key, "not-a-uuid"))
         assertEquals(2, batches.sumOf { it.events.size })
     }
 
+    /** Точка вставлена в обход маппера и потому без пометки rejected: её должна поймать проверка перед отправкой. */
     @Test
     fun `точка с недопустимыми значениями на сервер не уходит`() = runTest {
         insertPoints(3)
-        // Запись вставлена в обход маппера и потому без пометки rejected: проверка перед отправкой должна её поймать.
         db.locationDao().insertAll(listOf(entity(pid("bad-point"), seq = 4, latitude = 120.0)))
         respond { batch -> accepted(batch) }
 
@@ -291,7 +299,26 @@ class UploadWorkerTest {
         assertEquals(setOf(pid("point-1"), pid("point-2"), pid("other-point")), acceptedIds.toSet())
         assertTrue(batches.all { it.senderId == group.me.value })
         assertEquals(pid("other-author"), batches.flatMap { it.events }.single { it.id == pid("other-point") }.memberId)
-        assertTrue(db.locationDao().unsent(10).isEmpty())
+        assertTrue(db.locationDao().unsent(group.key, 10).isEmpty())
+    }
+
+    @Test
+    fun `в каждой точке имя её автора из JOINED, без JOINED имени нет`() = runTest {
+        store.appendOwnEvent(ControlEventDraft(EventType.JOINED, name = "Аня"))
+        val joined = ControlEvent(EventId(pid("joined-b")), MemberId(pid("author-b")), 1, 0, EventType.JOINED, name = "Борис")
+        db.controlEventDao().insert(Stamped.own(joined, clock).toEntity(group.key))
+        insertPoints(1)
+        db.locationDao().insertAll(
+            listOf(
+                entity(pid("point-b"), 1).copy(author = pid("author-b")),
+                entity(pid("point-c"), 1).copy(author = pid("author-c")),
+            ),
+        )
+        respond { batch -> accepted(batch) }
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+        val names = batches.flatMap { it.events }.associate { it.id to it.username }
+        assertEquals(mapOf(pid("point-1") to "Аня", pid("point-b") to "Борис", pid("point-c") to null), names)
     }
 
     @Test
@@ -300,14 +327,14 @@ class UploadWorkerTest {
         settings.setServerUrl("http://127.0.0.1:1")
 
         assertEquals(ListenableWorker.Result.retry(), runWorker())
-        assertEquals(2, db.locationDao().unsent(10).size)
+        assertEquals(2, db.locationDao().unsent(group.key, 10).size)
     }
 
     @Test
-    fun `трек стёртой группы уходит с её токеном и от её имени после точек новой группы`() = runTest {
+    fun `трек прошлого маршрута уходит с его токеном и от моего имени в нём после точек новой группы`() = runTest {
         insertPoints(3)
         val old = group
-        repository.leaveGroup()
+        repository.archiveActiveGroup()
         group = repository.createGroup("Новый поход")
         db.locationDao().insertAll(listOf(entity(pid("new-point"), 1)))
         respond { batch -> accepted(batch) }
@@ -318,24 +345,45 @@ class UploadWorkerTest {
         assertEquals(listOf(1, 3), batches.map { it.events.size })
         assertEquals("Bearer ${group.token}", server.takeRequest().headers["Authorization"])
         assertEquals("Bearer ${old.token}", server.takeRequest().headers["Authorization"])
-        assertEquals(emptyList(), db.outboxDao().groups())
-        assertEquals(emptyList(), db.outboxDao().points(old.tag, 10))
+        assertEquals(emptyList(), db.locationDao().unsent(old.key, 10))
+        assertEquals(emptyList(), repository.pastGroupsWithUnsentTrack())
     }
 
     @Test
-    fun `очередь стёртых групп уходит и без активной группы, а ошибка оставляет её для повтора`() = runTest {
+    fun `трек прошлых маршрутов уходит и без активной группы, а ошибка оставляет его для повтора`() = runTest {
         insertPoints(2)
         val old = group
-        repository.leaveGroup()
+        repository.archiveActiveGroup()
         respond { MockResponse.Builder().code(503).body(error("unavailable")).build() }
 
         assertEquals(ListenableWorker.Result.retry(), runWorker())
-        assertEquals(2, db.outboxDao().points(old.tag, 10).size)
+        assertEquals(2, db.locationDao().unsent(old.key, 10).size)
 
         respond { batch -> accepted(batch) }
         assertEquals(ListenableWorker.Result.success(), runWorker())
         assertEquals(setOf(pid("point-1"), pid("point-2")), acceptedIds.toSet())
-        assertEquals(emptyList(), db.outboxDao().groups())
+        assertEquals(emptyList(), repository.pastGroupsWithUnsentTrack())
+    }
+
+    @Test
+    fun `отказ сервера по одному прошлому маршруту не держит трек остальных`() = runTest {
+        insertPoints(2)
+        val refused = group
+        repository.archiveActiveGroup()
+        group = repository.createGroup("Второй поход")
+        db.locationDao().insertAll(listOf(entity(pid("second-point"), 1)))
+        repository.archiveActiveGroup()
+        respond { batch ->
+            if (batch.senderId == refused.me.value) {
+                MockResponse.Builder().code(401).body(error("unauthorized")).build()
+            } else {
+                accepted(batch)
+            }
+        }
+
+        assertEquals(ListenableWorker.Result.failure(), runWorker())
+        assertEquals(setOf(pid("second-point")), acceptedIds.toSet())
+        assertEquals(2, db.locationDao().unsent(refused.key, 10).size)
     }
 
     private suspend fun runWorker(): ListenableWorker.Result {
@@ -343,7 +391,7 @@ class UploadWorkerTest {
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
                     UploadWorker(
-                        appContext, workerParameters, db.locationDao(), db.outboxDao(), repository,
+                        appContext, workerParameters, db.locationDao(), db.controlEventDao(), repository,
                         NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings, uploadStatus, viewProvider, clock,
                     )
             })
@@ -376,5 +424,5 @@ class UploadWorkerTest {
     private fun pid(name: String) = UUID.nameUUIDFromBytes(name.toByteArray()).toString()
 
     private fun entity(id: String, seq: Long, latitude: Double = 43.35) =
-        LocationPointEntity(id, group.me.value, seq, latitude, 42.44, 1_794_300_000_000, 5.0, null, null, null, 80)
+        LocationPointEntity(group.key, id, group.me.value, seq, latitude, 42.44, 1_794_300_000_000, 5.0, null, null, null, 80)
 }

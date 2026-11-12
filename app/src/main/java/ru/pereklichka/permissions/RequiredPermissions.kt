@@ -21,7 +21,8 @@ object RequiredPermissions {
 
     /**
      * Обмен через Nearby. `ACCESS_LOCAL_NETWORK` из списка Nearby объявлен в манифесте, но не запрашивается:
-     * Android 17 требует его только у приложений с targetSdk 37, а у нас 36.
+     * Android 17 требует его только у приложений с targetSdk 37, а у нас 36. До Android 13 сканирование Bluetooth
+     * и Wi-Fi, через которое Nearby ищет соседей, требует разрешения на геолокацию, поэтому туда входит [location].
      */
     fun exchange(sdk: Int = Build.VERSION.SDK_INT): List<String> = buildList {
         if (sdk >= Build.VERSION_CODES.S) {
@@ -30,7 +31,6 @@ object RequiredPermissions {
             add(Manifest.permission.BLUETOOTH_CONNECT)
         }
         if (sdk >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.NEARBY_WIFI_DEVICES)
-        // До Android 13 сканирование Bluetooth и Wi-Fi, через которое Nearby ищет соседей, требует разрешения на геолокацию.
         if (sdk < Build.VERSION_CODES.TIRAMISU) addAll(location())
     }
 

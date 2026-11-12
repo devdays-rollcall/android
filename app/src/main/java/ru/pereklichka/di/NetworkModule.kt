@@ -37,10 +37,10 @@ object NetworkModule {
         .callTimeout(60, TimeUnit.SECONDS)
         .build()
 
+    /** Клиент сервера событий. Адрес сервера приходит в каждом вызове через `@Url`, базовый адрес Retrofit требует формально. */
     @Provides
     @Singleton
     fun eventsApi(client: OkHttpClient): EventsApi = Retrofit.Builder()
-        // Адрес сервера приходит в каждом вызове через @Url, базовый адрес Retrofit требует формально.
         .baseUrl("http://localhost/")
         .client(client)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))

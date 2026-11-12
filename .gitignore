@@ -6,3 +6,5 @@ captures/
 *.iml
 .idea/
 .DS_Store
+keystore.properties
+*.jks

@@ -43,13 +43,13 @@ data class Stamped<out T>(
  *
  * Если телефон с момента получения не перезагружался, возраст точный и считается по монотонным часам.
  * После перезагрузки монотонные часы начались заново, поэтому берётся разница настенных часов,
- * и возраст помечается как примерный.
+ * и возраст помечается как примерный. Настенные часы могли перевести назад, поэтому их разница не бывает меньше нуля:
+ * возраст уменьшаться не должен.
  */
 fun Stamped<*>.ageNow(clock: Clock): Age {
     if (receivedBootId == clock.bootId()) {
         return Age(ageAtReceiptMs + (clock.elapsedMs() - receivedAtElapsedMs), approximate = false)
     }
-    // Настенные часы могли перевести назад, а возраст уменьшаться не должен.
     val wallPassedMs = (clock.wallMs() - receivedAtWallMs).coerceAtLeast(0)
     return Age(ageAtReceiptMs + wallPassedMs, approximate = true)
 }

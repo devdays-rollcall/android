@@ -32,7 +32,8 @@ class MeshCodec @Inject constructor(private val config: SyncConfig) {
     }
 
     /**
-     * Разбирает сообщение соседа.
+     * Разбирает сообщение соседа. Ловится `IllegalArgumentException`, потому что от него наследует
+     * `SerializationException`.
      *
      * @throws MeshFormatException если байты не разбираются: чужая версия формата, битый gzip или JSON,
      * нет обязательного поля. Движок отбрасывает такое сообщение и считает его в счётчиках экрана «Для разработчиков».
@@ -48,7 +49,6 @@ class MeshCodec @Inject constructor(private val config: SyncConfig) {
         return try {
             meshJson.decodeFromString(MeshMessage.serializer(), json.decodeToString())
         } catch (e: IllegalArgumentException) {
-            // SerializationException наследует IllegalArgumentException.
             throw MeshFormatException("Не удалось разобрать JSON", e)
         }
     }
@@ -70,8 +70,11 @@ class MeshCodec @Inject constructor(private val config: SyncConfig) {
         /** Предел распакованного JSON, байт. Нормальное сообщение распаковывается в сотни килобайт, а 32 КБ подобранного мусора gzip разворачивает в десятки мегабайт. */
         const val MAX_JSON_BYTES = 4 * 1024 * 1024
 
+        /**
+         * JSON обмена. `allowSpecialFloatingPointValues` нужен точкам с NaN: хранилище держит их в префиксе автора
+         * с пометкой rejected, и пересылать их тоже нужно.
+         */
         val meshJson = Json {
-            // Точки с NaN хранилище держит в префиксе автора с пометкой rejected, и пересылать их тоже нужно.
             allowSpecialFloatingPointValues = true
             ignoreUnknownKeys = true
             coerceInputValues = true

@@ -69,7 +69,8 @@ private val TimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
  * называет выбранный срок: «Отойти на 10 минут». Она объявляет отлучку и закрывает экран.
  *
  * Если отлучка уже идёт (`awayRemainingMs` у меня в `view.members`), сверху видно, сколько осталось, главная кнопка
- * становится «Я вернулся», а плитками можно выбрать новый срок: новая отлучка заменяет прежнюю.
+ * становится «Я вернулся», а плитками можно выбрать новый срок: новая отлучка заменяет прежнюю. Без отлучки срок
+ * выбран всегда: если она кончилась, пока экран открыт, главная кнопка не закроет его впустую.
  *
  * Задача: docs/team/valentin-ui.md
  */
@@ -84,7 +85,6 @@ fun AwayScreen(
     val awayRemainingMs = me?.awayRemainingMs
     val isAway = awayRemainingMs != null
     var picked by rememberSaveable { mutableStateOf<Int?>(null) }
-    // Без отлучки срок выбран всегда: если она кончилась, пока экран открыт, главная кнопка не закроет его впустую.
     val selected = picked ?: if (isAway) null else DEFAULT_MINUTES
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onBackground) {

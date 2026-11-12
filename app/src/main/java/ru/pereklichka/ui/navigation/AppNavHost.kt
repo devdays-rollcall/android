@@ -7,6 +7,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -26,6 +27,7 @@ import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.notify.NotificationTarget
 import ru.pereklichka.permissions.PermissionsScreen
 import ru.pereklichka.ui.GroupViewModel
+import ru.pereklichka.ui.PastRoutesViewModel
 import ru.pereklichka.ui.screens.AlarmScreen
 import ru.pereklichka.ui.screens.AwayScreen
 import ru.pereklichka.ui.screens.CreateGroupScreen
@@ -34,6 +36,7 @@ import ru.pereklichka.ui.screens.GroupScreen
 import ru.pereklichka.ui.screens.JoinScreen
 import ru.pereklichka.ui.screens.LobbyScreen
 import ru.pereklichka.ui.screens.MemberScreen
+import ru.pereklichka.ui.screens.PastRouteScreen
 import ru.pereklichka.ui.screens.RollcallScreen
 import ru.pereklichka.ui.screens.SosScreen
 import ru.pereklichka.ui.screens.StartScreen
@@ -45,10 +48,22 @@ import ru.pereklichka.ui.settings.SettingsScreen
  *
  * Один [GroupViewModel] на всю навигацию, поэтому экраны группы смотрят на один и тот же `GroupView`. Первый экран
  * зависит от того, была ли активная группа при запуске. Дальше навигация следит за [GroupViewModel.hasGroup]:
- * когда группа появилась, экран создания или вступления сменяется экраном группы, а когда её стёрла «Новая группа»,
- * приложение уходит на старт. С экрана завершённой группы «Назад» тоже ведёт на старт, а группа остаётся на телефоне
- * и открывается оттуда же. При каждом возврате приложения на экран вызывается
+ * когда группа появилась, экран создания или вступления сменяется экраном группы, а когда служба закрыла её после
+ * выхода или отмены сбора, приложение уходит на старт. С экрана завершённой группы «Назад» и «Новый маршрут» тоже
+ * ведут на старт, а группа остаётся активной и открывается оттуда же. Прошлые маршруты открываются со старта на
+ * просмотр, их список и удаление даёт [PastRoutesViewModel]. При каждом возврате приложения на экран вызывается
  * [GroupViewModel.ensureRouteServiceRunning], так служба оживает после убийства процесса или выдачи разрешений.
+ *
+ * Экран группы сменяет экран создания по состоянию, а не из корутины создания: после поворота экрана группа может
+ * появиться, когда экран создания уже пересоздан вместе с навигацией. Ключ группы перезапускает переход, даже если
+ * промежуточное false при смене группы экран не застал. Нажатие на уведомление открывает его экран поверх текущего,
+ * и повторное нажатие копию экрана не добавляет.
+ *
+ * QR активной группы ведёт на экран группы без нового вступления: иначе группа ушла бы в прошлые маршруты, а телефон
+ * вступил бы в неё ещё раз с новым member_id и появился бы у остальных дважды. Отмена сбора без вступивших удаляет
+ * группу, и навигация сама уходит на старт; если кто-то вступил, сбор становится завершённым и его показывает экран
+ * группы. Разрешения со старта открываются без проверки RESUMED, потому что стартовый экран открывает их сам ещё до
+ * конца перехода на него, а вторую копию экрана не даст `launchSingleTop`.
  */
 @Composable
 fun AppNavHost(
@@ -58,6 +73,7 @@ fun AppNavHost(
 ) {
     val hadGroupAtStart by viewModel.hadGroupAtStart.collectAsStateWithLifecycle()
     val hasGroup by viewModel.hasGroup.collectAsStateWithLifecycle()
+    val activeGroupKey by viewModel.activeGroupKey.collectAsStateWithLifecycle()
     val view by viewModel.view.collectAsStateWithLifecycle()
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val serviceStarted by viewModel.serviceStarted.collectAsStateWithLifecycle()
@@ -76,7 +92,6 @@ fun AppNavHost(
         false -> StartRoute
     }
 
-    // Нажатие на уведомление: открыть экран поверх текущего. Повторное нажатие не плодит копии экрана.
     LaunchedEffect(openTarget) {
         val target = openTarget ?: return@LaunchedEffect
         val route: Any = when (target) {
@@ -89,9 +104,7 @@ fun AppNavHost(
         onOpenHandled()
     }
 
-    // Переход по состоянию, а не из корутины создания: после поворота экрана группа может появиться, когда
-    // экран создания уже пересоздан вместе с навигацией.
-    LaunchedEffect(hasGroup) {
+    LaunchedEffect(hasGroup, activeGroupKey) {
         val destination = navController.currentBackStackEntry?.destination ?: return@LaunchedEffect
         when (hasGroup) {
             true -> when {
@@ -106,18 +119,37 @@ fun AppNavHost(
     NavHost(navController, startDestination = startDestination) {
         composable<StartRoute> {
             val go = onlyWhenResumed()
+            val pastRoutes: PastRoutesViewModel = hiltViewModel()
+            val routes by pastRoutes.routes.collectAsStateWithLifecycle()
             StartScreen(
                 lastGroup = view.takeIf { hasGroup == true },
-                hasStoredGroup = hasGroup == true,
                 trackStatus = trackStatus,
+                pastRoutes = routes,
+                exchange = exchange,
                 onOpenGroup = { go { navController.replaceStack(GroupRoute) } },
-                onCreateGroup = { go { navController.open(CreateGroupRoute) } },
-                onJoinGroup = { go { navController.open(JoinRoute) } },
-                // Без проверки RESUMED: стартовый экран открывает разрешения сам, ещё до конца перехода на него,
-                // а второй копии экрана не будет и так из-за launchSingleTop.
+                onOpenPastRoute = { key -> go { navController.open(PastRouteRoute(key)) } },
+                onCreateGroup = { go { viewModel.resetSettingUp(); navController.open(CreateGroupRoute) } },
+                onJoinGroup = { go { viewModel.resetSettingUp(); navController.open(JoinRoute) } },
                 onPermissions = { navController.open(PermissionsRoute) },
                 onSettings = { go { navController.open(SettingsRoute) } },
             )
+        }
+        composable<PastRouteRoute> { entry ->
+            val go = onlyWhenResumed()
+            val key = entry.toRoute<PastRouteRoute>().key
+            val pastRoutes: PastRoutesViewModel = hiltViewModel()
+            val details by remember(key) { pastRoutes.details(key) }.collectAsStateWithLifecycle(initialValue = null)
+            val current = details
+            if (current == null) {
+                Loading()
+            } else {
+                PastRouteScreen(
+                    current,
+                    nowWallMs = remember { System.currentTimeMillis() },
+                    onDelete = { go { pastRoutes.delete(key); navController.popBackStack() } },
+                    onBack = { go { navController.popBackStack() } },
+                )
+            }
         }
         composable<CreateGroupRoute> {
             val go = onlyWhenResumed()
@@ -131,7 +163,9 @@ fun AppNavHost(
             val go = onlyWhenResumed()
             JoinScreen(
                 joining = settingUp,
-                onJoin = viewModel::joinGroup,
+                onJoin = { qr, myName ->
+                    if (view?.group?.token == qr.token) go { navController.replaceStack(GroupRoute) } else viewModel.joinGroup(qr, myName)
+                },
                 onBack = { go { navController.popBackStack() } },
             )
         }
@@ -145,8 +179,6 @@ fun AppNavHost(
                     onStartRoute = { go { viewModel.startRoute(); navController.replaceStack(GroupRoute) } },
                     onOpenGroup = { go { navController.replaceStack(GroupRoute) } },
                     onPermissions = { go { navController.open(PermissionsRoute) } },
-                    // Без вступивших группа стирается, и навигация сама уйдёт на старт; иначе сбор становится
-                    // завершённым, и его показывает экран группы.
                     onCancelGathering = {
                         val joined = it.members.any { member -> !member.isMe }
                         viewModel.cancelGathering()
@@ -171,13 +203,12 @@ fun AppNavHost(
                     onPermissions = { go { navController.open(PermissionsRoute) } },
                     onLobby = { go { navController.open(LobbyRoute) } },
                     onStopService = viewModel::stopService,
-                    onNewGroup = viewModel::leaveGroup,
+                    onLeaveNow = viewModel::leaveGroup,
                     onToStart = { go { navController.replaceStack(StartRoute) } },
                     onQuit = viewModel::quitGroup,
                     onCancelGathering = viewModel::cancelGathering,
                     quitting = quitting,
                     exchange = exchange,
-                    trackStatus = trackStatus,
                 )
             }
         }
@@ -254,7 +285,7 @@ fun AppNavHost(
                     trackStatus = trackStatus,
                     onFinish = viewModel::finishRoute,
                     onStopService = viewModel::stopService,
-                    onNewGroup = viewModel::leaveGroup,
+                    onNewRoute = { go { navController.replaceStack(StartRoute) } },
                     onPermissions = { go { navController.open(PermissionsRoute) } },
                     onBack = { go { navController.popBackStack() } },
                 )
@@ -295,7 +326,7 @@ private fun NavHostController.open(route: Any) {
 }
 
 /**
- * Переход без возврата: после создания группы, вступления, «Новой группы» и между стартом и завершённой группой
+ * Переход без возврата: после создания группы, вступления, закрытия группы и между стартом и завершённой группой
  * «Назад» не ведёт на прошлый экран.
  */
 private fun NavHostController.replaceStack(route: Any) {
@@ -303,7 +334,7 @@ private fun NavHostController.replaceStack(route: Any) {
 }
 
 /**
- * В стеке есть экраны группы, а со стёртой группой на них оставаться нельзя. `getBackStackEntry` бросает
+ * В стеке есть экраны группы, а с закрытой группой на них оставаться нельзя. `getBackStackEntry` бросает
  * исключение, если экрана в стеке нет.
  */
 private fun NavHostController.inGroup(): Boolean =

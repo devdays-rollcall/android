@@ -30,6 +30,7 @@ class SyncEngineLifecycleTest {
         engine.stop()
     }
 
+    /** Если бы таймер Hello пережил остановку, он вызвал бы обработчик, и тест упал бы. */
     @Test
     fun `остановка отменяет корутины движка, и его можно запустить снова`() = runTest {
         val engine = engine()
@@ -40,7 +41,6 @@ class SyncEngineLifecycleTest {
         engine.stop()
         assertFalse(engine.diagnostics.value.running)
 
-        // Если бы таймер Hello пережил остановку, он вызвал бы обработчик и тест упал бы.
         advanceTimeBy(SyncConfig().helloIntervalMs * 3)
 
         engine.start(backgroundScope, group)

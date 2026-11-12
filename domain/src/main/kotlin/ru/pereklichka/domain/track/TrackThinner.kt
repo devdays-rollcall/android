@@ -16,10 +16,12 @@ class TrackThinner @Inject constructor() {
 
     private var lastKept: Fix? = null
 
-    /** true, если фиксацию нужно сохранить как точку трека. Обе границы включаются. */
+    /**
+     * true, если фиксацию нужно сохранить как точку трека. Обе границы включаются. Время считается по монотонным
+     * часам: `Location.time` можно перевести, и тогда пропала бы минутная точка.
+     */
     fun shouldKeep(fix: Fix): Boolean {
         val previous = lastKept
-        // Время считается по монотонным часам: Location.time можно перевести, и тогда пропала бы минутная точка.
         val keep = previous == null ||
             fix.elapsedRealtimeMs - previous.elapsedRealtimeMs >= MAX_INTERVAL_MS ||
             hasMoved(previous, fix)
@@ -27,8 +29,11 @@ class TrackThinner @Inject constructor() {
         return keep
     }
 
+    /**
+     * Сместился ли человек на [MIN_DISTANCE_M]. По неточной фиксации смещение не считается: у стоящего человека
+     * она «гуляет» на десятки метров.
+     */
     private fun hasMoved(previous: Fix, fix: Fix): Boolean {
-        // Неточная фиксация «гуляет» на десятки метров у стоящего человека, смещение по ней не считаем.
         if (!fix.isPreciseEnough() || !previous.isPreciseEnough()) return false
         return Geo.distanceM(previous.position, fix.position) >= MIN_DISTANCE_M
     }

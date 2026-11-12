@@ -6,6 +6,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import ru.pereklichka.data.db.AppDatabase
+import ru.pereklichka.data.db.key
 import ru.pereklichka.data.db.toEntity
 import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.GroupInfo
@@ -22,14 +23,16 @@ import ru.pereklichka.domain.time.Clock
 class RoomMeshStoreContractTest : MeshStoreContractTest() {
 
     private lateinit var db: AppDatabase
+    private lateinit var group: GroupInfo
 
     override suspend fun createStore(group: GroupInfo, clock: Clock): MeshStore {
         db = inMemoryDatabase()
-        db.groupDao().insert(group.toEntity())
+        this.group = group
+        db.groupDao().insert(group.toEntity(active = true))
         return RoomMeshStore(db, GroupRepository(db, clock), clock)
     }
 
-    override suspend fun isRejected(pointId: EventId): Boolean = db.locationDao().isRejected(pointId.value) == true
+    override suspend fun isRejected(pointId: EventId): Boolean = db.locationDao().isRejected(group.key, pointId.value) == true
 
     @After
     fun close() = db.close()

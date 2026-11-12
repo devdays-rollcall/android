@@ -16,7 +16,11 @@ data class EventBatchDto(
     val events: List<EventInputDto>,
 )
 
-/** `EventInput`. В [id] лежит UUID точки, он не меняется ни при пересылке, ни при повторной отправке. */
+/**
+ * `EventInput`. В [id] лежит UUID точки, он не меняется ни при пересылке, ни при повторной отправке. [username]
+ * показывает карта рядом с участником и уведомление о SOS. Имя берётся из JOINED автора точки; если оно ещё не дошло
+ * до этого телефона, поле не отправляется, и карта покажет только `member_id`.
+ */
 @Serializable
 data class EventInputDto(
     val id: String,
@@ -25,6 +29,8 @@ data class EventInputDto(
     /** RFC 3339 с `Z`, например `2026-11-09T12:00:00.120Z`. */
     @SerialName("recorded_at") val recordedAt: String,
     val data: LocationDataDto,
+    /** От 1 до [MAX_USERNAME_LENGTH] кодовых точек, пустое или более длинное имя сервер отклоняет ответом 422. */
+    val username: String? = null,
 )
 
 /** Контракт сервера допускает единственный тип события; другой отклоняет всю пачку. */
@@ -61,6 +67,7 @@ data class EventOutputDto(
     @SerialName("recorded_at") val recordedAt: String,
     @SerialName("received_at") val receivedAt: String,
     val data: LocationDataDto,
+    val username: String? = null,
 )
 
 @Serializable
@@ -75,8 +82,15 @@ data class AlertResultDto(val notified: Boolean)
 @Serializable
 data class ShareTokenDto(val token: String)
 
-/** Точка трека в виде события для сервера. Проверку значений перед отправкой делает `UploadWorker`. */
-fun LocationPoint.toEventInput(): EventInputDto = EventInputDto(
+/** Предел длины `username` в контракте сервера, в кодовых точках Unicode. */
+const val MAX_USERNAME_LENGTH = 100
+
+/**
+ * Точка трека в виде события для сервера, [username] это имя её автора. Проверку значений перед отправкой делает
+ * `UploadWorker`. Пустое имя не отправляется, а длинное укорачивается до [MAX_USERNAME_LENGTH] кодовых точек:
+ * иначе сервер отклонил бы точку из-за имени.
+ */
+fun LocationPoint.toEventInput(username: String? = null): EventInputDto = EventInputDto(
     id = id.value,
     memberId = author.value,
     type = EventTypeDto.LOCATION,
@@ -90,4 +104,10 @@ fun LocationPoint.toEventInput(): EventInputDto = EventInputDto(
         bearingDeg = bearingDeg,
         batteryPercent = batteryPercent,
     ),
+    username = username?.trim()?.takeIf { it.isNotEmpty() }?.let(::limitUsername),
 )
+
+private fun limitUsername(name: String): String {
+    if (name.codePointCount(0, name.length) <= MAX_USERNAME_LENGTH) return name
+    return name.substring(0, name.offsetByCodePoints(0, MAX_USERNAME_LENGTH)).trimEnd()
+}
