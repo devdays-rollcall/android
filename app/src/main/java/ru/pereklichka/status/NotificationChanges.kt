@@ -17,7 +17,9 @@ data class NotificationChanges(val show: List<NotifyEvent>, val dismiss: List<St
  * руководитель и только на маршруте, потому что в «Сборе» люди ещё не вышли, а после завершения уже разошлись.
  * Об участниках, которых не было слышно уже в момент ROUTE_STARTED, руководитель тоже узнаёт, а после
  * ROUTE_FINISHED все уведомления «Не слышно» убираются. Новая перекличка, на которую я не ответил, даёт
- * RollcallStarted, новая подсказка о близости NearbyConfirm. Когда повод пропал, уведомление убирается.
+ * RollcallStarted, новая подсказка о близости NearbyConfirm. Когда до конца моей отлучки остаётся не больше
+ * [AWAY_REMINDER_MS], приходит AwayEnding. Когда повод пропал, уведомление убирается: отлучку отменили, продлили
+ * или она кончилась.
  * В начале каждого запуска монитора [previous] равен null, и об активных тревогах напомнят ещё раз.
  */
 fun notificationChanges(previous: GroupView?, current: GroupView): NotificationChanges {
@@ -55,7 +57,20 @@ fun notificationChanges(previous: GroupView?, current: GroupView): NotificationC
     }
     for (member in previousPrompts - currentPrompts) dismiss += NotifyEvent.nearbyKey(member)
 
+    val wasAwayEnding = previous?.myAwayEnding() == true
+    val isAwayEnding = current.myAwayEnding()
+    if (isAwayEnding && !wasAwayEnding) show += NotifyEvent.AwayEnding
+    if (wasAwayEnding && !isAwayEnding) dismiss += NotifyEvent.AWAY_ENDING_KEY
+
     return NotificationChanges(show, dismiss)
+}
+
+/** За сколько миллисекунд до конца моей отлучки спросить «Вернулись?». */
+const val AWAY_REMINDER_MS = 60_000L
+
+private fun GroupView.myAwayEnding(): Boolean {
+    val remainingMs = members.firstOrNull { it.isMe }?.awayRemainingMs ?: return false
+    return remainingMs <= AWAY_REMINDER_MS
 }
 
 private fun GroupView.lostMembersToReport(): Set<MemberId> =

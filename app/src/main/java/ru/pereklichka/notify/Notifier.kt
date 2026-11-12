@@ -52,7 +52,17 @@ sealed interface NotifyEvent {
         override val key: String get() = nearbyKey(member)
     }
 
+    /**
+     * До конца моей отлучки осталось не больше минуты: «Вернулись?» с кнопками «Я вернулся» и «Ещё 10 минут».
+     * Уведомление одно на телефон, поэтому ключ постоянный.
+     */
+    data object AwayEnding : NotifyEvent {
+        override val key: String get() = AWAY_ENDING_KEY
+    }
+
     companion object {
+        const val AWAY_ENDING_KEY = "away:ending"
+
         fun alarmKey(alarmId: EventId) = "alarm:$alarmId"
         fun lostKey(member: MemberId) = "lost:$member"
         fun rollcallKey(rollcallId: EventId) = "rollcall:$rollcallId"

@@ -16,7 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Какие уведомления даёт переход от одного `GroupView` к другому: тревоги, «Не слышно», перекличка, подсказки. */
+/** Какие уведомления даёт переход от одного `GroupView` к другому: тревоги, «Не слышно», перекличка, подсказки, конец отлучки. */
 class NotificationChangesTest {
 
     private val leader = MemberId("leader")
@@ -96,6 +96,31 @@ class NotificationChangesTest {
         assertEquals(listOf(NotifyEvent.nearbyKey(bob)), notificationChanges(prompted, leaderView).dismiss)
     }
 
+    @Test
+    fun `за минуту до конца моей отлучки спрашивают «Вернулись» один раз`() {
+        val away = annView.withAway(ann, 5 * 60_000)
+        val ending = annView.withAway(ann, 60_000)
+        val almostOver = annView.withAway(ann, 2_000)
+
+        assertEquals(emptyList(), notificationChanges(annView, away).show)
+        assertEquals(listOf(NotifyEvent.AwayEnding), notificationChanges(away, ending).show)
+        assertEquals(emptyList(), notificationChanges(ending, almostOver).show)
+        assertEquals(listOf(NotifyEvent.AwayEnding), notificationChanges(previous = null, current = ending).show)
+    }
+
+    @Test
+    fun `«Вернулись» убирается, когда отлучку отменили, продлили или она кончилась`() {
+        val ending = annView.withAway(ann, 30_000)
+
+        assertEquals(listOf(NotifyEvent.AWAY_ENDING_KEY), notificationChanges(ending, annView).dismiss)
+        assertEquals(listOf(NotifyEvent.AWAY_ENDING_KEY), notificationChanges(ending, annView.withAway(ann, 10 * 60_000)).dismiss)
+    }
+
+    @Test
+    fun `чужая отлучка «Вернулись» не даёт`() {
+        assertEquals(emptyList(), notificationChanges(annView, annView.withAway(bob, 30_000)).show)
+    }
+
     private fun view(me: MemberId) = GroupView(
         group = GroupInfo("tag", "token", "Поход", leaderId = leader, me = me, createdAtWallMs = 0),
         me = me,
@@ -118,4 +143,8 @@ class NotificationChangesTest {
 
     private fun GroupView.withPresence(member: MemberId, presence: Presence) =
         copy(members = members.map { if (it.id == member) it.copy(presence = presence) else it })
+
+    private fun GroupView.withAway(member: MemberId, remainingMs: Long) = copy(
+        members = members.map { if (it.id == member) it.copy(presence = Presence.AWAY, awayRemainingMs = remainingMs) else it },
+    )
 }

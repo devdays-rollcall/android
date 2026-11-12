@@ -85,6 +85,11 @@
             android:name=".notify.AlarmSwipeReceiver"
             android:exported="false" />
 
+        <!-- Кнопки «Я вернулся» и «Ещё 10 минут» уведомления «Вернулись?», их шлёт только система от имени приложения. -->
+        <receiver
+            android:name=".notify.AwayReminderReceiver"
+            android:exported="false" />
+
         <!-- Сканер QR поворачивается вместе с телефоном, по умолчанию он только альбомный. -->
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"
