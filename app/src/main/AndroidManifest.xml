@@ -2,9 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Nearby Connections: список из документации Nearby для своих версий Android. -->
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" android:maxSdkVersion="32" />
+    <!--
+        Nearby Connections: список из документации Nearby для своих версий Android. Состояние Wi-Fi Nearby
+        проверяет на всех версиях: без него advertising и discovery падают с MISSING_PERMISSION_ACCESS_WIFI_STATE.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
@@ -21,7 +24,7 @@
     <!-- GPS трека; до Android 13 его же требует Nearby. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- «Разрешить всегда»: объявлено заранее, сейчас не запрашивается. -->
+    <!-- «Разрешить всегда»: с ним служба после перезапуска снова пишет трек. Спрашивает экран разрешений. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
