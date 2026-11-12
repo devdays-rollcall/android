@@ -54,7 +54,7 @@ class SyncEngine @Inject constructor(
 ) {
     private val diagnosticsState = MutableStateFlow(SyncDiagnostics())
 
-    /** Счётчики для экрана диагностики. */
+    /** Счётчики для экрана «Для разработчиков». */
     val diagnostics: StateFlow<SyncDiagnostics> = diagnosticsState.asStateFlow()
 
     private val reportedState = MutableStateFlow<Map<MemberId, Map<MemberId, Long>>>(emptyMap())

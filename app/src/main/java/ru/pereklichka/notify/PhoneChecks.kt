@@ -6,7 +6,7 @@ import androidx.core.app.NotificationManagerCompat
 
 /**
  * Проверки телефона, от которых зависит, услышит ли человек тревогу. Читают их экран группы (предупреждения),
- * диагностика (раздел «Телефон») и [AndroidNotifier].
+ * экран «Настройки» (раздел «Проверка телефона») и [AndroidNotifier].
  */
 object PhoneChecks {
 

@@ -42,4 +42,7 @@ object FinishRouteRoute
 object PermissionsRoute
 
 @Serializable
-object DiagnosticsRoute
+object SettingsRoute
+
+@Serializable
+object DevRoute

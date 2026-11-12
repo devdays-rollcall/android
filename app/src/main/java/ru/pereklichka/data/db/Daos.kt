@@ -55,7 +55,7 @@ interface ControlEventDao {
     suspend fun deleteAll()
 }
 
-/** Запросы к точкам трека для `RoomMeshStore`, `UploadWorker` (неотправленные и пометки) и счётчиков диагностики. */
+/** Запросы к точкам трека для `RoomMeshStore`, `UploadWorker` (неотправленные и пометки) и счётчиков на экранах настроек. */
 @Dao
 interface LocationDao {
     /** Падает на повторном id или паре (author, seq): хранилище проверяет это до вставки. */
