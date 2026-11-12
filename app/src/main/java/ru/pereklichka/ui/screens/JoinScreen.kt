@@ -75,7 +75,7 @@ private fun JoinContent(
     val valid = scanned as? QrParseResult.Valid
     val ready = valid != null && myName.isNotBlank() && !joining
     val join = {
-        if (ready && valid != null) onJoin(valid.payload, myName.trim())
+        if (ready) onJoin(valid.payload, myName.trim())
     }
 
     AppScreen(

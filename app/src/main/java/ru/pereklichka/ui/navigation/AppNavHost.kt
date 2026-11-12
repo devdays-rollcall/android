@@ -262,10 +262,12 @@ private fun NavHostController.replaceStack(route: Any) {
     navigate(route) { popUpTo(graph.id) { inclusive = true } }
 }
 
-/** В стеке есть экраны группы, а со стёртой группой на них оставаться нельзя. */
-private fun NavHostController.inGroup(): Boolean = currentBackStack.value.any {
-    it.destination.hasRoute<GroupRoute>() || it.destination.hasRoute<LobbyRoute>()
-}
+/**
+ * В стеке есть экраны группы, а со стёртой группой на них оставаться нельзя. `getBackStackEntry` бросает
+ * исключение, если экрана в стеке нет.
+ */
+private fun NavHostController.inGroup(): Boolean =
+    runCatching { getBackStackEntry<GroupRoute>() }.isSuccess || runCatching { getBackStackEntry<LobbyRoute>() }.isSuccess
 
 /** Рисует экран группы, когда есть `GroupView`, а до первого расчёта показывает ожидание. */
 @Composable
