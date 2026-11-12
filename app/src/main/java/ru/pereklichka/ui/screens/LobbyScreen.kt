@@ -1,8 +1,11 @@
 package ru.pereklichka.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.res.Configuration
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -27,7 +30,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,7 +43,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -64,8 +71,13 @@ import ru.pereklichka.ui.components.WarningBanner
 import ru.pereklichka.ui.components.avatarColor
 import ru.pereklichka.ui.components.rememberPermissionWarning
 import ru.pereklichka.ui.theme.PereklichkaTheme
+import ru.pereklichka.ui.theme.statusColors
+import kotlinx.coroutines.delay
 
 private const val QR_SIZE_PX = 720
+
+/** Сколько висит отметка «Ключ скопирован». */
+private const val COPIED_SHOWN_MS = 2_500L
 
 /** Сколько аватаров вступивших рисовать внахлёст; остальные сводятся в кружок «+N». */
 private const val AVATARS_SHOWN = 4
@@ -76,7 +88,8 @@ private const val AVATARS_SHOWN = 4
  * маршрута внизу «К списку группы».
  *
  * QR чёрный на белом даже в тёмной теме: так его считают с полуметра на солнце. Ключ группы скрыт и показывается
- * кнопкой «Показать ключ группы». «Поделиться» отправляет через `ACTION_SEND` название группы, ключ и [serverUrl]
+ * кнопкой «Показать ключ группы»; та же кнопка копирует его в буфер обмена, а под ключом на пару секунд появляется
+ * «Ключ скопирован». Нажатие на сам ключ копирует его ещё раз. «Поделиться» отправляет через `ACTION_SEND` название группы, ключ и [serverUrl]
  * (пока у сайта карты нет своего адреса).
  *
  * Если служба не запустилась ([serviceStarted] равен false) или не хватает разрешений, над QR предупреждение
@@ -214,6 +227,21 @@ private fun QrCard(view: GroupView) {
     }
     val qrBitmap = remember(qrText) { QrImage.bitmap(qrText, QR_SIZE_PX).asImageBitmap() }
     var keyShown by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    // Каждое копирование увеличивает счётчик: отметка «Ключ скопирован» показывается заново и при повторном нажатии.
+    var copyCount by remember { mutableIntStateOf(0) }
+    var copiedShown by remember { mutableStateOf(false) }
+    LaunchedEffect(copyCount) {
+        if (copyCount == 0) return@LaunchedEffect
+        copiedShown = true
+        delay(COPIED_SHOWN_MS)
+        copiedShown = false
+    }
+    val copyKey: () -> Unit = {
+        context.getSystemService(ClipboardManager::class.java)
+            ?.setPrimaryClip(ClipData.newPlainText("Ключ группы", view.group.token))
+        copyCount++
+    }
     ListCard {
         Column(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 12.dp),
@@ -234,17 +262,50 @@ private fun QrCard(view: GroupView) {
                 textAlign = TextAlign.Center,
             )
             if (keyShown) {
-                Text(
-                    view.group.token,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 20.sp,
-                    letterSpacing = 2.sp,
-                    textAlign = TextAlign.Center,
+                Surface(
+                    onClick = copyKey,
                     modifier = Modifier.padding(top = 10.dp),
-                )
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    Row(
+                        Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            view.group.token,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 20.sp,
+                            letterSpacing = 2.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                        SymIcon(R.drawable.sym_content_copy, size = 20.dp, contentDescription = "Скопировать ключ группы")
+                    }
+                }
             }
-            TextButton(onClick = { keyShown = !keyShown }, modifier = Modifier.padding(top = 2.dp)) {
+            AnimatedVisibility(visible = copiedShown) {
+                Row(
+                    Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SymIcon(R.drawable.sym_check_circle_fill, size = 18.dp, tint = MaterialTheme.statusColors.ok.content)
+                    Text(
+                        "Ключ скопирован",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.statusColors.ok.content,
+                    )
+                }
+            }
+            TextButton(
+                onClick = {
+                    keyShown = !keyShown
+                    if (keyShown) copyKey()
+                },
+                modifier = Modifier.padding(top = 2.dp),
+            ) {
                 SymIcon(R.drawable.sym_key, size = 18.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(if (keyShown) "Скрыть ключ группы" else "Показать ключ группы", style = MaterialTheme.typography.titleSmall)
