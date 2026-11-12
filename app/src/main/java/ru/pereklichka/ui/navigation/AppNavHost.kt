@@ -106,7 +106,7 @@ fun AppNavHost(
                 // Без проверки RESUMED: стартовый экран открывает разрешения сам, ещё до конца перехода на него,
                 // а второй копии экрана не будет и так из-за launchSingleTop.
                 onPermissions = { navController.open(PermissionsRoute) },
-                onDiagnostics = { go { navController.open(DiagnosticsRoute) } },
+                onSettings = { go { navController.open(DiagnosticsRoute) } },
             )
         }
         composable<CreateGroupRoute> {

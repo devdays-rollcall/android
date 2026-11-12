@@ -85,13 +85,6 @@
             android:name=".notify.AlarmSwipeReceiver"
             android:exported="false" />
 
-        <!-- Сканер QR поворачивается вместе с телефоном, по умолчанию он только альбомный. -->
-        <activity
-            android:name="com.journeyapps.barcodescanner.CaptureActivity"
-            android:screenOrientation="fullSensor"
-            tools:ignore="DiscouragedApi"
-            tools:replace="android:screenOrientation" />
-
         <!-- WorkManager получает фабрику воркеров от Hilt в App, стандартный инициализатор не нужен. -->
         <provider
             android:name="androidx.startup.InitializationProvider"

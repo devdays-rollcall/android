@@ -1,93 +1,122 @@
 package ru.pereklichka.ui.screens
 
 import android.content.res.Configuration
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import ru.pereklichka.R
 import ru.pereklichka.domain.sync.ControlEventDraft
 import ru.pereklichka.ui.components.AppScreen
-import ru.pereklichka.ui.components.BigButton
-import ru.pereklichka.ui.components.CardLabel
-import ru.pereklichka.ui.components.HintText
-import ru.pereklichka.ui.components.InfoCard
-import ru.pereklichka.ui.components.LabeledField
+import ru.pereklichka.ui.components.BigButtonFull
+import ru.pereklichka.ui.components.CardShape
+import ru.pereklichka.ui.components.IconTextField
+import ru.pereklichka.ui.components.ListCard
+import ru.pereklichka.ui.components.ListRow
+import ru.pereklichka.ui.components.SectionHeader
+import ru.pereklichka.ui.components.SymIcon
 import ru.pereklichka.ui.theme.PereklichkaTheme
 
-
 /**
- * Создание группы по макету («Новая группа»): поля «Название группы» и «Ваше имя», карточка о токене и «Создать группу».
- * Кнопка неактивна, пока хоть одно поле пустое и пока группа создаётся ([creating]). Экран QR (`LobbyScreen`)
- * открывает навигация, когда группа появилась в базе.
+ * Создание группы («Новая группа»): поля «Название похода» и «Ваше имя», карточка «Интернет не нужен» о ключе группы,
+ * два шага «Что будет дальше» и «Создать группу». Кнопка неактивна, пока хоть одно поле пустое и пока группа
+ * создаётся ([creating]). Экран сбора с QR (`LobbyScreen`) открывает навигация, когда группа появилась в базе.
  *
  * [onCreate] пишет группу и запускает службу. Разрешения спрашивает стартовый экран, а если их так и не выдали,
- * экран QR предупредит, что служба не запущена.
- *
- * Задача: docs/team/valentin-ui.md
+ * экран сбора предупредит, что служба не запущена.
  */
 @Composable
 fun CreateGroupScreen(creating: Boolean, onCreate: (groupName: String, myName: String) -> Unit, onBack: () -> Unit) {
-    var groupName by rememberSaveable { mutableStateOf("") }
-    var myName by rememberSaveable { mutableStateOf("") }
-    val ready = groupName.isNotBlank() && myName.isNotBlank() && !creating
-    val create = { if (ready) onCreate(groupName.trim(), myName.trim()) }
+    val groupName = rememberTextFieldState()
+    val myName = rememberTextFieldState()
+    val ready = groupName.text.isNotBlank() && myName.text.isNotBlank() && !creating
+    val create = { if (ready) onCreate(groupName.text.trim().toString(), myName.text.trim().toString()) }
 
     AppScreen(
         title = "Новая группа",
         onBack = onBack,
         bottom = {
-            BigButton(
-                text = if (creating) "Создаём…" else "Создать группу",
-                onClick = create,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = ready,
-            )
+            BigButtonFull(if (creating) "Создаём…" else "Создать группу", create, large = true, enabled = ready)
         },
     ) {
-        LabeledField("Название группы", groupName, { groupName = it })
-        LabeledField(
+        IconTextField("Название похода", groupName, R.drawable.sym_landscape)
+        IconTextField(
             "Ваше имя",
             myName,
-            { myName = it.take(ControlEventDraft.MAX_NAME_LENGTH) },
+            R.drawable.sym_person,
+            maxLength = ControlEventDraft.MAX_NAME_LENGTH,
+            placeholder = "Как вас увидит группа",
             imeAction = ImeAction.Done,
             onDone = create,
         )
-        InfoCard {
-            CardLabel("Токен группы создаст телефон")
-            HintText("Интернет не нужен. Токен откроет карту группы на сайте.")
+        OfflineCard()
+        Column {
+            SectionHeader("Что будет дальше", Modifier.padding(bottom = 10.dp))
+            ListCard {
+                StepRow(1, "Покажете QR-код", "Участники сканируют его по очереди")
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                StepRow(2, "Нажмёте «Выходим»", "Начнётся трек и проверка связи")
+            }
         }
-        OfflineChip()
+        Spacer(Modifier.height(4.dp))
     }
 }
 
-/** Плашка «Без интернета» из макета. */
+/** Тональная карточка «Интернет не нужен»: ключ группы создаёт сам телефон. */
 @Composable
-private fun OfflineChip() {
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Text(
-            "Без интернета",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-        )
+private fun OfflineCard() {
+    val scheme = MaterialTheme.colorScheme
+    Surface(Modifier.fillMaxWidth(), shape = CardShape, color = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer) {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            SymIcon(R.drawable.sym_wifi_off_fill, tint = scheme.primary, size = 28.dp)
+            Column {
+                Text("Интернет не нужен", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Телефон создаст ключ группы сам. Тот же ключ потом откроет карту похода на сайте.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = scheme.onPrimaryContainer.copy(alpha = 0.85f),
+                )
+            }
+        }
     }
+}
+
+/** Шаг «Что будет дальше» с номером в круге. */
+@Composable
+private fun StepRow(number: Int, title: String, text: String) {
+    ListRow(
+        title = title,
+        subtitle = text,
+        leading = {
+            Box(Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                Text(
+                    number.toString(),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        },
+    )
 }
 
 @Preview(name = "Новая группа")
