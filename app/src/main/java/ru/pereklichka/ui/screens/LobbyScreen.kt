@@ -103,7 +103,8 @@ fun LobbyScreen(
             }
         },
     ) {
-        rememberPermissionWarning(serviceStarted)?.let { WarningBanner(it, onPermissions) }
+        // После завершения маршрута служба выключается сама или по «Выключить», и предупреждать не о чем.
+        if (view.route != RouteState.FINISHED) rememberPermissionWarning(serviceStarted)?.let { WarningBanner(it, onPermissions) }
         InfoCard(container = Color.White) {
             Column(
                 Modifier.fillMaxWidth(),

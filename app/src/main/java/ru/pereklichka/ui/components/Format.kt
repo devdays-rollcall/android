@@ -55,9 +55,6 @@ fun formatDistance(m: Double?): String? {
     return if (meters < 1000) "$meters м" else String.format(RU, "%.1f км", meters / 1000.0)
 }
 
-/** Сторона света по азимуту от севера, одна из восьми от «С» до «СЗ». */
-fun bearingText(deg: Double?): String? = deg?.let { SIDES[sectorOf(it)] }
-
 /** «120 м, СВ», «рядом» без направления. null для меня самого и без расстояния. */
 fun formatPlace(member: MemberView): String? {
     val place = placeOf(member) ?: return null

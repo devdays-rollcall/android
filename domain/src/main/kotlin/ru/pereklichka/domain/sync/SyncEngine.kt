@@ -35,7 +35,7 @@ import kotlin.coroutines.ContinuationInterceptor
  * он шлёт сводку ([Hello]), на сводку соседа отвечает одной [Delta], а свои новые события и состояние рассылает
  * сразу. Байты идут через [PeerTransport], записи через [MeshStore], и о каждом разобранном входящем сообщении
  * узнаёт [PresenceTracker]. Запускает и останавливает движок `RouteService`. В `MeshSimulationTest` тот же движок
- * работает поверх [ru.pereklichka.domain.testing.InMemoryMeshStore] и [ru.pereklichka.domain.testing.InMemoryTransport].
+ * работает поверх `InMemoryMeshStore` и `InMemoryTransport` из testFixtures.
  *
  * Корутины движка идут на `limitedParallelism(1)` от диспетчера вызывающего. Параллельно они не выполняются,
  * хотя могут переходить между потоками, так что состояние сеансов (`peerKnown` и прочее) можно держать в обычных

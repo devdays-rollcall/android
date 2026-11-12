@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.db.AppDatabase
@@ -132,7 +133,9 @@ class DiagnosticsViewModel @Inject constructor(
 
     fun setDemoMode(enabled: Boolean) = settings.setDemoMode(enabled)
 
-    fun uploadNow() = uploadScheduler.restartUpload()
+    fun uploadNow() {
+        viewModelScope.launch { uploadScheduler.restartUpload() }
+    }
 
     /** Переключатель блокировки участника: заблокированного транспорт отключает и отбрасывает его сообщения. */
     fun setBlocked(member: MemberId, blocked: Boolean) = settings.setBlocked(member, blocked)

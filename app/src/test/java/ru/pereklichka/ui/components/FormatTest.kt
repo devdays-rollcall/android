@@ -42,15 +42,17 @@ class FormatTest {
 
     @Test
     fun `восемь секторов по 45 градусов, север от минус 22,5 до плюс 22,5`() {
-        assertEquals("С", bearingText(0.0))
-        assertEquals("С", bearingText(22.4))
-        assertEquals("СВ", bearingText(22.5))
-        assertEquals("В", bearingText(90.0))
-        assertEquals("ЮЗ", bearingText(225.0))
-        assertEquals("С", bearingText(337.5))
-        assertEquals("СЗ", bearingText(-30.0))
-        assertEquals("С", bearingText(360.0))
-        assertNull(bearingText(null))
+        // Номера секторов по часовой от севера: 0 «С», 1 «СВ», 2 «В», 5 «ЮЗ», 7 «СЗ».
+        fun sector(deg: Double) = placeOf(100.0, deg).sector
+        assertEquals(0, sector(0.0))
+        assertEquals(0, sector(22.4))
+        assertEquals(1, sector(22.5))
+        assertEquals(2, sector(90.0))
+        assertEquals(5, sector(225.0))
+        assertEquals(0, sector(337.5))
+        assertEquals(7, sector(-30.0))
+        assertEquals(0, sector(360.0))
+        assertNull(placeOf(100.0, null).sector)
     }
 
     @Test

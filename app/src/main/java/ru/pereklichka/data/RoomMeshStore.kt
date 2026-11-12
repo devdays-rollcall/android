@@ -35,7 +35,8 @@ import javax.inject.Singleton
  *
  * Свой `member_id` берётся из [GroupRepository.activeGroup]. Строки базы переводит в модели и обратно
  * `data/db/Mappers.kt`, причём `toEntity()` у точки сам ставит `rejected`. Каждая запись идёт внутри
- * `db.withTransaction`, а [changesFlow] срабатывает после её фиксации. Реализацию проверяет
+ * `db.withTransaction`, а [changesFlow] срабатывает после её фиксации (во вложенной транзакции раньше фиксации
+ * внешней, см. `MeshStore.changes`). Реализацию проверяет
  * `RoomMeshStoreContractTest`.
  */
 @Singleton

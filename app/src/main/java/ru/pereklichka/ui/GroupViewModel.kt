@@ -89,7 +89,11 @@ class GroupViewModel @Inject constructor(
 
     private val settingUpState = MutableStateFlow(false)
 
-    /** Группа создаётся или идёт вступление: кнопка экрана неактивна, пока навигация не уведёт дальше. */
+    /**
+     * Группа создаётся или идёт вступление: кнопка экрана неактивна, пока навигация не уведёт дальше. После успеха
+     * флаг остаётся true, потому что навигация уходит с экрана позже, когда Room сообщит о новой группе, а повторное
+     * нажатие в этот промежуток стёрло бы только что созданную группу. Снимают флаг ошибка записи и «Новая группа».
+     */
     val settingUp: StateFlow<Boolean> = settingUpState.asStateFlow()
 
     /**
@@ -123,10 +127,11 @@ class GroupViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 write()
-                serviceStartedState.value = RouteService.start(context)
-            } finally {
+            } catch (e: Exception) {
                 settingUpState.value = false
+                throw e
             }
+            serviceStartedState.value = RouteService.start(context)
         }
     }
 
@@ -143,6 +148,7 @@ class GroupViewModel @Inject constructor(
     /** «Новая группа»: служба останавливается и стирает группу, а навигация по [hasGroup] уходит на старт. */
     fun leaveGroup() {
         serviceStartedState.value = false
+        settingUpState.value = false
         RouteService.leave(context)
     }
 

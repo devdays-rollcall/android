@@ -8,11 +8,13 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.first
 import ru.pereklichka.domain.model.GroupInfo
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,10 +37,15 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
     fun uploadNow() = enqueueUpload(ExistingWorkPolicy.KEEP)
 
     /**
-     * Отправить сразу, не дожидаясь конца паузы после сбоя: прежняя разовая задача заменяется новой, даже если
-     * уже идёт. Вызывают служба при появлении сети с интернетом и кнопка на экране диагностики.
+     * Отправить сразу, не дожидаясь конца паузы после сбоя: ждущая разовая задача заменяется новой. Идущую
+     * отправку замена не трогает, иначе каждое переключение Wi-Fi и сотовой сети в горах обрывало бы её посреди
+     * запроса. Вызывают служба при появлении сети с интернетом и кнопка на экране диагностики.
      */
-    fun restartUpload() = enqueueUpload(ExistingWorkPolicy.REPLACE)
+    suspend fun restartUpload() {
+        val running = WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(UPLOAD_NOW).first()
+            .any { it.state == WorkInfo.State.RUNNING }
+        enqueueUpload(if (running) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE)
+    }
 
     fun sendSos(group: GroupInfo, serverUrl: String) {
         val request = OneTimeWorkRequestBuilder<SosWorker>()
@@ -60,6 +67,11 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
             .setConstraints(needsNetwork)
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(UPLOAD_PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+    }
+
+    /** Снимает периодическую отправку: после «Новой группы» отправлять нечего до новой группы. */
+    fun cancelPeriodic() {
+        WorkManager.getInstance(context).cancelUniqueWork(UPLOAD_PERIODIC)
     }
 
     private fun enqueueUpload(policy: ExistingWorkPolicy) {

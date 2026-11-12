@@ -61,7 +61,7 @@ class UploadWorkerTest {
     // Вид считается на настоящем времени: виртуальное время runTest сработало бы на таймауте awaitRoute,
     // пока Room отвечает из своего потока.
     private val viewScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val viewProvider = GroupViewProvider(store, PresenceTracker(clock), OwnLocation(), settings, clock, viewScope)
+    private val viewProvider = GroupViewProvider(store, repository, PresenceTracker(clock), OwnLocation(), settings, clock, viewScope)
     private val server = MockWebServer()
     private val json = Json { ignoreUnknownKeys = true }
 

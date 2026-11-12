@@ -152,6 +152,7 @@ class GroupActionsTest {
     private fun TestScope.actionsOver(store: MeshStore): GroupActions {
         viewProvider = GroupViewProvider(
             store = store,
+            groups = repository,
             presence = PresenceTracker(clock),
             ownLocation = OwnLocation(),
             settings = AppSettings(ApplicationProvider.getApplicationContext()),

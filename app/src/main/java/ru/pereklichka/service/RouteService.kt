@@ -53,7 +53,8 @@ import javax.inject.Inject
  * Foreground service маршрута. Пока телефон лежит в кармане с выключенным экраном, в ней живут обмен
  * с соседями, GPS и уведомления, а в шторке висит её постоянное уведомление ([ServiceNotification]).
  *
- * Запускает её [start] при создании группы, вступлении и каждом возврате приложения на экран. Делать это
+ * Запускает её [start] при создании группы, вступлении и каждом возврате приложения на экран, пока маршрут
+ * не завершён. Делать это
  * нужно, пока приложение на экране. Из фона Android 12 и новее foreground service не запускает, а тип location
  * на Android 14 из фона поднимается только с разрешением «Разрешить всегда». Типы службы (location,
  * connectedDevice) выбираются по выданным разрешениям.
@@ -138,6 +139,8 @@ class RouteService : Service() {
         registerNetworkCallback()
         serviceScope.launch {
             val group = groupRepository.activeGroup() ?: return@launch stopRoute()
+            // «Новая группа» могла начаться, пока читалась база.
+            if (leaving?.isActive == true) return@launch
             // Интерфейс запускает службу при каждом возврате на экран, поэтому та же группа ничего не перезапускает.
             if (route?.group == group) return@launch
             route?.stop()
@@ -150,21 +153,23 @@ class RouteService : Service() {
      * `startForeground` вызывается сразу, до чтения базы: службу, запущенную через `startForegroundService`,
      * система убивает, если та не вышла на передний план за несколько секунд. Из фона тип location доступен
      * только с «Разрешить всегда», без него обмен идёт, а трек стоит, пока человек не откроет приложение.
+     * Об этом на маршруте говорит [RouteNotFinishedNotification]; в «Сборе» трек не пишется, и напоминание не нужно.
      */
     private fun restartRoute() {
         if (useFakeGroupData || route != null) return
         val types = foregroundServiceTypes(this, fromBackground = true)
-        if (!enterForeground(types)) {
-            RouteNotFinishedNotification.show(this)
-            stopSelf()
-            return
-        }
+        val inForeground = enterForeground(types)
         serviceScope.launch {
             val group = groupRepository.activeGroup()
-            if (group == null || viewProvider.awaitRoute() == RouteState.FINISHED) return@launch stopRoute()
-            if (types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION == 0) RouteNotFinishedNotification.show(this@RouteService)
+            val state = viewProvider.awaitRoute()
+            if (group == null || state == RouteState.FINISHED) return@launch stopRoute()
+            // Пока читалась база, человек мог открыть приложение, и startRoute уже поднял сеанс.
+            if (route != null || leaving?.isActive == true) return@launch
+            val tracking = inForeground && types and ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION != 0
+            if (state == RouteState.ACTIVE && !tracking) RouteNotFinishedNotification.show(this@RouteService)
+            if (!inForeground) return@launch stopRoute()
             registerNetworkCallback()
-            if (route == null) route = RouteSession(group).also { it.start() }
+            route = RouteSession(group).also { it.start() }
         }
     }
 
@@ -203,6 +208,7 @@ class RouteService : Service() {
             session?.join()
             tracking?.join()
             groupRepository.leaveGroup()
+            uploadScheduler.cancelPeriodic()
             stopSelf()
         }
     }
@@ -220,7 +226,9 @@ class RouteService : Service() {
     private fun registerNetworkCallback() {
         if (networkCallback != null) return
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) = uploadScheduler.restartUpload()
+            override fun onAvailable(network: Network) {
+                serviceScope.launch { uploadScheduler.restartUpload() }
+            }
         }
         val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
         getSystemService(ConnectivityManager::class.java).registerNetworkCallback(request, callback)

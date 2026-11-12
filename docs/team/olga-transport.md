@@ -44,7 +44,7 @@
   - `send`: `sendPayload(Payload.fromBytes(bytes))`, затем жди SUCCESS, FAILURE или CANCELED для этого payload в `onPayloadTransferUpdate`. Таймаут выбери сама: движок берёт результат только для счётчиков, потому что доставку обеспечивает сверка сводок.
   - `disconnect`: `disconnectFromEndpoint` и событие `Disconnected` в `events`, потому что на своей стороне `onDisconnected` после него не приходит. `stop`: остановить advertising и discovery, `stopAllEndpoints`, очистить соответствие. После перезапуска процесса `start` поднимает всё с нуля.
   - Перед стартом проверь радио через `RadioCheck`: Nearby сам Bluetooth не включает. При выключенном Bluetooth `start` не должен падать. Включить его человека просит баннер Валентина на экране группы. Как подхватить Bluetooth, включённый позже, реши сама, например по `BluetoothAdapter.ACTION_STATE_CHANGED`.
-- [ ] `app/.../ui/diagnostics/DiagnosticsViewModel.kt` и `DiagnosticsScreen.kt`: соседи со временем последнего сообщения (`PresenceTracker.lastHeard`) и список блокировки с переключателем у каждого участника (`AppSettings.setBlocked`). По этому списку на одном столе проверяют пересылку через посредника. Строку «Не беспокоить» в разделе «Телефон» добавит Валентин, остальной экран диагностики твой.
+- [ ] `app/.../ui/diagnostics/DiagnosticsViewModel.kt` и `DiagnosticsScreen.kt`: соседи со временем последнего сообщения (`PresenceTracker.heardAgo()`) и список блокировки с переключателем у каждого участника (`AppSettings.setBlocked`). По этому списку на одном столе проверяют пересылку через посредника. Строку «Не беспокоить» в разделе «Телефон» добавит Валентин, остальной экран диагностики твой.
 
 ## Подводные камни
 

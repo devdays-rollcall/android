@@ -1,17 +1,23 @@
 package ru.pereklichka.status
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withTimeoutOrNull
 import ru.pereklichka.data.AppSettings
+import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.di.ApplicationScope
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.rules.GroupCalculator
@@ -38,23 +44,33 @@ import javax.inject.Singleton
  *
  * Пока на [view] никто не подписан, пересчёт стоит, а значение сбрасывается в null: устаревший вид после паузы
  * дал бы [StatusMonitor] ложные уведомления. null значит, что группы нет или первый расчёт ещё не готов.
+ * Когда «Новая группа» стирает группу, вид тоже становится null: снимок хранилища без группы молчит, и без
+ * отдельной подписки на группу экраны держали бы вид стёртой группы.
  */
 @Singleton
 class GroupViewProvider @Inject constructor(
     store: MeshStore,
+    groups: GroupRepository,
     presence: PresenceTracker,
     ownLocation: OwnLocation,
     settings: AppSettings,
     clock: Clock,
     @ApplicationScope scope: CoroutineScope,
 ) {
-    val view: StateFlow<GroupView?> = combine(
-        store.snapshot(),
-        settings.demoMode.map { demo -> GroupCalculator(if (demo) Thresholds.DEMO else Thresholds()) },
-        ownLocation.lastFix,
-        refreshTicks(),
-    ) { snapshot, calculator, myFix, _ ->
-        calculator.compute(snapshot, presence.heardAgo(), myFix, clock)
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val view: StateFlow<GroupView?> = groups.activeGroup.map { it?.tag }.distinctUntilChanged().flatMapLatest { tag ->
+        if (tag == null) {
+            flowOf(null)
+        } else {
+            combine(
+                store.snapshot().filter { it.group.tag == tag },
+                settings.demoMode.map { demo -> GroupCalculator(if (demo) Thresholds.DEMO else Thresholds()) },
+                ownLocation.lastFix,
+                refreshTicks(),
+            ) { snapshot, calculator, myFix, _ ->
+                calculator.compute(snapshot, presence.heardAgo(), myFix, clock)
+            }
+        }
     }.stateIn(
         scope,
         SharingStarted.WhileSubscribed(stopTimeoutMillis = STOP_TIMEOUT_MS, replayExpirationMillis = 0),
@@ -63,8 +79,9 @@ class GroupViewProvider @Inject constructor(
 
     /**
      * Состояние маршрута по первому готовому расчёту. null, если за [FIRST_VIEW_TIMEOUT_MS] вид не появился:
-     * группы нет или база не ответила. Нужен запуску без экрана, где на [view] ещё никто не подписан, и такой
-     * запуск при null считает маршрут незавершённым, потому что лишний обмен безопаснее пропавшего.
+     * группы нет или база не ответила. Нужен запуску без экрана, где на [view] ещё никто не подписан. Служба
+     * и `BootReceiver` при null считают маршрут незавершённым, потому что лишний обмен безопаснее пропавшего,
+     * а `UploadWorker` при null heartbeat не шлёт.
      */
     suspend fun awaitRoute(): RouteState? = withTimeoutOrNull(FIRST_VIEW_TIMEOUT_MS) { view.filterNotNull().first().route }
 
