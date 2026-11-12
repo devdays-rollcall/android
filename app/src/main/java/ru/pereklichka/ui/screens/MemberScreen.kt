@@ -31,7 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -52,6 +51,7 @@ import ru.pereklichka.ui.components.BackButton
 import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.ButtonKind
 import ru.pereklichka.ui.components.CardShape
+import ru.pereklichka.ui.components.DirectionArrow
 import ru.pereklichka.ui.components.HintText
 import ru.pereklichka.ui.components.LOW_BATTERY_PERCENT
 import ru.pereklichka.ui.components.LeaderBadge
@@ -219,7 +219,7 @@ private fun Compass(member: MemberView) {
                         }
                         else -> {
                             if (bearing != null) {
-                                SymIcon(R.drawable.sym_navigation_fill, Modifier.rotate(bearing.toFloat()), tint = accent, size = 72.dp)
+                                DirectionArrow(bearing, size = 72.dp, tint = accent)
                             }
                             Text(
                                 formatDistance(member.distanceM).orEmpty(),

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -252,7 +253,8 @@ private fun KeyValueCard(rows: List<Pair<String, String>>, monospaceKeys: Set<St
                     val mono = key in monospaceKeys
                     Text(
                         value,
-                        modifier = Modifier.weight(1f, fill = false),
+                        // Значение прижато вправо, а длинный id обрезается, чтобы подпись слева не сжималась в столбик.
+                        modifier = Modifier.widthIn(max = 180.dp),
                         style = if (mono) {
                             MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
                         } else {

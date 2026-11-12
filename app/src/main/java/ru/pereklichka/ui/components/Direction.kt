@@ -1,5 +1,6 @@
 package ru.pereklichka.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,8 +12,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.pereklichka.R
@@ -23,8 +25,26 @@ import ru.pereklichka.domain.rules.MemberView
  * стрелка показывает сторону света, как на карте, где север сверху. Без азимута стрелки нет.
  */
 @Composable
-fun DirectionArrow(bearingDeg: Double, size: Dp = 24.dp, tint: Color = MaterialTheme.colorScheme.onSurface) {
-    SymIcon(R.drawable.sym_navigation_fill, Modifier.rotate(bearingDeg.toFloat()), tint = tint, size = size)
+fun DirectionArrow(
+    bearingDeg: Double,
+    modifier: Modifier = Modifier,
+    size: Dp = 24.dp,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    // Стрелка рисуется и поворачивается внутри Canvas. Векторная иконка в повёрнутом слое (Modifier.rotate)
+    // на эмуляторе Android 15 и в Robolectric рисовалась под случайным углом при азимутах вроде 333°.
+    Canvas(modifier.size(size)) {
+        val w = this.size.width
+        val h = this.size.height
+        val arrow = Path().apply {
+            moveTo(w * 0.5f, h * 0.08f)
+            lineTo(w * 0.82f, h * 0.88f)
+            lineTo(w * 0.5f, h * 0.72f)
+            lineTo(w * 0.18f, h * 0.88f)
+            close()
+        }
+        rotate(bearingDeg.toFloat()) { drawPath(arrow, tint) }
+    }
 }
 
 /**

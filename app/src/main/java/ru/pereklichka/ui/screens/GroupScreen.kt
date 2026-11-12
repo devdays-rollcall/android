@@ -69,6 +69,7 @@ import ru.pereklichka.ui.components.RollcallBanner
 import ru.pereklichka.ui.components.SectionHeader
 import ru.pereklichka.ui.components.StatusAvatar
 import ru.pereklichka.ui.components.StatusChip
+import ru.pereklichka.ui.components.StatusKind
 import ru.pereklichka.ui.components.SymIcon
 import ru.pereklichka.ui.components.WarningBanner
 import ru.pereklichka.ui.components.rememberPhoneWarnings
@@ -275,7 +276,7 @@ private fun MemberList(members: List<MemberView>, onMember: (MemberId) -> Unit) 
     }
 }
 
-/** Своя карточка над списком: аватар без кольца, «Никита · вы», роль и «слышу 3 из 4», плашка статуса справа. */
+/** Своя карточка над списком: аватар без кольца, «Никита · вы», роль и «слышу 3 из 4», справа плашка, если статус не «Норма». */
 @Composable
 private fun SelfCard(view: GroupView, me: MemberView, onClick: () -> Unit) {
     val subtitle = selfSubtitle(view)
@@ -297,7 +298,8 @@ private fun SelfCard(view: GroupView, me: MemberView, onClick: () -> Unit) {
                 Text("${me.name} · вы", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(subtitle, fontSize = 14.sp, lineHeight = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            StatusChip(me)
+            // «Норма» о себе ничего не сообщает и сжимает подпись, поэтому плашка видна только при другом статусе.
+            if (statusOf(me).kind != StatusKind.OK) StatusChip(me)
         }
     }
 }
