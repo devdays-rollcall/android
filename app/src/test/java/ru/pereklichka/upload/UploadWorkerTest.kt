@@ -42,6 +42,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -127,7 +128,7 @@ class UploadWorkerTest {
     @Test
     fun `422 находит кривую точку, помечает её rejected, остальные уходят`() = runTest {
         insertPoints(20)
-        val badId = "point-13"
+        val badId = pid("point-13")
         respond { batch ->
             if (batch.events.any { it.id == badId }) MockResponse.Builder().code(422).body(error("invalid_event")).build()
             else accepted(batch)
@@ -137,13 +138,13 @@ class UploadWorkerTest {
 
         assertEquals(true, db.locationDao().isRejected(badId))
         assertEquals(0, db.locationDao().unsent(1_000).size)
-        assertEquals((1..20).map { "point-$it" }.toSet() - badId, acceptedIds.toSet())
+        assertEquals((1..20).map { pid("point-$it") }.toSet() - badId, acceptedIds.toSet())
     }
 
     @Test
     fun `после кривой точки размер пачки восстанавливается`() = runTest {
         insertPoints(300)
-        val badId = "point-13"
+        val badId = pid("point-13")
         respond { batch ->
             if (batch.events.any { it.id == badId }) MockResponse.Builder().code(422).body(error("invalid_event")).build()
             else accepted(batch)
@@ -255,28 +256,41 @@ class UploadWorkerTest {
     }
 
     @Test
-    fun `точка с недопустимыми значениями на сервер не уходит`() = runTest {
-        insertPoints(3)
-        // Запись вставлена в обход маппера и потому без пометки rejected: проверка перед отправкой должна её поймать.
-        db.locationDao().insertAll(listOf(entity("bad-point", seq = 4, latitude = 120.0)))
+    fun `точка с id не в виде UUID на сервер не уходит и помечается отклонённой`() = runTest {
+        insertPoints(2)
+        db.locationDao().insertAll(listOf(entity("not-a-uuid", seq = 3)))
         respond { batch -> accepted(batch) }
 
         runWorker()
 
-        assertTrue(batches.flatMap { it.events }.none { it.id == "bad-point" })
+        assertTrue(batches.flatMap { it.events }.none { it.id == "not-a-uuid" })
+        assertEquals(true, db.locationDao().isRejected("not-a-uuid"))
+        assertEquals(2, batches.sumOf { it.events.size })
+    }
+
+    @Test
+    fun `точка с недопустимыми значениями на сервер не уходит`() = runTest {
+        insertPoints(3)
+        // Запись вставлена в обход маппера и потому без пометки rejected: проверка перед отправкой должна её поймать.
+        db.locationDao().insertAll(listOf(entity(pid("bad-point"), seq = 4, latitude = 120.0)))
+        respond { batch -> accepted(batch) }
+
+        runWorker()
+
+        assertTrue(batches.flatMap { it.events }.none { it.id == pid("bad-point") })
         assertEquals(3, batches.sumOf { it.events.size })
     }
 
     @Test
     fun `отправляет точки всей группы от своего имени`() = runTest {
         insertPoints(2)
-        db.locationDao().insertAll(listOf(entity("other-point", 1).copy(author = "other-author")))
+        db.locationDao().insertAll(listOf(entity(pid("other-point"), 1).copy(author = pid("other-author"))))
         respond { batch -> accepted(batch) }
 
         assertEquals(ListenableWorker.Result.success(), runWorker())
-        assertEquals(setOf("point-1", "point-2", "other-point"), acceptedIds.toSet())
+        assertEquals(setOf(pid("point-1"), pid("point-2"), pid("other-point")), acceptedIds.toSet())
         assertTrue(batches.all { it.senderId == group.me.value })
-        assertEquals("other-author", batches.flatMap { it.events }.single { it.id == "other-point" }.memberId)
+        assertEquals(pid("other-author"), batches.flatMap { it.events }.single { it.id == pid("other-point") }.memberId)
         assertTrue(db.locationDao().unsent(10).isEmpty())
     }
 
@@ -320,8 +334,11 @@ class UploadWorkerTest {
     private fun error(code: String) = """{"error":{"code":"$code","message":"$code"}}"""
 
     private suspend fun insertPoints(count: Int) {
-        db.locationDao().insertAll((1..count).map { entity("point-$it", seq = it.toLong()) })
+        db.locationDao().insertAll((1..count).map { entity(pid("point-$it"), seq = it.toLong()) })
     }
+
+    /** UUID из имени: сервер принимает только id в виде UUID, а имя в тесте читается легче. */
+    private fun pid(name: String) = UUID.nameUUIDFromBytes(name.toByteArray()).toString()
 
     private fun entity(id: String, seq: Long, latitude: Double = 43.35) =
         LocationPointEntity(id, group.me.value, seq, latitude, 42.44, 1_794_300_000_000, 5.0, null, null, null, 80)

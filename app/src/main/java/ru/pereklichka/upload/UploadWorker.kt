@@ -70,7 +70,7 @@ class UploadWorker @AssistedInject constructor(
             if (points.isEmpty()) return sendHeartbeatIfDue(url, group)
             if (clock.elapsedMs() - startedAtMs >= RUN_LIMIT_MS) return Result.retry()
 
-            val invalid = points.filterNot { it.toModel().hasValidValues() }
+            val invalid = points.filterNot { it.toModel().isUploadable() }
             if (invalid.isNotEmpty()) {
                 locationDao.markRejected(invalid.map { it.id })
                 continue

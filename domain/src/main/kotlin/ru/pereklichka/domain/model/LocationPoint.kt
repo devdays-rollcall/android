@@ -45,4 +45,14 @@ data class LocationPoint(
             (speedMps == null || speedMps.isFinite() && speedMps >= 0.0) &&
             (bearingDeg == null || bearingDeg >= 0.0 && bearingDeg < 360.0) &&
             (batteryPercent == null || batteryPercent in 0..100)
+
+    /**
+     * true, если точку можно отправить на сервер: значения допустимы ([hasValidValues]), а [id] и [author]
+     * записаны как UUID, которого требует `openapi.yaml`. На точку с другим id сервер отвечает 400, а 400
+     * на одиночной точке останавливает всю отправку, поэтому `UploadWorker` такие точки помечает `rejected`.
+     */
+    fun isUploadable(): Boolean = hasValidValues() && UUID_PATTERN.matches(id.value) && UUID_PATTERN.matches(author.value)
 }
+
+/** Каноническая запись UUID: `java.util.UUID.fromString` пропускает и укороченные вроде «1-2-3-4-5». */
+private val UUID_PATTERN = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")

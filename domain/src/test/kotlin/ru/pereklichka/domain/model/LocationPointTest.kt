@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Проверка значений точки перед отправкой на сервер: диапазоны из `openapi.yaml`, NaN и бесконечности. */
+/** Проверка точки перед отправкой на сервер: диапазоны из `openapi.yaml`, NaN, бесконечности и UUID в id. */
 class LocationPointTest {
 
     private val valid = LocationPoint(
@@ -51,5 +51,18 @@ class LocationPointTest {
         )
 
         invalid.forEach { assertFalse(it.hasValidValues(), "$it") }
+    }
+
+    @Test
+    fun `на сервер уходят только точки с id и автором в виде UUID`() {
+        val uploadable = valid.copy(
+            id = EventId("d8a6b9f0-32b1-4b1d-a186-a86f2e401a11"),
+            author = MemberId("3d783127-6f1d-454d-b99f-dd41f88f51dd"),
+        )
+
+        assertTrue(uploadable.isUploadable())
+        assertFalse(valid.isUploadable())
+        assertFalse(uploadable.copy(author = MemberId("1-2-3-4-5")).isUploadable())
+        assertFalse(uploadable.copy(latitude = 90.1).isUploadable())
     }
 }
