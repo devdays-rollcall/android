@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -79,6 +81,8 @@ private const val AVATARS_SHOWN = 4
  *
  * Если служба не запустилась ([serviceStarted] равен false) или не хватает разрешений, над QR предупреждение
  * со входом на экран разрешений: без службы телефоны участников не найдут этот.
+ *
+ * У руководителя на сборе в шапке меню с «Отменить сбор» ([onCancelGathering]) после подтверждения.
  */
 @Composable
 fun LobbyScreen(
@@ -88,8 +92,10 @@ fun LobbyScreen(
     onStartRoute: () -> Unit,
     onOpenGroup: () -> Unit,
     onPermissions: () -> Unit,
+    onCancelGathering: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    var confirmCancel by rememberSaveable { mutableStateOf(false) }
     val share = {
         val text = buildString {
             appendLine("Группа «${view.group.name}» в Перекличке")
@@ -102,7 +108,7 @@ fun LobbyScreen(
     val leaderInLobby = view.iAmLeader && view.route == RouteState.LOBBY
 
     CustomTopScreen(
-        top = { LobbyTopBar(view, share) },
+        top = { LobbyTopBar(view, share, onCancelGathering = { confirmCancel = true }.takeIf { leaderInLobby }) },
         contentSpacing = 14.dp,
         bottom = {
             if (leaderInLobby) {
@@ -124,11 +130,16 @@ fun LobbyScreen(
         QrCard(view)
         JoinedCard(view.members.filterNot { it.isMe }, view.iAmLeader)
     }
+
+    if (confirmCancel) {
+        CancelGatheringDialog(view, onConfirm = { confirmCancel = false; onCancelGathering() }, onDismiss = { confirmCancel = false })
+    }
 }
 
-/** Название группы, метка этапа с ролью и «Поделиться». */
+/** Название группы, метка этапа с ролью, «Поделиться» и у руководителя на сборе меню с «Отменить сбор». */
 @Composable
-private fun LobbyTopBar(view: GroupView, onShare: () -> Unit) {
+private fun LobbyTopBar(view: GroupView, onShare: () -> Unit, onCancelGathering: (() -> Unit)?) {
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -149,7 +160,7 @@ private fun LobbyTopBar(view: GroupView, onShare: () -> Unit) {
                 when (view.route) {
                     RouteState.LOBBY -> StageChip(R.drawable.sym_groups, "Сбор")
                     RouteState.ACTIVE -> StageChip(R.drawable.sym_hiking, "В пути")
-                    RouteState.FINISHED -> StageChip(R.drawable.sym_flag, "Завершён")
+                    RouteState.FINISHED -> StageChip(R.drawable.sym_flag, if (view.routeStartedAgo == null) "Отменён" else "Завершён")
                 }
                 Text(
                     if (view.iAmLeader) "Вы руководитель" else "Вы участник",
@@ -160,6 +171,17 @@ private fun LobbyTopBar(view: GroupView, onShare: () -> Unit) {
         }
         IconButton(onClick = onShare) {
             SymIcon(R.drawable.sym_share, contentDescription = "Поделиться ключом группы")
+        }
+        if (onCancelGathering != null) {
+            Box {
+                IconButton(onClick = { menuOpen = true }) { SymIcon(R.drawable.sym_more_vert, contentDescription = "Меню") }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Отменить сбор", color = MaterialTheme.colorScheme.error) },
+                        onClick = { menuOpen = false; onCancelGathering() },
+                    )
+                }
+            }
         }
     }
 }

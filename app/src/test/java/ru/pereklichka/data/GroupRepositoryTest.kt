@@ -7,15 +7,21 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import ru.pereklichka.data.db.LocationPointEntity
+import ru.pereklichka.data.db.OutboxGroupEntity
 import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.model.QrPayload
 import ru.pereklichka.domain.testing.FakeClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
-/** Создание группы и вступление: новый `member_id`, повторное вступление, очистка данных при смене группы и выходе. */
+/**
+ * Создание группы и вступление: новый `member_id`, повторное вступление, очистка данных при смене группы и выходе,
+ * перенос неотправленного трека в очередь стёртых групп.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class GroupRepositoryTest {
@@ -74,5 +80,31 @@ class GroupRepositoryTest {
         assertEquals(0, db.locationDao().unsent(10).size)
     }
 
-    private fun point() = LocationPointEntity("p", "bob", 1, 43.35, 42.44, 0, null, null, null, null, null)
+    @Test
+    fun `стирание группы переносит неотправленные точки в очередь с её токеном`() = runTest {
+        val joined = repository.join(qr)
+        db.locationDao().insertAll(
+            listOf(point("waiting", 1), point("sent", 2).copy(uploaded = true), point("bad", 3).copy(rejected = true)),
+        )
+
+        repository.leaveGroup()
+
+        assertEquals(listOf("waiting"), db.outboxDao().points(joined.tag, 10).map { it.id })
+        assertEquals(listOf(OutboxGroupEntity(joined.tag, qr.token, joined.me.value)), db.outboxDao().groups())
+        assertTrue(repository.hasQueuedTrack())
+    }
+
+    @Test
+    fun `группа без неотправленных точек в очередь не попадает`() = runTest {
+        repository.join(qr)
+        db.locationDao().insertAll(listOf(point().copy(uploaded = true)))
+
+        repository.createGroup("Новый поход")
+
+        assertEquals(emptyList(), db.outboxDao().groups())
+        assertFalse(repository.hasQueuedTrack())
+    }
+
+    private fun point(id: String = "p", seq: Long = 1) =
+        LocationPointEntity(id, "bob", seq, 43.35, 42.44, 0, null, null, null, null, null)
 }

@@ -173,6 +173,7 @@ private fun DevContent(
                     "Точки: всего / ждут / отклонены" to state.counts.run {
                         "${formatCount(points)} / ${formatCount(unsentPoints)} / ${formatCount(rejectedPoints)}"
                     },
+                    "Трек стёртых групп ждёт" to formatCount(state.counts.queuedPoints),
                 ),
             )
         }

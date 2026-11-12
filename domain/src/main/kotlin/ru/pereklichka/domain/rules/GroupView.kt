@@ -22,6 +22,8 @@ data class GroupView(
     val routeStartedAgo: Age?,
     /** Сколько назад руководитель завершил маршрут; null, пока маршрут не завершён. */
     val routeFinishedAgo: Age?,
+    /** Номер события ROUTE_FINISHED в потоке руководителя: по нему видно, кто из соседей его уже получил. */
+    val routeFinishedSeq: Long?,
     /**
      * Все участники из событий JOINED по тяжести: SOS, тревога, «Не слышно», отлучка, остальные. Внутри каждой
      * ступени я первым, остальные по имени.
@@ -34,6 +36,20 @@ data class GroupView(
     /** Подсказки «Рядом телефон участника <имя>. Вы видите этого человека?», см. [NearbyPrompt]. */
     val prompts: List<NearbyPrompt>,
 )
+
+/**
+ * Участники, кроме меня и руководителя, о которых не известно, что завершение маршрута у них уже есть; null, пока
+ * маршрут не завершён. Знает о завершении сосед, в чьей последней сводке ([reportedBySeq] из `SyncEngine`) есть
+ * событие ROUTE_FINISHED, а руководитель знает о нём сам. Сводки приходят только от соседей на связи, поэтому
+ * участник, до которого завершение дошло через посредника, из списка не уходит. Пустой список значит, что
+ * завершение есть у всей группы и обмен можно выключать.
+ */
+fun GroupView.finishNotConfirmedBy(reportedBySeq: Map<MemberId, Map<MemberId, Long>>): List<MemberId>? {
+    val seq = routeFinishedSeq ?: return null
+    return members
+        .map { it.id }
+        .filter { it != me && it != group.leaderId && (reportedBySeq[it]?.get(group.leaderId) ?: 0L) < seq }
+}
 
 /**
  * Состояние маршрута: LOBBY («Сбор», люди вступают), ACTIVE (маршрут идёт, пишется трек), FINISHED (завершён).

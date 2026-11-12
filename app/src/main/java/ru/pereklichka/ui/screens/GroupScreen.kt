@@ -1,6 +1,7 @@
 package ru.pereklichka.ui.screens
 
 import android.content.res.Configuration
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,8 +57,10 @@ import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.MemberView
 import ru.pereklichka.domain.rules.Presence
 import ru.pereklichka.domain.rules.RouteState
+import ru.pereklichka.service.Exchange
 import ru.pereklichka.ui.FakeGroupViews
 import ru.pereklichka.ui.components.AlarmBanner
+import ru.pereklichka.ui.components.BackButton
 import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.CardShape
 import ru.pereklichka.ui.components.ListCard
@@ -71,6 +75,7 @@ import ru.pereklichka.ui.components.StatusAvatar
 import ru.pereklichka.ui.components.StatusChip
 import ru.pereklichka.ui.components.StatusKind
 import ru.pereklichka.ui.components.SymIcon
+import ru.pereklichka.ui.components.TrackStatus
 import ru.pereklichka.ui.components.WarningBanner
 import ru.pereklichka.ui.components.rememberPhoneWarnings
 import ru.pereklichka.ui.components.routeChipText
@@ -93,9 +98,14 @@ private const val MAX_ALARM_BANNERS = 3
  * открывает экран разрешений, остальные открывают системные настройки.
  *
  * Нижняя панель зависит от состояния маршрута. В «Сборе» руководитель видит «QR и «Выходим»». Пока маршрут идёт,
- * у всех «Отойду» и круглая SOS, а у руководителя ещё «Перекличка». После завершения у всех «Выключить», пока служба
- * может работать, и «Новая группа». В меню разрешения, настройки и у руководителя «Завершить маршрут», пока маршрут
- * идёт.
+ * у всех «Отойду» и круглая SOS, а у руководителя ещё «Перекличка». После завершения у всех «Выключить», пока обмен
+ * работает ([exchange]), и «Новая группа». В меню разрешения, настройки, у руководителя «Отменить сбор» в «Сборе»
+ * и «Завершить маршрут» на маршруте, у участника «Выйти из группы» до завершения. Пока служба сообщает группе
+ * о выходе ([quitting]), поверх экрана висит ожидание с «Выйти сразу».
+ *
+ * Пока маршрут не завершён, экран группы главный, и «Назад» сворачивает приложение. После завершения в шапке
+ * появляется стрелка, и она, как и системная кнопка «Назад», ведёт на стартовый экран ([onToStart]). Группа при этом
+ * остаётся на телефоне, чтобы трек ушёл на сервер, когда появится интернет.
  */
 @Composable
 fun GroupScreen(
@@ -111,16 +121,45 @@ fun GroupScreen(
     onLobby: () -> Unit,
     onStopService: () -> Unit,
     onNewGroup: () -> Unit,
+    onToStart: () -> Unit,
+    onQuit: () -> Unit = {},
+    onCancelGathering: () -> Unit = {},
+    quitting: Boolean = false,
     serviceStarted: Boolean? = null,
+    exchange: Exchange = Exchange.Off(),
+    trackStatus: TrackStatus? = null,
     warnings: List<PhoneWarning> = rememberPhoneWarnings(view, serviceStarted),
 ) {
+    val finished = view.route == RouteState.FINISHED
+    var confirmQuit by rememberSaveable { mutableStateOf(false) }
+    var confirmCancel by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = finished, onBack = onToStart)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = { GroupTopBar(view, onFinishRoute, onSettings, onPermissions, onLobby) },
-        bottomBar = { GroupBottomBar(view, serviceStarted, onRollcall, onAway, onSos, onLobby, onStopService, onNewGroup) },
+        topBar = {
+            GroupTopBar(
+                view,
+                onFinishRoute,
+                onSettings,
+                onPermissions,
+                onLobby,
+                onBack = onToStart.takeIf { finished },
+                onQuit = { confirmQuit = true },
+                onCancelGathering = { confirmCancel = true },
+            )
+        },
+        bottomBar = {
+            GroupBottomBar(view, exchange, trackStatus, onRollcall, onAway, onSos, onLobby, onStopService, onNewGroup)
+        },
     ) { innerPadding ->
         GroupList(view, warnings, innerPadding, onMember, onRollcall, onAlarms, onPermissions)
     }
+
+    if (confirmQuit) QuitGroupDialog(view, onConfirm = { confirmQuit = false; onQuit() }, onDismiss = { confirmQuit = false })
+    if (confirmCancel) {
+        CancelGatheringDialog(view, onConfirm = { confirmCancel = false; onCancelGathering() }, onDismiss = { confirmCancel = false })
+    }
+    if (quitting) QuittingDialog(onLeaveNow = onNewGroup)
 }
 
 @Composable
@@ -130,6 +169,9 @@ private fun GroupTopBar(
     onSettings: () -> Unit,
     onPermissions: () -> Unit,
     onLobby: () -> Unit,
+    onBack: (() -> Unit)?,
+    onQuit: () -> Unit,
+    onCancelGathering: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -137,10 +179,11 @@ private fun GroupTopBar(
             .fillMaxWidth()
             .statusBarsPadding()
             .heightIn(min = 64.dp)
-            .padding(start = 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = if (onBack != null) 4.dp else 20.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        if (onBack != null) BackButton(onBack)
         Column(Modifier.weight(1f)) {
             Text(
                 view.group.name,
@@ -162,11 +205,20 @@ private fun GroupTopBar(
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(text = { Text("Разрешения") }, onClick = { menuOpen = false; onPermissions() })
                 DropdownMenuItem(text = { Text("Настройки") }, onClick = { menuOpen = false; onSettings() })
-                // Завершить маршрут может только руководитель и только пока маршрут идёт.
-                if (view.iAmLeader && view.route == RouteState.ACTIVE) {
-                    DropdownMenuItem(
+                // Руководитель отменяет сбор до «Выходим» и завершает маршрут после, а участник выходит из группы
+                // до завершения: после него на экране и так есть «Новая группа».
+                when {
+                    view.iAmLeader && view.route == RouteState.LOBBY -> DropdownMenuItem(
+                        text = { Text("Отменить сбор", color = MaterialTheme.colorScheme.error) },
+                        onClick = { menuOpen = false; onCancelGathering() },
+                    )
+                    view.iAmLeader && view.route == RouteState.ACTIVE -> DropdownMenuItem(
                         text = { Text("Завершить маршрут", color = MaterialTheme.colorScheme.error) },
                         onClick = { menuOpen = false; onFinishRoute() },
+                    )
+                    !view.iAmLeader && view.route != RouteState.FINISHED -> DropdownMenuItem(
+                        text = { Text("Выйти из группы", color = MaterialTheme.colorScheme.error) },
+                        onClick = { menuOpen = false; onQuit() },
                     )
                 }
             }
@@ -307,7 +359,8 @@ private fun SelfCard(view: GroupView, me: MemberView, onClick: () -> Unit) {
 @Composable
 private fun GroupBottomBar(
     view: GroupView,
-    serviceStarted: Boolean?,
+    exchange: Exchange,
+    trackStatus: TrackStatus?,
     onRollcall: () -> Unit,
     onAway: () -> Unit,
     onSos: () -> Unit,
@@ -323,7 +376,7 @@ private fun GroupBottomBar(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 when (view.route) {
-                    RouteState.FINISHED -> FinishedActions(view, serviceStarted, onStopService, onNewGroup)
+                    RouteState.FINISHED -> FinishedActions(view, exchange, trackStatus, onStopService, onNewGroup)
                     RouteState.LOBBY -> {
                         Hint("Маршрут ещё не начался")
                         // После перезапуска приложение открывается на этом экране, и без кнопки руководитель
@@ -416,7 +469,7 @@ private fun Hint(text: String) {
 private fun GroupLeaderPreview() {
     PereklichkaTheme {
         GroupScreen(
-            FakeGroupViews.leader, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+            FakeGroupViews.leader, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
             warnings = listOf(PhoneWarning.BLUETOOTH_OFF),
         )
     }
@@ -425,7 +478,7 @@ private fun GroupLeaderPreview() {
 @Preview(name = "Группа: участник")
 @Composable
 private fun GroupParticipantPreview() {
-    PereklichkaTheme { GroupScreen(FakeGroupViews.participant, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) }
+    PereklichkaTheme { GroupScreen(FakeGroupViews.participant, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}) }
 }
 
 @Preview(name = "Группа: сбор")
@@ -434,7 +487,7 @@ private fun GroupLobbyPreview() {
     PereklichkaTheme {
         GroupScreen(
             FakeGroupViews.leader.copy(route = RouteState.LOBBY, routeStartedAgo = null, alarms = emptyList(), rollcall = null),
-            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
         )
     }
 }
@@ -445,7 +498,8 @@ private fun GroupFinishedPreview() {
     PereklichkaTheme {
         GroupScreen(
             FakeGroupViews.participant.copy(route = RouteState.FINISHED, alarms = emptyList(), rollcall = null),
-            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+            exchange = Exchange.Off(finishConfirmedByAll = true),
         )
     }
 }

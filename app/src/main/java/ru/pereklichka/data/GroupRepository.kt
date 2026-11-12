@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import ru.pereklichka.data.db.AppDatabase
+import ru.pereklichka.data.db.GroupInfoEntity
+import ru.pereklichka.data.db.OutboxGroupEntity
 import ru.pereklichka.data.db.toEntity
 import ru.pereklichka.data.db.toModel
 import ru.pereklichka.domain.model.GroupInfo
@@ -16,9 +18,11 @@ import javax.inject.Singleton
 /**
  * Создаёт активную группу, вступает в неё, отдаёт её остальным частям приложения и стирает при выходе.
  *
- * Смена группы и выход ([leaveGroup]) очищают все таблицы, а повторное вступление в ту же группу ничего не меняет. После очистки телефон
- * нумерует свои записи с единицы, поэтому `member_id` новый для каждой группы: под старым id соседи увидели бы
- * на тех же номерах другие записи и отбросили бы их как конфликт.
+ * Смена группы и выход ([leaveGroup]) очищают таблицы активной группы, а повторное вступление в ту же группу ничего
+ * не меняет. Неотправленные точки трека перед очисткой уходят в очередь `outbox_point` вместе с токеном группы,
+ * и `UploadWorker` отправит их, когда появится интернет. После очистки телефон нумерует свои записи с единицы,
+ * поэтому `member_id` новый для каждой группы: под старым id соседи увидели бы на тех же номерах другие записи
+ * и отбросили бы их как конфликт.
  *
  * Менять группу можно, только пока служба не работает для другой группы, иначе движок старой группы успеет
  * записать чужие Delta в чистые таблицы. Интерфейс это соблюдает: создание и вступление доступны лишь без
@@ -53,8 +57,14 @@ class GroupRepository @Inject constructor(
         )
     }
 
-    /** Стирает группу со всеми событиями, точками и состояниями одной транзакцией: «Новая группа» после маршрута. */
+    /**
+     * Стирает группу со всеми событиями, точками и состояниями одной транзакцией: «Новая группа» после маршрута.
+     * Неотправленные точки остаются в очереди на отправку.
+     */
     suspend fun leaveGroup() = db.withTransaction { deleteAll() }
+
+    /** Есть ли в очереди неотправленный трек стёртых групп: тогда отправку на сервер снимать нельзя. */
+    suspend fun hasQueuedTrack(): Boolean = db.outboxDao().hasAnyPoints()
 
     private suspend fun replaceActiveGroup(group: GroupInfo): GroupInfo = db.withTransaction {
         deleteAll()
@@ -63,9 +73,17 @@ class GroupRepository @Inject constructor(
     }
 
     private suspend fun deleteAll() {
+        db.groupDao().get()?.let { queueUnsentTrack(it) }
         db.controlEventDao().deleteAll()
         db.locationDao().deleteAll()
         db.memberStateDao().deleteAll()
         db.groupDao().deleteAll()
+    }
+
+    /** Переносит неотправленные точки группы [group] в очередь стёртых групп. Вызывать внутри транзакции. */
+    private suspend fun queueUnsentTrack(group: GroupInfoEntity) {
+        val outbox = db.outboxDao()
+        outbox.copyUnsentPoints(group.tag)
+        if (outbox.hasPoints(group.tag)) outbox.upsertGroup(OutboxGroupEntity(group.tag, group.token, group.myMemberId))
     }
 }

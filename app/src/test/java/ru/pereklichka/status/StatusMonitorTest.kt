@@ -30,6 +30,7 @@ class StatusMonitorTest {
         route = RouteState.ACTIVE,
         routeStartedAgo = null,
         routeFinishedAgo = null,
+        routeFinishedSeq = null,
         members = emptyList(),
         alarms = emptyList(),
         rollcall = null,

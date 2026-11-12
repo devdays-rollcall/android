@@ -19,6 +19,9 @@ enum class EventType {
     SOS,
     RESOLVE,
     ROUTE_FINISHED,
+
+    /** Участник вышел из группы. Руководитель не выходит, он завершает маршрут или отменяет сбор. */
+    LEFT,
     UNKNOWN,
 }
 

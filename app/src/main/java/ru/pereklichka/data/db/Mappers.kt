@@ -77,6 +77,21 @@ fun LocationPointEntity.toModel(): LocationPoint = LocationPoint(
     batteryPercent = batteryPercent,
 )
 
+/** Точка стёртой группы из очереди на отправку, NULL в координатах снова становится NaN. */
+fun OutboxPointEntity.toModel(): LocationPoint = LocationPoint(
+    id = EventId(id),
+    author = MemberId(author),
+    seq = seq,
+    latitude = latitude ?: Double.NaN,
+    longitude = longitude ?: Double.NaN,
+    recordedAtMs = recordedAtMs,
+    accuracyM = accuracyM,
+    altitudeM = altitudeM,
+    speedMps = speedMps,
+    bearingDeg = bearingDeg,
+    batteryPercent = batteryPercent,
+)
+
 /** Строка для новой точки. [LocationPointEntity.rejected] ставится, если точка не проходит `hasValidValues()`. */
 fun LocationPoint.toEntity(): LocationPointEntity = LocationPointEntity(
     id = id.value,

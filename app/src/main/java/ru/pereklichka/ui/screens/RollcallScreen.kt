@@ -100,7 +100,14 @@ fun RollcallScreen(
         bottom = {
             when {
                 view.iAmLeader && rollcall == null && view.route == RouteState.ACTIVE ->
-                    BigButtonFull("Запустить перекличку", onStartRollcall, icon = R.drawable.sym_campaign, large = true)
+                    BigButtonFull(
+                        "Запустить перекличку",
+                        onStartRollcall,
+                        icon = R.drawable.sym_campaign,
+                        large = true,
+                        // Без участников отвечать некому, и перекличка три минуты висела бы с «0 из 0».
+                        enabled = view.members.any { !it.isMe },
+                    )
                 !view.iAmLeader && view.route == RouteState.ACTIVE ->
                     BigButtonFull("Отойду ненадолго", onAway, ButtonKind.SECONDARY, icon = R.drawable.sym_directions_walk)
             }
@@ -131,10 +138,11 @@ private fun NoRollcall(view: GroupView) {
     InfoCard {
         Text("Переклички сейчас нет", style = MaterialTheme.typography.titleMedium)
         HintText(
-            if (view.iAmLeader) {
-                "Все участники получат уведомление и отметятся одной кнопкой."
-            } else {
-                "Когда руководитель её начнёт, придёт уведомление."
+            when {
+                view.iAmLeader && view.members.none { !it.isMe } ->
+                    "В группе пока никого нет. Перекличку можно запустить, когда участники вступят."
+                view.iAmLeader -> "Все участники получат уведомление и отметятся одной кнопкой."
+                else -> "Когда руководитель её начнёт, придёт уведомление."
             },
         )
     }

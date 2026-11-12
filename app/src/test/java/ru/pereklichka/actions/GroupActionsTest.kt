@@ -102,6 +102,22 @@ class GroupActionsTest {
     }
 
     @Test
+    fun `участник выходит событием LEFT, а руководитель выйти не может`() = runTest {
+        val joined = repository.join(QrPayload(GroupToken.generate(), "Поход", MemberId.random()))
+        val (participant, store) = actionsFor(joined)
+
+        val left = participant.announceLeaving()
+
+        assertEquals(EventType.LEFT, left.type)
+        assertEquals(joined.me, left.author)
+        assertEquals(listOf(EventType.LEFT), ownEvents(store, joined).map { it.type })
+
+        val led = repository.createGroup("Ещё поход")
+        val (leader, _) = actionsFor(led)
+        assertFailsWith<IllegalStateException> { leader.announceLeaving() }
+    }
+
+    @Test
     fun `отлучка пишется в миллисекундах, отмена длительностью 0`() = runTest {
         val group = repository.createGroup("Поход")
         val (actions, store) = actionsFor(group)

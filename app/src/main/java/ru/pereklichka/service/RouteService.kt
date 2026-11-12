@@ -20,9 +20,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -31,6 +32,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import ru.pereklichka.actions.GroupActions
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.GroupToken
@@ -39,10 +42,12 @@ import ru.pereklichka.domain.model.GroupInfo
 import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.domain.rules.RouteState
+import ru.pereklichka.domain.rules.finishNotConfirmedBy
 import ru.pereklichka.domain.sync.PeerTransport
 import ru.pereklichka.domain.sync.SyncConfig
 import ru.pereklichka.domain.sync.SyncEngine
 import ru.pereklichka.domain.sync.TransportConfig
+import ru.pereklichka.domain.time.Clock
 import ru.pereklichka.permissions.RequiredPermissions
 import ru.pereklichka.status.GroupViewProvider
 import ru.pereklichka.status.StatusMonitor
@@ -61,8 +66,11 @@ import javax.inject.Inject
  *
  * Для активной группы служба поднимает [RouteSession] с движком, транспортом, своим состоянием, монитором
  * уведомлений, треком, wake lock и отправкой на сервер. В «Сборе» телефон уже обменивается данными
- * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт ещё [SyncConfig.exchangeAfterFinishMs],
- * чтобы завершение дошло до всех. «Новая группа» ([leave]) останавливает службу и стирает группу.
+ * и прогревает GPS. После ROUTE_FINISHED GPS выключается, а обмен идёт, пока завершение не подтвердят все участники
+ * (`finishNotConfirmedBy`), но не дольше [SyncConfig.exchangeAfterFinishMs]. Без других участников служба выключается
+ * сразу. Работает ли обмен и когда он закончится, служба пишет в [ExchangeStatus] для экранов. «Новая группа»
+ * ([leave]) останавливает службу и стирает группу. «Выйти из группы» ([quit]) сначала пишет событие LEFT и ждёт,
+ * пока его подтвердит хотя бы один сосед, но не дольше [QUIT_CONFIRM_MS], а потом стирает группу так же.
  *
  * Если система убила процесс посреди маршрута, она возвращает службу сама (START_STICKY), а после перезагрузки
  * её поднимает [BootReceiver]. Оба пути идут через [restartRoute].
@@ -82,6 +90,9 @@ class RouteService : Service() {
     @Inject lateinit var settings: AppSettings
     @Inject lateinit var config: SyncConfig
     @Inject lateinit var presence: PresenceTracker
+    @Inject lateinit var exchangeStatus: ExchangeStatus
+    @Inject lateinit var clock: Clock
+    @Inject lateinit var actions: GroupActions
 
     @JvmField
     @Inject
@@ -94,6 +105,7 @@ class RouteService : Service() {
     private var trackingJob: kotlinx.coroutines.Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var leaving: kotlinx.coroutines.Job? = null
+    private var quitting: kotlinx.coroutines.Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -104,11 +116,13 @@ class RouteService : Service() {
             ACTION_START -> startRoute()
             ACTION_STOP -> stopRoute()
             ACTION_LEAVE -> leaveGroup()
+            ACTION_QUIT -> quitGroup()
         }
         return if (useFakeGroupData) START_NOT_STICKY else START_STICKY
     }
 
     override fun onDestroy() {
+        if (exchangeStatus.exchange.value is Exchange.On) exchangeStatus.set(Exchange.Off())
         stopComponents()
         serviceScope.cancel()
         super.onDestroy()
@@ -189,10 +203,33 @@ class RouteService : Service() {
         }
     }
 
-    private fun stopRoute() {
+    private fun stopRoute(finishConfirmedByAll: Boolean = false) {
+        Log.i(TAG, "служба останавливается${if (finishConfirmedByAll) ": завершение получили все" else ""}")
+        exchangeStatus.set(Exchange.Off(finishConfirmedByAll))
         stopComponents()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /**
+     * «Выйти из группы» у участника. Сосед, подтвердивший LEFT сводкой, разошлёт его дальше сам, поэтому ждать
+     * всю группу не нужно. Если за [QUIT_CONFIRM_MS] никто не подтвердил (рядом никого нет), группа стирается
+     * всё равно, и остальные увидят «Не слышно».
+     */
+    private fun quitGroup() {
+        if (quitting?.isActive == true || leaving?.isActive == true) return
+        quitting = serviceScope.launch {
+            val left = runCatching { actions.announceLeaving() }
+                .onFailure { Log.w(TAG, "LEFT не записан", it) }
+                .getOrNull()
+            if (left != null && route != null) {
+                val confirmed = withTimeoutOrNull(QUIT_CONFIRM_MS) {
+                    engine.reportedBySeq.first { reported -> reported.values.any { (it[left.author] ?: 0L) >= left.seq } }
+                } != null
+                Log.i(TAG, if (confirmed) "Выход подтвердил сосед" else "Выход никто не подтвердил за $QUIT_CONFIRM_MS мс")
+            }
+            leaveGroup()
+        }
     }
 
     /**
@@ -200,15 +237,21 @@ class RouteService : Service() {
      * закончились, таблицы стираются. Иначе движок старой группы успел бы записать Delta соседей в очищенную базу.
      */
     private fun leaveGroup() {
+        if (leaving?.isActive == true) return
+        // «Выйти сразу» во время ожидания подтверждения: ждать больше не нужно. Если вызов пришёл из самого ожидания,
+        // отмена ничего не прерывает: дальше до запуска стирания нет точек приостановки.
+        quitting?.cancel()
         val session = route
         val tracking = trackingJob
+        exchangeStatus.set(Exchange.Off())
         stopComponents()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         leaving = serviceScope.launch {
             session?.join()
             tracking?.join()
             groupRepository.leaveGroup()
-            uploadScheduler.cancelPeriodic()
+            // Неотправленный трек стёртой группы ждёт в очереди, и отправку снимать рано.
+            if (groupRepository.hasQueuedTrack()) uploadScheduler.uploadNow() else uploadScheduler.cancelPeriodic()
             stopSelf()
         }
     }
@@ -244,6 +287,7 @@ class RouteService : Service() {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         fun start() {
+            Log.i(TAG, "сеанс группы ${group.tag} запущен")
             // Кого слышали в прошлой группе, в состоянии новой группы не нужно.
             presence.clear()
             // Движок запускается до транспорта. Его подписка всё равно может начаться позже, и первые события
@@ -259,6 +303,7 @@ class RouteService : Service() {
             )
             powerTools.acquireWakeLock()
             uploadScheduler.schedulePeriodic()
+            exchangeStatus.set(Exchange.On())
 
             val routeState = viewProvider.view
                 .filterNotNull()
@@ -269,10 +314,20 @@ class RouteService : Service() {
             scope.launch { statusMonitor.run(group) }
             scope.launch { trackRecorder.run(routeState, uploadScheduler::uploadNow) }
             scope.launch {
+                viewProvider.view
+                    .filterNotNull()
+                    .filter { it.group.tag == group.tag }
+                    .map(ServiceNotification::statusText)
+                    .distinctUntilChanged()
+                    .collect { ServiceNotification.update(this@RouteService, it) }
+            }
+            scope.launch {
                 routeState.first { it == RouteState.FINISHED }
                 uploadScheduler.uploadNow()
-                delay(config.exchangeAfterFinishMs)
-                withContext(Dispatchers.Main) { stopRoute() }
+                Log.i(TAG, "маршрут завершён, обмен до подтверждения всеми, не дольше ${config.exchangeAfterFinishMs} мс")
+                exchangeStatus.set(Exchange.On(stopsAtElapsedMs = clock.elapsedMs() + config.exchangeAfterFinishMs))
+                val confirmedByAll = withTimeoutOrNull(config.exchangeAfterFinishMs) { awaitFinishConfirmedByAll() } != null
+                withContext(Dispatchers.Main) { stopRoute(confirmedByAll) }
             }
         }
 
@@ -281,6 +336,16 @@ class RouteService : Service() {
             engine.stop()
             transport.stop()
             powerTools.releaseWakeLock()
+        }
+
+        /**
+         * Ждёт, пока завершение маршрута подтвердят сводками все участники. Подтвердить могут только соседи на связи,
+         * поэтому участник, которого мой телефон не слышит напрямую, держит обмен до конца срока.
+         */
+        private suspend fun awaitFinishConfirmedByAll() {
+            val view = viewProvider.view.filterNotNull().filter { it.group.tag == group.tag }
+            combine(view, engine.reportedBySeq) { current, reported -> current.finishNotConfirmedBy(reported) }
+                .first { it?.isEmpty() == true }
         }
 
         /** Ждёт, пока после [stop] закончатся корутины сеанса, в том числе запись в базу. */
@@ -299,6 +364,10 @@ class RouteService : Service() {
         private const val ACTION_STOP = "ru.pereklichka.action.STOP_ROUTE"
         private const val ACTION_RESTART = "ru.pereklichka.action.RESTART_ROUTE"
         private const val ACTION_LEAVE = "ru.pereklichka.action.LEAVE_GROUP"
+        private const val ACTION_QUIT = "ru.pereklichka.action.QUIT_GROUP"
+
+        /** Сколько миллисекунд «Выйти из группы» ждёт, пока сосед подтвердит LEFT: сводки приходят раз в 10 с. */
+        const val QUIT_CONFIRM_MS = 30_000L
 
         /**
          * Запускает службу для активной группы. Вызывать, только пока приложение на экране. Повторный вызов
@@ -326,6 +395,11 @@ class RouteService : Service() {
         /** Останавливает службу: кнопка «Выключить» после завершения маршрута. */
         fun stop(context: Context) {
             context.startService(Intent(context, RouteService::class.java).setAction(ACTION_STOP))
+        }
+
+        /** «Выйти из группы» у участника: LEFT, ожидание подтверждения и стирание группы. Вызывать, пока приложение на экране. */
+        fun quit(context: Context) {
+            context.startService(Intent(context, RouteService::class.java).setAction(ACTION_QUIT))
         }
 
         /**

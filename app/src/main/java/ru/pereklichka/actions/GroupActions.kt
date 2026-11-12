@@ -3,6 +3,7 @@ package ru.pereklichka.actions
 import androidx.room.withTransaction
 import ru.pereklichka.data.GroupRepository
 import ru.pereklichka.data.db.AppDatabase
+import ru.pereklichka.domain.model.ControlEvent
 import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.EventType
 import ru.pereklichka.domain.model.GroupInfo
@@ -60,6 +61,16 @@ class GroupActions @Inject constructor(
 
     /** Маршрут завершён (ROUTE_FINISHED). Только руководитель. */
     suspend fun finishRoute() = appendAsLeader(ControlEventDraft(EventType.ROUTE_FINISHED))
+
+    /**
+     * Участник выходит из группы (LEFT): у остальных он пропадёт из списка вместе с тревогами о нём. Возвращает
+     * событие, чтобы служба дождалась его подтверждения соседями. Руководитель не выходит, он завершает маршрут.
+     */
+    suspend fun announceLeaving(): ControlEvent {
+        val group = checkNotNull(repository.activeGroup()) { "Нет активной группы" }
+        check(group.me != group.leaderId) { "Руководитель не выходит из группы, он завершает маршрут" }
+        return store.appendOwnEvent(ControlEventDraft(EventType.LEFT))
+    }
 
     /** Новая перекличка (ROLLCALL) с окном 3 минуты. Только руководитель. */
     suspend fun startRollcall() = appendAsLeader(ControlEventDraft(EventType.ROLLCALL))

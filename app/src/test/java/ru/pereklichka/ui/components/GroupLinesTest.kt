@@ -39,6 +39,7 @@ class GroupLinesTest {
         assertEquals("На маршруте примерно 14 мин", routeChipText(RouteState.ACTIVE, age(14 * 60_000L, approximate = true)))
         assertEquals("На маршруте", routeChipText(RouteState.ACTIVE, null))
         assertEquals("Маршрут завершён", routeChipText(RouteState.FINISHED, age(1)))
+        assertEquals("Сбор отменён", routeChipText(RouteState.FINISHED, null))
     }
 
     @Test

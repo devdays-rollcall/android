@@ -32,20 +32,6 @@ fun nearbySubtitle(nearby: List<String>, lastMessageAgoMs: Long?): String = when
 }
 
 /**
- * Подпись под «Картой похода». [sent] отправлено на сервер, [waiting] ждут отправки. Без адреса сервера точки
- * копятся в телефоне, а ошибку отправки [error] показываем вместо числа отправленных.
- */
-fun mapSubtitle(sent: Int, waiting: Int, serverSet: Boolean, error: String?): String {
-    val waitingPart = "ждут ${formatCount(waiting)}"
-    return when {
-        !serverSet -> "Адрес сервера не задан · $waitingPart"
-        error != null -> "$error · $waitingPart"
-        else -> "${plural(sent, "Отправлена", "Отправлено", "Отправлено")} ${formatCount(sent)} " +
-            "${plural(sent, "точка", "точки", "точек")} · $waitingPart"
-    }
-}
-
-/**
  * Подпись соседа на экране «Для разработчиков». [heardAgoMs] из `PresenceTracker` (null, если напрямую не слышали
  * последние 10 минут), [groupHeard] значит, что о нём есть хоть какой-то контакт через других.
  */

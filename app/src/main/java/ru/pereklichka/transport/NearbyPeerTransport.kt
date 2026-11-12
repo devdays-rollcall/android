@@ -149,6 +149,7 @@ class NearbyPeerTransport @Inject constructor(
 
     override fun start(config: TransportConfig) {
         this.config = config
+        Log.i(TAG, "start: я ${config.me.short()}, serviceId ${config.serviceId}")
         // Список блокировки с экрана «Для разработчиков»: попавший в него при живом соединении отключается,
         // а его сообщения отбрасывает onPayloadReceived.
         blockedJob?.cancel()
@@ -166,6 +167,7 @@ class NearbyPeerTransport @Inject constructor(
     }
 
     override fun stop() {
+        Log.i(TAG, "stop")
         radioJob?.cancel()
         radioJob = null
         blockedJob?.cancel()
@@ -206,7 +208,9 @@ class NearbyPeerTransport @Inject constructor(
         try {
             val task = nearby("sendPayload") { connections.sendPayload(endpointId, payload) } ?: return false
             task.addOnFailureListener { result.complete(false) }
-            return withTimeoutOrNull(SEND_TIMEOUT_MS) { result.await() } == true
+            val ok = withTimeoutOrNull(SEND_TIMEOUT_MS) { result.await() } == true
+            Log.d(TAG, "send ${peer.short()}: ${bytes.size} байт, ${if (ok) "доставлено" else "не доставлено"}")
+            return ok
         } finally {
             synchronized(lock) { pendingSends.remove(payload.id) }
         }
@@ -269,6 +273,7 @@ class NearbyPeerTransport @Inject constructor(
         val task = nearby("startAdvertising") {
             connections.startAdvertising(cfg.me.value, cfg.serviceId, connectionLifecycle, advertisingOptions)
         }
+        task?.addOnSuccessListener { Log.i(TAG, "advertising поднят") }
         task?.addOnFailureListener { e ->
             if (e.statusCode() == ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING) return@addOnFailureListener
             // Причина (нет разрешений, выключено радио) видна только в логе.
@@ -290,6 +295,7 @@ class NearbyPeerTransport @Inject constructor(
         val task = nearby("startDiscovery") {
             connections.startDiscovery(cfg.serviceId, discoveryCallback, discoveryOptions)
         }
+        task?.addOnSuccessListener { Log.d(TAG, "discovery поднят") }
         task?.addOnFailureListener { e ->
             if (e.statusCode() == ConnectionsStatusCodes.STATUS_ALREADY_DISCOVERING) return@addOnFailureListener
             Log.w(TAG, "discovery не поднялся: ${e.message}")
@@ -332,6 +338,7 @@ class NearbyPeerTransport @Inject constructor(
         override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
             val cfg = config ?: return
             val member = MemberId(info.endpointName)
+            Log.i(TAG, "найден ${member.short()} ($endpointId)")
             // Наш запрос к нему ещё ждёт результата. Если он не удастся, повтор запланирует onRequestFailure.
             if (!synchronized(lock) { requests.onFound(endpointId) }) return
             if (!mayConnect(member)) return
@@ -341,6 +348,7 @@ class NearbyPeerTransport @Inject constructor(
         }
 
         override fun onEndpointLost(endpointId: String) {
+            Log.i(TAG, "потерян $endpointId")
             synchronized(lock) {
                 requests.onLost(endpointId)
                 requestJobs.remove(endpointId)?.cancel()
@@ -363,6 +371,7 @@ class NearbyPeerTransport @Inject constructor(
     private fun request(endpointId: String, member: MemberId) {
         val cfg = config ?: return
         if (!synchronized(lock) { requests.tryStart(endpointId) }) return
+        Log.i(TAG, "запрос соединения к ${member.short()}")
         val task = nearby("requestConnection") {
             connections.requestConnection(cfg.me.value, endpointId, connectionLifecycle, connectionOptions)
         } ?: return onRequestFailure(endpointId, member, statusCode = null)
@@ -386,7 +395,9 @@ class NearbyPeerTransport @Inject constructor(
         override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
             val member = MemberId(info.endpointName)
             // Принимаем без сверки кода аутентификации Nearby, если соединение разрешает политика.
-            if (mayConnect(member)) {
+            val accept = mayConnect(member)
+            Log.i(TAG, "входящее от ${member.short()}: ${if (accept) "принимаем" else "отклоняем"}")
+            if (accept) {
                 synchronized(lock) { pendingMembers[endpointId] = member }
                 nearby("acceptConnection") { connections.acceptConnection(endpointId, payloadCallback) }
             } else {
@@ -401,6 +412,7 @@ class NearbyPeerTransport @Inject constructor(
                 synchronized(lock) { requests.forget(endpointId) }
                 return
             }
+            Log.i(TAG, "соединение с ${member.short()}: код ${result.status.statusCode}")
             if (result.status.isSuccess) {
                 synchronized(lock) {
                     pendingMembers.remove(endpointId)
@@ -428,6 +440,7 @@ class NearbyPeerTransport @Inject constructor(
             val member = synchronized(lock) { endpointToMember[endpointId] } ?: return
             if (config?.blocked?.value?.contains(member) == true) return
             val bytes = payload.asBytes() ?: return
+            Log.d(TAG, "получено от ${member.short()}: ${bytes.size} байт")
             eventsChannel.trySend(TransportEvent.Received(member, bytes))
         }
 
@@ -453,6 +466,7 @@ class NearbyPeerTransport @Inject constructor(
             endpointToMember.remove(endpointId)?.also { memberToEndpoint.remove(it) }
         }
         if (member != null) {
+            Log.i(TAG, "разрыв с ${member.short()}${if (notifyNearby) " по нашей инициативе" else ""}")
             peers.update { it - member }
             eventsChannel.trySend(TransportEvent.Disconnected(member))
             restartDiscovery()
@@ -523,7 +537,11 @@ class NearbyPeerTransport @Inject constructor(
 
     private fun Exception.statusCode(): Int? = (this as? ApiException)?.statusCode
 
+    /** Первые 8 знаков member_id: в логе их хватает, чтобы различать телефоны группы. */
+    private fun MemberId.short(): String = value.take(8)
+
     private companion object {
+        /** Тег логов транспорта: `adb logcat -s NearbyPeerTransport RouteService`, сообщения уровня D видны с `:D`. */
         const val TAG = "NearbyPeerTransport"
 
         /** Шаг цикла [radioLoop], пока discovery включён постоянно. */

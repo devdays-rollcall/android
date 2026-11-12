@@ -88,3 +88,34 @@ data class MemberStateEntity(
 
 /** Строка запроса «последний номер по каждому автору». */
 data class AuthorMaxSeq(val author: String, val maxSeq: Long)
+
+/**
+ * Группа, которую стёрли с телефона, пока часть её трека ещё не ушла на сервер. По [token] и [senderId] `UploadWorker`
+ * отправляет её точки из [OutboxPointEntity], а когда они кончаются, удаляет и строку группы.
+ */
+@Entity(tableName = "outbox_group")
+data class OutboxGroupEntity(
+    @PrimaryKey val tag: String,
+    val token: String,
+    val senderId: String,
+)
+
+/**
+ * Неотправленная точка стёртой группы [groupTag]: те же колонки, что у [LocationPointEntity], без пометок. Строку
+ * удаляет `UploadWorker`, когда сервер принял точку или её нельзя отправить. В обмен с соседями эти точки не идут.
+ */
+@Entity(tableName = "outbox_point", indices = [Index(value = ["groupTag"])])
+data class OutboxPointEntity(
+    @PrimaryKey val id: String,
+    val groupTag: String,
+    val author: String,
+    val seq: Long,
+    val latitude: Double?,
+    val longitude: Double?,
+    val recordedAtMs: Long,
+    val accuracyM: Double?,
+    val altitudeM: Double?,
+    val speedMps: Double?,
+    val bearingDeg: Double?,
+    val batteryPercent: Int?,
+)

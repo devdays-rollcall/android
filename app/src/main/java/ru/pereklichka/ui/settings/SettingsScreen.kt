@@ -53,8 +53,8 @@ import ru.pereklichka.ui.theme.statusColors
  * ([onPermissions]) или в системные настройки. Проверки перечитываются при каждом возврате на экран.
  *
  * Семь нажатий на «О приложении» открывают экран «Для разработчиков» ([onDev]). После этого в разделе
- * «Приложение» появляется строка с переходом на него, а строки «Рядом» и «Карта похода» тоже ведут туда:
- * подробности о соседях и отправке живут на том экране.
+ * «Приложение» появляется строка с переходом на него, а строка «Рядом» тоже ведёт туда: подробности о соседях
+ * и отправке живут на том экране.
  */
 @Composable
 fun SettingsScreen(
@@ -146,19 +146,6 @@ private fun SettingsContent(
                         subtitle = nearbySubtitle(state.nearby, state.lastMessageAgoMs),
                         onClick = openDev,
                         leading = { PrimaryIcon(R.drawable.sym_cell_tower) },
-                        trailing = chevron,
-                    )
-                    RowDivider()
-                    ListRow(
-                        title = "Карта похода",
-                        subtitle = mapSubtitle(state.pointsSent, state.pointsWaiting, state.serverSet, state.uploadError),
-                        subtitleColor = if (state.uploadError != null && state.serverSet) {
-                            MaterialTheme.statusColors.lost.content
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        onClick = openDev,
-                        leading = { PrimaryIcon(R.drawable.sym_cloud_upload) },
                         trailing = chevron,
                     )
                 }
@@ -315,9 +302,6 @@ private fun SettingsPreview() {
                 hasGroup = true,
                 nearby = listOf("Даниил", "Ольга"),
                 lastMessageAgoMs = 3_000,
-                pointsSent = 1_240,
-                pointsWaiting = 12,
-                serverSet = true,
             ),
             version = "Версия 1.0 · сборка 42",
             autostartNotFound = false,

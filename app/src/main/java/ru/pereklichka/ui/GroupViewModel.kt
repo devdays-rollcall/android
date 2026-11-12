@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 import ru.pereklichka.actions.GroupActions
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
+import ru.pereklichka.data.db.LocationDao
 import ru.pereklichka.di.FakeGroupData
 import ru.pereklichka.domain.model.EventId
 import ru.pereklichka.domain.model.MemberId
@@ -26,8 +28,11 @@ import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.domain.sync.SyncEngine
+import ru.pereklichka.service.Exchange
+import ru.pereklichka.service.ExchangeStatus
 import ru.pereklichka.service.RouteService
 import ru.pereklichka.status.GroupViewProvider
+import ru.pereklichka.ui.components.TrackStatus
 import ru.pereklichka.upload.UploadScheduler
 import javax.inject.Inject
 
@@ -49,6 +54,8 @@ class GroupViewModel @Inject constructor(
     private val settings: AppSettings,
     private val uploadScheduler: UploadScheduler,
     viewProvider: GroupViewProvider,
+    exchangeStatus: ExchangeStatus,
+    locationDao: LocationDao,
     engine: SyncEngine,
     @FakeGroupData private val useFakeGroupData: Boolean,
 ) : ViewModel() {
@@ -68,6 +75,17 @@ class GroupViewModel @Inject constructor(
      * (см. `receivedBy`). Подтверждают только соседи, которых мой телефон слышит напрямую.
      */
     val reportedBySeq: StateFlow<Map<MemberId, Map<MemberId, Long>>> = engine.reportedBySeq
+
+    /** Работает ли обмен с группой и когда он закончится после завершения маршрута, по словам самой службы. */
+    val exchange: StateFlow<Exchange> = exchangeStatus.exchange
+
+    /** Отправка трека активной группы для стартовой карточки и экрана завершения; null, пока база не ответила. */
+    val trackStatus: StateFlow<TrackStatus?> = combine(
+        locationDao.observeCount(),
+        locationDao.observeUnsentCount(),
+        settings.serverUrl,
+    ) { points, unsent, serverUrl -> TrackStatus(points, unsent, hasServer = serverUrl.isNotBlank()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), initialValue = null)
 
     /** Адрес сервера: его вместе с токеном отправляет «Передать токен» на экране QR. */
     val serverUrl: StateFlow<String> = settings.serverUrl
@@ -90,12 +108,24 @@ class GroupViewModel @Inject constructor(
 
     /**
      * Запущена ли служба по последнему вызову [RouteService.start]. false, если запуск не удался из-за разрешений
-     * или службу остановили «Выключить» и «Новая группа»; null, пока службу в этом процессе не запускали.
-     * Что служба сама выключилась через 15 минут после завершения маршрута, здесь не видно.
+     * или службу остановили «Выключить» и «Новая группа»; null, пока службу в этом процессе не запускали. По нему
+     * экраны предупреждают о разрешениях, а работает ли служба на самом деле, показывает [exchange].
      */
     val serviceStarted: StateFlow<Boolean?> = serviceStartedState.asStateFlow()
 
     private val settingUpState = MutableStateFlow(false)
+
+    private val quittingState = MutableStateFlow(false)
+
+    /**
+     * Участник нажал «Выйти из группы», и служба сообщает группе о выходе (до `RouteService.QUIT_CONFIRM_MS`).
+     * Снимается, когда группа стёрта.
+     */
+    val quitting: StateFlow<Boolean> = quittingState.asStateFlow()
+
+    init {
+        viewModelScope.launch { hasGroup.collect { if (it == false) quittingState.value = false } }
+    }
 
     /**
      * Группа создаётся или идёт вступление: кнопка экрана неактивна, пока навигация не уведёт дальше. После успеха
@@ -107,8 +137,8 @@ class GroupViewModel @Inject constructor(
     /**
      * Поднимает службу, когда приложение на экране: после убийства процесса, принудительной остановки или выдачи
      * разрешений. Для той же группы служба ничего не перезапускает. После завершения маршрута служба не поднимается:
-     * она сама работает 15 минут после ROUTE_FINISHED или её останавливает «Выключить». Вид ждём из потока, потому что
-     * сразу после открытия приложения он ещё null.
+     * она сама выключается, когда завершение дошло до всех, или её останавливает «Выключить». Вид ждём из потока,
+     * потому что сразу после открытия приложения он ещё null.
      */
     fun ensureRouteServiceRunning() {
         viewModelScope.launch {
@@ -128,11 +158,20 @@ class GroupViewModel @Inject constructor(
         if (useFakeGroupData) repository.join(qr) else actions.joinGroup(qr, myName)
     }
 
+    /**
+     * Если на телефоне хранится прошлая группа (стартовый экран уже спросил, стирать ли её), сначала стирает её
+     * через службу и ждёт конца стирания: новая группа, записанная раньше, стёрлась бы вместе со старой. Так прошлая
+     * группа пропадает только тогда, когда человек правда создаёт новую или вступает в другую.
+     */
     private fun setUpGroup(write: suspend () -> Unit) {
         if (settingUpState.value) return
         settingUpState.value = true
         serviceStartedState.value = null
         viewModelScope.launch {
+            if (repository.activeGroup() != null) {
+                RouteService.leave(context)
+                repository.activeGroup.first { it == null }
+            }
             try {
                 write()
             } catch (e: Exception) {
@@ -147,13 +186,33 @@ class GroupViewModel @Inject constructor(
 
     fun finishRoute() = act { actions.finishRoute() }
 
+    /**
+     * «Отменить сбор» у руководителя. Если никто не вступил, группа просто стирается. Иначе сбор завершается
+     * у всех событием ROUTE_FINISHED, и вступившие увидят «Сбор отменён», а группа остаётся завершённой.
+     */
+    fun cancelGathering() {
+        val others = view.value?.members?.any { !it.isMe } ?: return
+        if (others) finishRoute() else leaveGroup()
+    }
+
+    /** «Выйти из группы» у участника: служба сообщает группе о выходе и стирает группу, навигация уйдёт на старт. */
+    fun quitGroup() {
+        if (useFakeGroupData) return leaveGroup()
+        quittingState.value = true
+        serviceStartedState.value = false
+        RouteService.quit(context)
+    }
+
     /** «Выключить» после завершения маршрута, не дожидаясь 15 минут. Группа остаётся на телефоне. */
     fun stopService() {
         serviceStartedState.value = false
         RouteService.stop(context)
     }
 
-    /** «Новая группа»: служба останавливается и стирает группу, а навигация по [hasGroup] уходит на старт. */
+    /**
+     * «Новая группа» после маршрута, отмена сбора без участников и «Выйти сразу», пока служба ждёт подтверждения
+     * выхода: служба останавливается и стирает группу, а навигация по [hasGroup] уходит на старт.
+     */
     fun leaveGroup() {
         serviceStartedState.value = false
         settingUpState.value = false
@@ -193,5 +252,10 @@ class GroupViewModel @Inject constructor(
     private fun act(action: suspend () -> Unit) {
         if (useFakeGroupData) return
         viewModelScope.launch { action() }
+    }
+
+    private companion object {
+        /** Сколько миллисекунд держать подписку на базу без экрана, чтобы поворот экрана её не перезапускал. */
+        const val STOP_TIMEOUT_MS = 5_000L
     }
 }

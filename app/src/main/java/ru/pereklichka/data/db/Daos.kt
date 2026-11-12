@@ -129,3 +129,43 @@ interface MemberStateDao {
     @Query("DELETE FROM member_state")
     suspend fun deleteAll()
 }
+
+/**
+ * Очередь трека стёртых групп для `GroupRepository` (перенос при стирании группы) и `UploadWorker` (отправка).
+ */
+@Dao
+interface OutboxDao {
+    /** Переносит в очередь под [groupTag] неотправленные и не отклонённые точки из `location_point`. */
+    @Query(
+        "INSERT OR IGNORE INTO outbox_point " +
+            "(id, groupTag, author, seq, latitude, longitude, recordedAtMs, accuracyM, altitudeM, speedMps, bearingDeg, batteryPercent) " +
+            "SELECT id, :groupTag, author, seq, latitude, longitude, recordedAtMs, accuracyM, altitudeM, speedMps, bearingDeg, " +
+            "batteryPercent FROM location_point WHERE uploaded = 0 AND rejected = 0",
+    )
+    suspend fun copyUnsentPoints(groupTag: String)
+
+    @Upsert
+    suspend fun upsertGroup(group: OutboxGroupEntity)
+
+    @Query("SELECT * FROM outbox_group")
+    suspend fun groups(): List<OutboxGroupEntity>
+
+    @Query("SELECT * FROM outbox_point WHERE groupTag = :groupTag ORDER BY author, seq LIMIT :limit")
+    suspend fun points(groupTag: String, limit: Int): List<OutboxPointEntity>
+
+    @Query("DELETE FROM outbox_point WHERE id IN (:ids)")
+    suspend fun deletePoints(ids: List<String>)
+
+    /** Удаляет группу [tag] из очереди, если её точек там больше нет. */
+    @Query("DELETE FROM outbox_group WHERE tag = :tag AND NOT EXISTS (SELECT 1 FROM outbox_point WHERE groupTag = :tag)")
+    suspend fun deleteGroupIfEmpty(tag: String)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM outbox_point WHERE groupTag = :groupTag)")
+    suspend fun hasPoints(groupTag: String): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM outbox_point)")
+    suspend fun hasAnyPoints(): Boolean
+
+    @Query("SELECT COUNT(*) FROM outbox_point")
+    fun observeCount(): Flow<Int>
+}

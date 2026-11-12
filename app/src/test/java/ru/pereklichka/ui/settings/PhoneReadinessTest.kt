@@ -58,15 +58,12 @@ class PhoneReadinessTest {
     }
 
     @Test
-    fun `подписи соседей и карты`() {
+    fun `подписи соседей`() {
         assertEquals("Рядом 2 телефона", nearbyTitle(2))
         assertEquals("Рядом никого", nearbyTitle(0))
         assertEquals("Даниил, Ольга · последнее сообщение 3 с назад", nearbySubtitle(listOf("Даниил", "Ольга"), 3_400))
         assertEquals("Последнее сообщение 2 мин назад", nearbySubtitle(emptyList(), 150_000))
         assertEquals("Сообщений от группы не было", nearbySubtitle(emptyList(), null))
-        assertEquals("Отправлено 1 240 точек · ждут 12", mapSubtitle(1_240, 12, serverSet = true, error = null).replace(Char(0xA0), ' '))
-        assertEquals("Отправлена 1 точка · ждут 0", mapSubtitle(1, 0, serverSet = true, error = null))
-        assertEquals("Адрес сервера не задан · ждут 3", mapSubtitle(0, 3, serverSet = false, error = null))
     }
 
     @Test

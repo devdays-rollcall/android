@@ -1,7 +1,6 @@
 package ru.pereklichka.data
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
 import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,10 +23,8 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    private val isDebuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-
     private val serverUrlState = MutableStateFlow(
-        prefs.getString(KEY_SERVER_URL, if (isDebuggable) "" else DEFAULT_SERVER_URL).orEmpty(),
+        prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL).orEmpty(),
     )
     private val demoModeState = MutableStateFlow(prefs.getBoolean(KEY_DEMO_MODE, false))
     private val blockedState = MutableStateFlow(
@@ -36,8 +33,9 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     private val devOptionsState = MutableStateFlow(prefs.getBoolean(KEY_DEV_OPTIONS, false))
 
     /**
-     * Адрес сервера без завершающей косой черты. В release по умолчанию боевой сервер, в debug пусто: отладочная
-     * сборка не шлёт точки и SOS, пока адрес не ввели на экране «Для разработчиков», и не включает тревогу у настоящих групп.
+     * Адрес сервера без завершающей косой черты, по умолчанию [DEFAULT_SERVER_URL] в любой сборке, иначе после
+     * переустановки отладочная сборка молча копила бы трек. SOS при этом уходит только наблюдателям своей группы.
+     * Пустой адрес, введённый на экране «Для разработчиков», выключает отправку точек и SOS.
      */
     val serverUrl: StateFlow<String> = serverUrlState.asStateFlow()
 

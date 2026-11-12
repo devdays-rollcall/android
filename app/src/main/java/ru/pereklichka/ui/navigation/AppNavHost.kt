@@ -46,7 +46,8 @@ import ru.pereklichka.ui.settings.SettingsScreen
  * Один [GroupViewModel] на всю навигацию, поэтому экраны группы смотрят на один и тот же `GroupView`. Первый экран
  * зависит от того, была ли активная группа при запуске. Дальше навигация следит за [GroupViewModel.hasGroup]:
  * когда группа появилась, экран создания или вступления сменяется экраном группы, а когда её стёрла «Новая группа»,
- * приложение уходит на старт. При каждом возврате приложения на экран вызывается
+ * приложение уходит на старт. С экрана завершённой группы «Назад» тоже ведёт на старт, а группа остаётся на телефоне
+ * и открывается оттуда же. При каждом возврате приложения на экран вызывается
  * [GroupViewModel.ensureRouteServiceRunning], так служба оживает после убийства процесса или выдачи разрешений.
  */
 @Composable
@@ -61,6 +62,9 @@ fun AppNavHost(
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
     val serviceStarted by viewModel.serviceStarted.collectAsStateWithLifecycle()
     val settingUp by viewModel.settingUp.collectAsStateWithLifecycle()
+    val exchange by viewModel.exchange.collectAsStateWithLifecycle()
+    val trackStatus by viewModel.trackStatus.collectAsStateWithLifecycle()
+    val quitting by viewModel.quitting.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     LifecycleResumeEffect(Unit) {
         viewModel.ensureRouteServiceRunning()
@@ -103,6 +107,10 @@ fun AppNavHost(
         composable<StartRoute> {
             val go = onlyWhenResumed()
             StartScreen(
+                lastGroup = view.takeIf { hasGroup == true },
+                hasStoredGroup = hasGroup == true,
+                trackStatus = trackStatus,
+                onOpenGroup = { go { navController.replaceStack(GroupRoute) } },
                 onCreateGroup = { go { navController.open(CreateGroupRoute) } },
                 onJoinGroup = { go { navController.open(JoinRoute) } },
                 // Без проверки RESUMED: стартовый экран открывает разрешения сам, ещё до конца перехода на него,
@@ -137,6 +145,13 @@ fun AppNavHost(
                     onStartRoute = { go { viewModel.startRoute(); navController.replaceStack(GroupRoute) } },
                     onOpenGroup = { go { navController.replaceStack(GroupRoute) } },
                     onPermissions = { go { navController.open(PermissionsRoute) } },
+                    // Без вступивших группа стирается, и навигация сама уйдёт на старт; иначе сбор становится
+                    // завершённым, и его показывает экран группы.
+                    onCancelGathering = {
+                        val joined = it.members.any { member -> !member.isMe }
+                        viewModel.cancelGathering()
+                        if (joined) go { navController.replaceStack(GroupRoute) }
+                    },
                 )
             }
         }
@@ -157,6 +172,12 @@ fun AppNavHost(
                     onLobby = { go { navController.open(LobbyRoute) } },
                     onStopService = viewModel::stopService,
                     onNewGroup = viewModel::leaveGroup,
+                    onToStart = { go { navController.replaceStack(StartRoute) } },
+                    onQuit = viewModel::quitGroup,
+                    onCancelGathering = viewModel::cancelGathering,
+                    quitting = quitting,
+                    exchange = exchange,
+                    trackStatus = trackStatus,
                 )
             }
         }
@@ -229,6 +250,8 @@ fun AppNavHost(
                 FinishRouteScreen(
                     it,
                     serviceStarted = serviceStarted,
+                    exchange = exchange,
+                    trackStatus = trackStatus,
                     onFinish = viewModel::finishRoute,
                     onStopService = viewModel::stopService,
                     onNewGroup = viewModel::leaveGroup,
@@ -271,7 +294,10 @@ private fun NavHostController.open(route: Any) {
     navigate(route) { launchSingleTop = true }
 }
 
-/** Переход без возврата: после создания группы, вступления и «Новой группы» «Назад» не ведёт на прошлый экран. */
+/**
+ * Переход без возврата: после создания группы, вступления, «Новой группы» и между стартом и завершённой группой
+ * «Назад» не ведёт на прошлый экран.
+ */
 private fun NavHostController.replaceStack(route: Any) {
     navigate(route) { popUpTo(graph.id) { inclusive = true } }
 }

@@ -261,6 +261,59 @@ class GroupCalculatorTest {
     }
 
     @Test
+    fun `завершение подтверждают соседи, чья сводка уже содержит его`() {
+        val history = History().apply { joinAll() }
+        assertNull(compute(history).finishNotConfirmedBy(emptyMap()))
+
+        val finish = history.event(leader, EventType.ROUTE_FINISHED)
+        assertEquals(finish.seq, compute(history).routeFinishedSeq)
+        val reported = mapOf(
+            a to mapOf(leader to finish.seq),
+            b to mapOf(leader to finish.seq - 1),
+            c to mapOf(a to 5L),
+        )
+        assertEquals(setOf(b, c, d), compute(history).finishNotConfirmedBy(reported)?.toSet())
+        // Участник не ждёт ни себя, ни руководителя: у того завершение есть всегда.
+        assertEquals(setOf(c, d), compute(history, me = b).finishNotConfirmedBy(reported)?.toSet())
+    }
+
+    @Test
+    fun `вышедший участник пропадает из списка вместе с тревогами о нём`() {
+        val history = History().apply {
+            joinAll()
+            event(leader, EventType.ALARM, target = a)
+            event(b, EventType.ALARM, target = c)
+            event(a, EventType.LEFT)
+        }
+
+        val view = compute(history)
+        assertFalse(view.members.any { it.id == a })
+        assertEquals(listOf(c), view.alarms.map { it.target })
+        // Свой телефон себя из списка не убирает, пока выход расходится по группе.
+        assertTrue(compute(history, me = a).members.any { it.id == a })
+    }
+
+    @Test
+    fun `LEFT руководителя состав не меняет`() {
+        val history = History().apply {
+            joinAll()
+            event(leader, EventType.LEFT)
+        }
+
+        assertTrue(compute(history, me = b).members.any { it.id == leader })
+    }
+
+    @Test
+    fun `без других участников завершение ждать не от кого`() {
+        val history = History().apply {
+            event(leader, EventType.JOINED, name = "Руководитель")
+            event(leader, EventType.ROUTE_FINISHED)
+        }
+
+        assertEquals(emptyList(), compute(history).finishNotConfirmedBy(emptyMap()))
+    }
+
+    @Test
     fun `тревога показывает, о ком она и кто её объявил`() {
         val history = History().apply { joinAll() }
         val alarm = history.event(b, EventType.ALARM, target = a, ageMs = 4_000)

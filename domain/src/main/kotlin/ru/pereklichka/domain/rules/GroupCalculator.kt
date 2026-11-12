@@ -18,6 +18,7 @@ import ru.pereklichka.domain.time.ageNow
  * Создаёт его `GroupViewProvider` при запуске и при переключении режима демо (с другими [Thresholds]), а вызывает
  * раз в 2 секунды и при изменении данных. Кратко правила такие:
  * - состав группы даёт событие JOINED, руководитель берётся из [ru.pereklichka.domain.model.GroupInfo];
+ *   участник с событием LEFT из состава уходит вместе с тревогами о нём, LEFT руководителя не считается;
  * - маршрут ACTIVE после ROUTE_STARTED руководителя и FINISHED после его ROUTE_FINISHED;
  * - участник «Не слышно» (LOST), если он не в отлучке, а контакта не было или он старше [Thresholds.lostAfterMs];
  *   себя телефон «Не слышно» не считает, а отлучку показывает по моим событиям AWAY, как у всех;
@@ -59,7 +60,14 @@ class GroupCalculator(private val thresholds: Thresholds) {
             .filter { it.value.type == EventType.JOINED }
             .groupBy { it.value.author }
             .mapValues { (author, joined) -> joined.maxBy { it.value.seq }.value.name ?: author.value }
-        private val alarms: List<AlarmView> = activeAlarms(events.map { it.value }, group.leaderId).map(::alarmView)
+        // Ушедший пропадает из списка у всех, кроме себя самого: свой телефон стирает группу, когда выход разошёлся.
+        private val left: Set<MemberId> = events
+            .filter { it.value.type == EventType.LEFT && it.value.author != group.leaderId && it.value.author != me }
+            .map { it.value.author }
+            .toSet()
+        private val alarms: List<AlarmView> = activeAlarms(events.map { it.value }, group.leaderId)
+            .filter { it.alarmTarget !in left }
+            .map(::alarmView)
 
         /**
          * Место участника в списке: кому нужна помощь, стоит выше. В большой группе пропавший иначе уходил бы
@@ -74,7 +82,7 @@ class GroupCalculator(private val thresholds: Thresholds) {
         }
 
         fun groupView(): GroupView {
-            val members = names.keys
+            val members = (names.keys - left)
                 .map(::memberView)
                 .sortedWith(compareBy(::severity, { !it.isMe }, { it.name }, { it.id.value }))
             return GroupView(
@@ -84,6 +92,7 @@ class GroupCalculator(private val thresholds: Thresholds) {
                 route = routeState(),
                 routeStartedAgo = leaderEventAge(EventType.ROUTE_STARTED),
                 routeFinishedAgo = leaderEventAge(EventType.ROUTE_FINISHED),
+                routeFinishedSeq = leaderEvent(EventType.ROUTE_FINISHED)?.value?.seq,
                 members = members,
                 alarms = alarms,
                 rollcall = rollcallView(members),
@@ -92,10 +101,12 @@ class GroupCalculator(private val thresholds: Thresholds) {
         }
 
         /** Возраст первого события [type] руководителя; null, если такого нет. */
-        private fun leaderEventAge(type: EventType): Age? = events
+        private fun leaderEventAge(type: EventType): Age? = leaderEvent(type)?.ageNow(clock)
+
+        /** Первое событие [type] руководителя; null, если такого нет. */
+        private fun leaderEvent(type: EventType) = events
             .filter { it.value.author == group.leaderId && it.value.type == type }
             .minByOrNull { it.value.seq }
-            ?.ageNow(clock)
 
         private fun routeState(): RouteState {
             val leaderTypes = events.filter { it.value.author == group.leaderId }.map { it.value.type }.toSet()

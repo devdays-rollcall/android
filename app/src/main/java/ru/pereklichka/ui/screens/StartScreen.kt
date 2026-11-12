@@ -47,18 +47,34 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import ru.pereklichka.R
+import ru.pereklichka.domain.rules.GroupView
+import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.permissions.RequiredPermissions
+import ru.pereklichka.ui.FakeGroupViews
 import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.ButtonKind
 import ru.pereklichka.ui.components.CustomTopScreen
+import ru.pereklichka.ui.components.IconCircle
+import ru.pereklichka.ui.components.ListCard
+import ru.pereklichka.ui.components.ListRow
+import ru.pereklichka.ui.components.SectionHeader
 import ru.pereklichka.ui.components.SymIcon
+import ru.pereklichka.ui.components.TrackStatus
 import ru.pereklichka.ui.components.plural
+import ru.pereklichka.ui.components.routeChipText
+import ru.pereklichka.ui.components.trackLine
 import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.statusColors
 
 /**
  * Старт: создать группу или вступить по QR-коду. Первый экран, пока группы нет. Шестерёнка справа вверху
  * открывает настройки: без группы их больше неоткуда открыть.
+ *
+ * Сюда же ведёт «Назад» с экрана завершённой группы. Тогда группа ещё хранится на телефоне ([hasStoredGroup]),
+ * и вместо подсказок «как это работает» видна карточка [lastGroup]: нажатие открывает группу, а подпись говорит,
+ * ушёл ли трек на сервер ([trackStatus]). Создание группы и вступление в другую сначала просят подтвердить, что эта
+ * группа сотрётся. Стирает её `GroupViewModel` только в момент, когда новая группа записывается, поэтому «Назад»
+ * с экрана создания или сканера прошлую группу не теряет.
  *
  * Строка под кнопками показывает готовность телефона. Если выданы разрешения на обмен
  * (`RequiredPermissions.exchange`) и геолокацию (`location`), в ней «Телефон готов к походу», иначе нажимаемая
@@ -70,6 +86,10 @@ import ru.pereklichka.ui.theme.statusColors
  */
 @Composable
 fun StartScreen(
+    lastGroup: GroupView?,
+    hasStoredGroup: Boolean,
+    trackStatus: TrackStatus?,
+    onOpenGroup: () -> Unit,
     onCreateGroup: () -> Unit,
     onJoinGroup: () -> Unit,
     onPermissions: () -> Unit,
@@ -89,7 +109,38 @@ fun StartScreen(
             onPermissions()
         }
     }
-    StartContent(missing, onCreateGroup, onJoinGroup, onPermissions, onSettings)
+    // Куда идти после подтверждения, что старая группа сотрётся: к созданию группы или к вступлению.
+    var pending by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    val replacing = { create: Boolean ->
+        when {
+            !hasStoredGroup -> if (create) onCreateGroup() else onJoinGroup()
+            else -> pending = create
+        }
+    }
+    StartContent(
+        missing,
+        lastGroup,
+        trackStatus,
+        onOpenGroup,
+        onCreateGroup = { replacing(true) },
+        onJoinGroup = { replacing(false) },
+        onPermissions,
+        onSettings,
+    )
+    val create = pending
+    if (create != null && hasStoredGroup) {
+        NewGroupDialog(
+            title = if (create) "Создать новую группу?" else "Вступить в другую группу?",
+            groupName = lastGroup?.group?.name ?: "",
+            unsentPoints = trackStatus?.unsent,
+            confirmLabel = "Продолжить",
+            onConfirm = {
+                pending = null
+                if (create) onCreateGroup() else onJoinGroup()
+            },
+            onDismiss = { pending = null },
+        )
+    }
 }
 
 /**
@@ -105,6 +156,9 @@ private fun missingRequired(context: Context): Int {
 @Composable
 private fun StartContent(
     missingPermissions: Int,
+    lastGroup: GroupView?,
+    trackStatus: TrackStatus?,
+    onOpenGroup: () -> Unit,
     onCreateGroup: () -> Unit,
     onJoinGroup: () -> Unit,
     onPermissions: () -> Unit,
@@ -128,9 +182,35 @@ private fun StartContent(
     ) {
         Hero()
         Spacer(Modifier.height(4.dp))
-        HowItWorks(R.drawable.sym_qr_code_2, "Руководитель создаёт группу", "и показывает QR-код участникам")
-        HowItWorks(R.drawable.sym_bluetooth, "Телефоны находят друг друга сами", "по Bluetooth и Wi-Fi, интернет не нужен")
-        HowItWorks(R.drawable.sym_notifications_active, "Отставшего видно сразу", "и тревога дойдёт до всей группы")
+        if (lastGroup != null) {
+            LastGroupCard(lastGroup, trackStatus, onOpenGroup)
+        } else {
+            HowItWorks(R.drawable.sym_qr_code_2, "Руководитель создаёт группу", "и показывает QR-код участникам")
+            HowItWorks(R.drawable.sym_bluetooth, "Телефоны находят друг друга сами", "по Bluetooth и Wi-Fi, интернет не нужен")
+            HowItWorks(R.drawable.sym_notifications_active, "Отставшего видно сразу", "и тревога дойдёт до всей группы")
+        }
+    }
+}
+
+/** Карточка группы, которая ещё хранится на телефоне: «Маршрут завершён · 12 точек трека ждут интернета». */
+@Composable
+private fun LastGroupCard(group: GroupView, trackStatus: TrackStatus?, onOpen: () -> Unit) {
+    val track = trackStatus?.let(::trackLine)
+    val ok = MaterialTheme.statusColors.ok
+    Column {
+        SectionHeader("Последняя группа")
+        ListCard(
+            listOf(
+                {
+                    ListRow(
+                        group.group.name,
+                        subtitle = listOfNotNull(routeChipText(group.route, group.routeStartedAgo), track).joinToString(" · "),
+                        onClick = onOpen,
+                        leading = { IconCircle(R.drawable.sym_flag, ok.container, ok.content) },
+                    )
+                },
+            ),
+        )
     }
 }
 
@@ -242,11 +322,24 @@ private fun Readiness(missing: Int, onPermissions: () -> Unit) {
 @Preview(name = "Старт, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun StartPreview() {
-    PereklichkaTheme { StartContent(0, {}, {}, {}, {}) }
+    PereklichkaTheme { StartContent(0, null, null, {}, {}, {}, {}, {}) }
 }
 
 @Preview(name = "Старт без разрешений")
 @Composable
 private fun StartNoPermissionsPreview() {
-    PereklichkaTheme { StartContent(2, {}, {}, {}, {}) }
+    PereklichkaTheme { StartContent(2, null, null, {}, {}, {}, {}, {}) }
+}
+
+@Preview(name = "Старт с завершённой группой")
+@Composable
+private fun StartLastGroupPreview() {
+    PereklichkaTheme {
+        StartContent(
+            0,
+            FakeGroupViews.leader.copy(route = RouteState.FINISHED),
+            TrackStatus(points = 240, unsent = 12, hasServer = true),
+            {}, {}, {}, {}, {},
+        )
+    }
 }

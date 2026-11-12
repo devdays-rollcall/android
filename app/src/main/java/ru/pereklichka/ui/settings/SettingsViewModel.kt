@@ -22,14 +22,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import ru.pereklichka.data.AppSettings
 import ru.pereklichka.data.GroupRepository
-import ru.pereklichka.data.db.AppDatabase
 import ru.pereklichka.domain.presence.PresenceTracker
 import ru.pereklichka.notify.PhoneChecks
 import ru.pereklichka.permissions.RequiredPermissions
 import ru.pereklichka.service.PowerTools
 import ru.pereklichka.status.GroupViewProvider
 import ru.pereklichka.transport.RadioCheck
-import ru.pereklichka.upload.UploadStatus
 import javax.inject.Inject
 
 /** Всё, что показывает [SettingsScreen]. */
@@ -42,19 +40,12 @@ data class SettingsState(
     val nearby: List<String> = emptyList(),
     /** Сколько миллисекунд назад пришло последнее сообщение от кого-нибудь из группы; null, если не приходило. */
     val lastMessageAgoMs: Long? = null,
-    val pointsSent: Int = 0,
-    val pointsWaiting: Int = 0,
-    val serverSet: Boolean = false,
-    val uploadError: String? = null,
     val demoMode: Boolean = false,
     val devUnlocked: Boolean = false,
 )
 
-/** Точки в базе для строки «Карта похода»: всего, ждут отправки, отклонены сервером. */
-private data class PointCounts(val total: Int, val waiting: Int, val rejected: Int)
-
 /**
- * Данные для [SettingsScreen]: проверки телефона, соседи, отправка точек и настройки приложения. Проверки
+ * Данные для [SettingsScreen]: проверки телефона, соседи и настройки приложения. Проверки
  * и соседи перечитываются раз в 2 секунды, а [refresh] перечитывает их сразу, когда человек вернулся из системных
  * настроек. Здесь же считаются нажатия на «О приложении», которые открывают экран «Для разработчиков».
  */
@@ -62,11 +53,9 @@ private data class PointCounts(val total: Int, val waiting: Int, val rejected: I
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     groupRepository: GroupRepository,
-    db: AppDatabase,
     private val radioCheck: RadioCheck,
     val powerTools: PowerTools,
     private val settings: AppSettings,
-    uploadStatus: UploadStatus,
     private val presence: PresenceTracker,
     viewProvider: GroupViewProvider,
 ) : ViewModel() {
@@ -83,24 +72,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private val points = combine(
-        db.locationDao().observeCount(),
-        db.locationDao().observeUnsentCount(),
-        db.locationDao().observeRejectedCount(),
-        ::PointCounts,
-    )
-
-    private val upload = combine(settings.serverUrl, uploadStatus.lastError, ::Pair)
-
     private val app = combine(settings.demoMode, settings.devOptionsUnlocked, ::Pair)
 
     val state: StateFlow<SettingsState> = combine(
         ticks,
         combine(groupRepository.activeGroup, viewProvider.view, ::Pair),
-        points,
-        upload,
         app,
-    ) { (checks, heard), (group, view), counts, (serverUrl, error), (demo, unlocked) ->
+    ) { (checks, heard), (group, view), (demo, unlocked) ->
         val names = view?.members?.associate { it.id to it.name }.orEmpty()
         SettingsState(
             checks = checks,
@@ -110,10 +88,6 @@ class SettingsViewModel @Inject constructor(
                 .map { names[it] ?: it.value.take(SHORT_ID) }
                 .sorted(),
             lastMessageAgoMs = heard.values.minOrNull(),
-            pointsSent = counts.total - counts.waiting - counts.rejected,
-            pointsWaiting = counts.waiting,
-            serverSet = serverUrl.isNotBlank(),
-            uploadError = error,
             demoMode = demo,
             devUnlocked = unlocked,
         )

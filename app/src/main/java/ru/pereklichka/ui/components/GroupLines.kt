@@ -33,10 +33,13 @@ fun formatClock(ms: Long): String {
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
-/** Плашка под названием группы: «Сбор», «На маршруте 2 ч 14 мин», «Маршрут завершён». */
+/**
+ * Плашка под названием группы: «Сбор», «На маршруте 2 ч 14 мин», «Маршрут завершён». Завершение без «Выходим»
+ * значит, что руководитель отменил сбор.
+ */
 fun routeChipText(route: RouteState, startedAgo: Age?): String = when (route) {
     RouteState.LOBBY -> "Сбор"
-    RouteState.FINISHED -> "Маршрут завершён"
+    RouteState.FINISHED -> if (startedAgo == null) "Сбор отменён" else "Маршрут завершён"
     RouteState.ACTIVE -> when {
         startedAgo == null -> "На маршруте"
         startedAgo.approximate -> "На маршруте примерно ${formatDuration(startedAgo.ms)}"

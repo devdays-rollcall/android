@@ -47,13 +47,17 @@ data class DevState(
     val uploadError: String? = null,
 )
 
-/** Сколько записей в базе: события, точки (всего, ждут отправки, отклонены) и состояния участников. */
+/**
+ * Сколько записей в базе: события, точки (всего, ждут отправки, отклонены), состояния участников и точки стёртых
+ * групп, которые ещё ждут отправки в очереди.
+ */
 data class DatabaseCounts(
     val events: Int = 0,
     val points: Int = 0,
     val unsentPoints: Int = 0,
     val rejectedPoints: Int = 0,
     val states: Int = 0,
+    val queuedPoints: Int = 0,
 )
 
 /**
@@ -87,7 +91,8 @@ class DevViewModel @Inject constructor(
         db.locationDao().observeUnsentCount(),
         db.locationDao().observeRejectedCount(),
         db.memberStateDao().observeCount(),
-    ) { events, points, unsent, rejected, states -> DatabaseCounts(events, points, unsent, rejected, states) }
+        db.outboxDao().observeCount(),
+    ) { values -> DatabaseCounts(values[0], values[1], values[2], values[3], values[4], values[5]) }
 
     private val upload = combine(settings.serverUrl, uploadStatus.lastAcceptedWallMs, uploadStatus.lastError, ::Triple)
 

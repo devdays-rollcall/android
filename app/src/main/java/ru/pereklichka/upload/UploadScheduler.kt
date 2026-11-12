@@ -69,7 +69,7 @@ class UploadScheduler @Inject constructor(@ApplicationContext private val contex
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(UPLOAD_PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
     }
 
-    /** Снимает периодическую отправку: после «Новой группы» отправлять нечего до новой группы. */
+    /** Снимает периодическую отправку: после «Новой группы», если в очереди стёртых групп не осталось трека. */
     fun cancelPeriodic() {
         WorkManager.getInstance(context).cancelUniqueWork(UPLOAD_PERIODIC)
     }

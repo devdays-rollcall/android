@@ -303,12 +303,47 @@ class UploadWorkerTest {
         assertEquals(2, db.locationDao().unsent(10).size)
     }
 
+    @Test
+    fun `трек стёртой группы уходит с её токеном и от её имени после точек новой группы`() = runTest {
+        insertPoints(3)
+        val old = group
+        repository.leaveGroup()
+        group = repository.createGroup("Новый поход")
+        db.locationDao().insertAll(listOf(entity(pid("new-point"), 1)))
+        respond { batch -> accepted(batch) }
+
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+
+        assertEquals(listOf(group.me.value, old.me.value), batches.map { it.senderId })
+        assertEquals(listOf(1, 3), batches.map { it.events.size })
+        assertEquals("Bearer ${group.token}", server.takeRequest().headers["Authorization"])
+        assertEquals("Bearer ${old.token}", server.takeRequest().headers["Authorization"])
+        assertEquals(emptyList(), db.outboxDao().groups())
+        assertEquals(emptyList(), db.outboxDao().points(old.tag, 10))
+    }
+
+    @Test
+    fun `очередь стёртых групп уходит и без активной группы, а ошибка оставляет её для повтора`() = runTest {
+        insertPoints(2)
+        val old = group
+        repository.leaveGroup()
+        respond { MockResponse.Builder().code(503).body(error("unavailable")).build() }
+
+        assertEquals(ListenableWorker.Result.retry(), runWorker())
+        assertEquals(2, db.outboxDao().points(old.tag, 10).size)
+
+        respond { batch -> accepted(batch) }
+        assertEquals(ListenableWorker.Result.success(), runWorker())
+        assertEquals(setOf(pid("point-1"), pid("point-2")), acceptedIds.toSet())
+        assertEquals(emptyList(), db.outboxDao().groups())
+    }
+
     private suspend fun runWorker(): ListenableWorker.Result {
         val worker = TestListenableWorkerBuilder<UploadWorker>(context)
             .setWorkerFactory(object : WorkerFactory() {
                 override fun createWorker(appContext: Context, workerClassName: String, workerParameters: WorkerParameters) =
                     UploadWorker(
-                        appContext, workerParameters, db.locationDao(), repository,
+                        appContext, workerParameters, db.locationDao(), db.outboxDao(), repository,
                         NetworkModule.eventsApi(NetworkModule.okHttpClient()), settings, uploadStatus, viewProvider, clock,
                     )
             })

@@ -128,6 +128,7 @@ class NotificationChangesTest {
         route = RouteState.ACTIVE,
         routeStartedAgo = null,
         routeFinishedAgo = null,
+        routeFinishedSeq = null,
         members = listOf(member(leader, "Руководитель", me), member(ann, "Аня", me), member(bob, "Боб", me)),
         alarms = emptyList(),
         rollcall = null,

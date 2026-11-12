@@ -1,6 +1,7 @@
 package ru.pereklichka.ui.screens
 
 import android.content.res.Configuration
+import android.os.SystemClock
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,12 +31,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import ru.pereklichka.R
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.MemberView
 import ru.pereklichka.domain.rules.Presence
 import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.domain.time.Age
+import ru.pereklichka.service.Exchange
 import ru.pereklichka.ui.FakeGroupViews
 import ru.pereklichka.ui.components.AppScreen
 import ru.pereklichka.ui.components.BigButtonFull
@@ -44,10 +48,12 @@ import ru.pereklichka.ui.components.ListCard
 import ru.pereklichka.ui.components.ListRow
 import ru.pereklichka.ui.components.SectionHeader
 import ru.pereklichka.ui.components.SymIcon
+import ru.pereklichka.ui.components.TrackStatus
 import ru.pereklichka.ui.components.WarningBanner
 import ru.pereklichka.ui.components.formatAge
 import ru.pereklichka.ui.components.plural
 import ru.pereklichka.ui.components.rememberPermissionWarning
+import ru.pereklichka.ui.components.trackLine
 import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.StatusColor
 import ru.pereklichka.ui.theme.spacing
@@ -60,13 +66,15 @@ import ru.pereklichka.ui.theme.statusColors
  * под ней предупреждение о каждом, кого не слышно, и что случится после завершения. Внизу «Завершить для всей группы»
  * с подтверждением и «Вернуться к группе». Если служба не запущена или не хватает разрешений, над сводкой
  * предупреждение со входом на экран разрешений. После завершения сводка показывает, сколько шёл маршрут и когда
- * завершён, а внизу то же, что на экране группы ([FinishedActions]): «Выключить», пока служба может работать,
+ * завершён, а внизу то же, что на экране группы ([FinishedActions]): «Выключить», пока обмен работает,
  * и «Новая группа».
  */
 @Composable
 fun FinishRouteScreen(
     view: GroupView,
     serviceStarted: Boolean?,
+    exchange: Exchange,
+    trackStatus: TrackStatus?,
     onFinish: () -> Unit,
     onStopService: () -> Unit,
     onNewGroup: () -> Unit,
@@ -81,7 +89,7 @@ fun FinishRouteScreen(
         onBack = onBack,
         bottom = {
             if (finished) {
-                FinishedActions(view, serviceStarted, onStopService, onNewGroup)
+                FinishedActions(view, exchange, trackStatus, onStopService, onNewGroup)
             } else {
                 BigButtonFull("Завершить для всей группы", { confirm = true }, ButtonKind.DANGER, R.drawable.sym_flag, large = true)
                 TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
@@ -91,7 +99,7 @@ fun FinishRouteScreen(
         },
     ) {
         if (finished) {
-            FinishedSummary(view)
+            FinishedSummary(view, trackStatus)
         } else {
             rememberPermissionWarning(serviceStarted)?.let { WarningBanner(it, onPermissions) }
             SummaryCard(view)
@@ -118,46 +126,105 @@ fun FinishRouteScreen(
 }
 
 /**
- * Низ экрана после завершения маршрута, общий для списка группы и экрана завершения. Если службу не выключали
- * ([serviceStarted] не false), она ещё 15 минут после завершения передаёт его остальным, и «Выключить» останавливает
- * её сразу, а группа остаётся на телефоне. «Новая группа» после подтверждения стирает группу и ведёт на старт.
+ * Низ экрана после завершения маршрута, общий для списка группы и экрана завершения. Пока служба передаёт
+ * завершение остальным ([exchange] равен [Exchange.On]), видно, сколько минут она ещё может работать, и «Выключить»
+ * останавливает её сразу, а группа остаётся на телефоне. «Новая группа» после подтверждения стирает группу и ведёт
+ * на старт.
  */
 @Composable
-internal fun FinishedActions(view: GroupView, serviceStarted: Boolean?, onStopService: () -> Unit, onNewGroup: () -> Unit) {
+internal fun FinishedActions(
+    view: GroupView,
+    exchange: Exchange,
+    trackStatus: TrackStatus?,
+    onStopService: () -> Unit,
+    onNewGroup: () -> Unit,
+) {
     var confirmNewGroup by rememberSaveable { mutableStateOf(false) }
-    val stopped = serviceStarted == false
+    val minutesLeft = rememberMinutesLeft((exchange as? Exchange.On)?.stopsAtElapsedMs)
     Text(
-        if (stopped) {
-            "Маршрут завершён, приложение выключено."
-        } else {
-            "Маршрут завершён. 15 минут после завершения приложение передаёт это остальным и выключается само."
-        },
+        finishedText(exchange, minutesLeft, hasOthers = view.members.any { !it.isMe }, cancelled = view.routeStartedAgo == null),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth().padding(vertical = MaterialTheme.spacing.s),
     )
-    if (!stopped) BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY, R.drawable.sym_power_settings_new)
+    if (exchange is Exchange.On) BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY, R.drawable.sym_power_settings_new)
     BigButtonFull("Новая группа", { confirmNewGroup = true }, icon = R.drawable.sym_add)
 
     if (confirmNewGroup) {
-        AlertDialog(
-            onDismissRequest = { confirmNewGroup = false },
-            title = { Text("Начать новую группу?") },
-            text = {
-                Text(
-                    "Группа «${view.group.name}» с её списком и треком сотрётся с этого телефона. Точки трека, " +
-                        "которые ещё не ушли на сервер, уже не отправятся.",
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { confirmNewGroup = false; onNewGroup() }) {
-                    Text("Стереть", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = { TextButton(onClick = { confirmNewGroup = false }) { Text("Отмена") } },
+        NewGroupDialog(
+            title = "Начать новую группу?",
+            groupName = view.group.name,
+            unsentPoints = trackStatus?.unsent,
+            confirmLabel = "Стереть",
+            onConfirm = { confirmNewGroup = false; onNewGroup() },
+            onDismiss = { confirmNewGroup = false },
         )
     }
+}
+
+/**
+ * Подпись над кнопками после завершения: идёт ли ещё обмен и сколько минут он может продлиться. [minutesLeft] null,
+ * пока служба не назначила срок. [cancelled] true, если руководитель отменил сбор до «Выходим».
+ */
+internal fun finishedText(exchange: Exchange, minutesLeft: Long?, hasOthers: Boolean, cancelled: Boolean = false): String {
+    val what = if (cancelled) "Сбор отменён" else "Маршрут завершён"
+    return when (exchange) {
+        is Exchange.On -> if (minutesLeft == null) {
+            "$what. Приложение передаёт это остальным."
+        } else {
+            "$what. Приложение передаёт это остальным, пока все не получат, но не дольше $minutesLeft мин."
+        }
+        is Exchange.Off -> if (exchange.finishConfirmedByAll && hasOthers) {
+            "$what, все участники об этом знают. Обмен с группой выключен."
+        } else {
+            "$what, обмен с группой выключен."
+        }
+    }
+}
+
+/** Сколько минут с округлением вверх осталось до [stopsAtElapsedMs]; пересчёт раз в секунду, null без срока. */
+@Composable
+private fun rememberMinutesLeft(stopsAtElapsedMs: Long?): Long? {
+    val leftMs by produceState<Long?>(null, stopsAtElapsedMs) {
+        while (stopsAtElapsedMs != null) {
+            value = stopsAtElapsedMs - SystemClock.elapsedRealtime()
+            delay(1_000)
+        }
+        value = null
+    }
+    return leftMs?.let { ((it + 59_999) / 60_000).coerceAtLeast(1) }
+}
+
+/**
+ * Подтверждение, что группа [groupName] с её списком сотрётся с телефона: «Новая группа» на экране группы,
+ * создание и вступление со стартового экрана. Неотправленный трек при этом остаётся в очереди на отправку, и если
+ * [unsentPoints] больше нуля, диалог говорит, сколько точек уйдёт на сервер позже.
+ */
+@Composable
+internal fun NewGroupDialog(
+    title: String,
+    groupName: String,
+    unsentPoints: Int?,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val track = if (unsentPoints != null && unsentPoints > 0) {
+        " $unsentPoints ${plural(unsentPoints, "точка", "точки", "точек")} трека " +
+            "${plural(unsentPoints, "уйдёт", "уйдут", "уйдут")} на сервер, когда появится интернет."
+    } else {
+        ""
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text("Группа «$groupName» с её списком сотрётся с этого телефона.$track") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(confirmLabel, color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
 }
 
 /** «Эльбрус · в пути 2 ч 14 мин» и три плитки по участникам, кроме меня: на связи, в отлучке, не слышно. */
@@ -228,15 +295,15 @@ private fun lostLine(member: MemberView): String {
     return "${member.name} не на связи ${if (age.approximate) "примерно " else ""}$span"
 }
 
-/** Что произойдёт после завершения: трек остановится, 15 минут обмена, трек уйдёт на карту. */
+/** Что произойдёт после завершения: трек остановится, обмен продлится до подтверждения всеми, трек уйдёт на сервер. */
 @Composable
 private fun AfterFinish() {
     SectionHeader("После завершения")
     ListCard(
         listOf(
             { ConsequenceRow(R.drawable.sym_location_off, "Трек остановится у всех") },
-            { ConsequenceRow(R.drawable.sym_sync, "15 минут обмена", "Чтобы завершение дошло до каждого") },
-            { ConsequenceRow(R.drawable.sym_cloud_upload, "Трек уйдёт на карту", "Когда появится интернет") },
+            { ConsequenceRow(R.drawable.sym_sync, "Обмен, пока все не получат завершение", "Не дольше 15 минут") },
+            { ConsequenceRow(R.drawable.sym_cloud_upload, "Трек уйдёт на сервер", "Когда появится интернет") },
         ),
     )
 }
@@ -248,11 +315,11 @@ private fun ConsequenceRow(@DrawableRes icon: Int, title: String, subtitle: Stri
 }
 
 /**
- * Сводка завершённого маршрута: сколько он шёл (от «Выходим» до завершения) и когда завершён, ниже что трек
- * уйдёт на карту.
+ * Сводка завершённого маршрута: сколько он шёл (от «Выходим» до завершения) и когда завершён, ниже что с отправкой
+ * трека ([trackLine]). Без точек трека строки о нём нет.
  */
 @Composable
-private fun FinishedSummary(view: GroupView) {
+private fun FinishedSummary(view: GroupView, trackStatus: TrackStatus?) {
     val ok = MaterialTheme.statusColors.ok
     val started = view.routeStartedAgo
     val finishedAgo = view.routeFinishedAgo
@@ -262,17 +329,18 @@ private fun FinishedSummary(view: GroupView) {
         null
     }
     val subtitle = listOfNotNull(duration, finishedAgo?.let { "завершён ${formatAge(it)}" }).joinToString(" · ")
+    val track = trackStatus?.let(::trackLine)
     ListCard(
-        listOf(
-            {
+        buildList<@Composable () -> Unit> {
+            add {
                 ListRow(
                     view.group.name,
                     subtitle = subtitle.ifEmpty { null },
                     leading = { IconCircle(R.drawable.sym_flag, ok.container, ok.content) },
                 )
-            },
-            { ConsequenceRow(R.drawable.sym_cloud_upload, "Трек уйдёт на карту", "Когда появится интернет") },
-        ),
+            }
+            if (track != null) add { ConsequenceRow(R.drawable.sym_cloud_upload, track.replaceFirstChar(Char::uppercase)) }
+        },
     )
 }
 
@@ -292,7 +360,7 @@ private fun formatDuration(age: Age): String {
 @Preview(name = "Завершение: руководитель, тёмная", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun FinishLeaderPreview() {
-    PereklichkaTheme { FinishRouteScreen(FakeGroupViews.leader, serviceStarted = true, {}, {}, {}, {}, {}) }
+    PereklichkaTheme { FinishRouteScreen(FakeGroupViews.leader, serviceStarted = true, Exchange.On(), null, {}, {}, {}, {}, {}) }
 }
 
 @Preview(name = "Завершение: маршрут завершён")
@@ -303,9 +371,13 @@ private fun FinishDonePreview() {
             FakeGroupViews.leader.copy(
                 route = RouteState.FINISHED,
                 routeFinishedAgo = Age(3 * 60_000, approximate = false),
+                routeFinishedSeq = 9,
                 rollcall = null,
             ),
-            serviceStarted = true, {}, {}, {}, {}, {},
+            serviceStarted = true,
+            Exchange.On(SystemClock.elapsedRealtime() + 12 * 60_000),
+            TrackStatus(points = 240, unsent = 12, hasServer = true),
+            {}, {}, {}, {}, {},
         )
     }
 }

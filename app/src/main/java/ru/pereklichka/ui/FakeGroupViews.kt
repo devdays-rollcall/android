@@ -60,6 +60,7 @@ object FakeGroupViews {
         route = RouteState.ACTIVE,
         routeStartedAgo = Age(2 * 3_600_000 + 14 * 60_000, approximate = false),
         routeFinishedAgo = null,
+        routeFinishedSeq = null,
         members = bySeverity(members),
         alarms = listOf(
             AlarmView(alarmAboutValentin, seq = 4, valentin, "Валентин", olga, "Ольга", isSos = false, Age(70_000, approximate = false)),
