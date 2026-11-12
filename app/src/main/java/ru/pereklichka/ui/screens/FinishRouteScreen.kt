@@ -1,12 +1,18 @@
 package ru.pereklichka.ui.screens
 
 import android.content.res.Configuration
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -16,38 +22,46 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.pereklichka.R
 import ru.pereklichka.domain.rules.GroupView
+import ru.pereklichka.domain.rules.MemberView
 import ru.pereklichka.domain.rules.Presence
 import ru.pereklichka.domain.rules.RouteState
+import ru.pereklichka.domain.time.Age
 import ru.pereklichka.ui.FakeGroupViews
 import ru.pereklichka.ui.components.AppScreen
 import ru.pereklichka.ui.components.BigButtonFull
 import ru.pereklichka.ui.components.ButtonKind
-import ru.pereklichka.ui.components.CardLabel
-import ru.pereklichka.ui.components.InfoCard
-import ru.pereklichka.ui.components.StatusChip
-import ru.pereklichka.ui.components.StatusInfo
-import ru.pereklichka.ui.components.StatusKind
+import ru.pereklichka.ui.components.IconCircle
+import ru.pereklichka.ui.components.ListCard
+import ru.pereklichka.ui.components.ListRow
+import ru.pereklichka.ui.components.SectionHeader
+import ru.pereklichka.ui.components.SymIcon
 import ru.pereklichka.ui.components.WarningBanner
+import ru.pereklichka.ui.components.formatAge
+import ru.pereklichka.ui.components.plural
 import ru.pereklichka.ui.components.rememberPermissionWarning
 import ru.pereklichka.ui.theme.PereklichkaTheme
+import ru.pereklichka.ui.theme.StatusColor
 import ru.pereklichka.ui.theme.spacing
 import ru.pereklichka.ui.theme.statusColors
 
 /**
- * Завершение маршрута у руководителя: сводка группы (на связи, отошли, не слышно), идущая перекличка
- * и «Список группы». Открывается из меню экрана группы, пока маршрут идёт.
+ * Завершение маршрута у руководителя. Открывается из меню экрана группы, пока маршрут идёт.
  *
- * Пока маршрут идёт, внизу «Завершить маршрут» с подтверждением, а если служба не запущена или не хватает
- * разрешений, сверху предупреждение со входом на экран разрешений. После завершения внизу то же, что на экране
- * группы ([FinishedActions]): «Выключить», пока служба может работать, и «Новая группа».
+ * Пока маршрут идёт, сверху сводка «<группа> · в пути 2 ч 14 мин» с тремя плитками (на связи, в отлучке, не слышно),
+ * под ней предупреждение о каждом, кого не слышно, и что случится после завершения. Внизу «Завершить для всей группы»
+ * с подтверждением и «Вернуться к группе». Если служба не запущена или не хватает разрешений, над сводкой
+ * предупреждение со входом на экран разрешений. После завершения сводка показывает, сколько шёл маршрут и когда
+ * завершён, а внизу то же, что на экране группы ([FinishedActions]): «Выключить», пока служба может работать,
+ * и «Новая группа».
  */
 @Composable
 fun FinishRouteScreen(
@@ -63,27 +77,27 @@ fun FinishRouteScreen(
     val finished = view.route == RouteState.FINISHED
 
     AppScreen(
-        title = view.group.name,
-        subtitle = if (finished) "Маршрут завершён" else "Маршрут идёт",
+        title = if (finished) "Маршрут завершён" else "Завершить маршрут",
         onBack = onBack,
         bottom = {
             if (finished) {
                 FinishedActions(view, serviceStarted, onStopService, onNewGroup)
             } else {
-                BigButtonFull("Завершить маршрут", { confirm = true }, ButtonKind.DANGER_TONAL)
+                BigButtonFull("Завершить для всей группы", { confirm = true }, ButtonKind.DANGER, R.drawable.sym_flag, large = true)
+                TextButton(onClick = onBack, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("Вернуться к группе", style = MaterialTheme.typography.labelLarge)
+                }
             }
         },
     ) {
-        if (!finished) rememberPermissionWarning(serviceStarted)?.let { WarningBanner(it, onPermissions) }
-        SummaryCard(view, serviceStarted)
-        view.rollcall?.let { rollcall ->
-            val total = rollcall.answered.size + rollcall.silentNearby.size + rollcall.notHeard.size
-            InfoCard {
-                CardLabel("Идёт перекличка")
-                Text("Ответили ${rollcall.answered.size} из $total", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            }
+        if (finished) {
+            FinishedSummary(view)
+        } else {
+            rememberPermissionWarning(serviceStarted)?.let { WarningBanner(it, onPermissions) }
+            SummaryCard(view)
+            LostWarning(view.members.filter { !it.isMe && it.presence == Presence.LOST })
+            AfterFinish()
         }
-        BigButtonFull("Список группы", onBack, ButtonKind.SECONDARY)
     }
 
     if (confirm) {
@@ -123,8 +137,8 @@ internal fun FinishedActions(view: GroupView, serviceStarted: Boolean?, onStopSe
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth().padding(vertical = MaterialTheme.spacing.s),
     )
-    if (!stopped) BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY)
-    BigButtonFull("Новая группа", { confirmNewGroup = true })
+    if (!stopped) BigButtonFull("Выключить", onStopService, ButtonKind.SECONDARY, R.drawable.sym_power_settings_new)
+    BigButtonFull("Новая группа", { confirmNewGroup = true }, icon = R.drawable.sym_add)
 
     if (confirmNewGroup) {
         AlertDialog(
@@ -146,48 +160,132 @@ internal fun FinishedActions(view: GroupView, serviceStarted: Boolean?, onStopSe
     }
 }
 
-/**
- * Сводка: работает ли приложение в фоне (после завершения вместо этого «Маршрут завершён») и три счётчика
- * участников, кроме меня.
- */
+/** «Эльбрус · в пути 2 ч 14 мин» и три плитки по участникам, кроме меня: на связи, в отлучке, не слышно. */
 @Composable
-private fun SummaryCard(view: GroupView, serviceStarted: Boolean?) {
+private fun SummaryCard(view: GroupView) {
     val others = view.members.filterNot { it.isMe }
     val colors = MaterialTheme.statusColors
-    val finished = view.route == RouteState.FINISHED
-    InfoCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (finished) "Маршрут завершён" else "Приложение в фоне",
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            StatusChip(
-                when {
-                    finished -> StatusInfo(StatusKind.LOST, "Завершён")
-                    serviceStarted == false -> StatusInfo(StatusKind.ALARM, "Не работает")
-                    else -> StatusInfo(StatusKind.OK, "Работает")
-                },
-            )
-        }
-        Row(Modifier.fillMaxWidth().padding(top = MaterialTheme.spacing.m)) {
-            Counter(others.count { it.presence == Presence.OK }, "на связи", colors.ok.content, Modifier.weight(1f))
-            Counter(others.count { it.presence == Presence.AWAY }, "отошли", colors.away.content, Modifier.weight(1f))
-            Counter(others.count { it.presence == Presence.LOST }, "не слышно", colors.lost.content, Modifier.weight(1f))
+    val title = listOfNotNull(view.group.name, view.routeStartedAgo?.let { "в пути ${formatDuration(it)}" }).joinToString(" · ")
+    ListCard {
+        Column(Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile(others.count { it.presence == Presence.OK }, "на связи", colors.ok, Modifier.weight(1f))
+                StatTile(others.count { it.presence == Presence.AWAY }, "в отлучке", colors.away, Modifier.weight(1f))
+                StatTile(others.count { it.presence == Presence.LOST }, "не слышно", colors.lost, Modifier.weight(1f))
+            }
         }
     }
 }
 
 @Composable
-private fun Counter(count: Int, label: String, color: Color, modifier: Modifier = Modifier) {
+private fun StatTile(count: Int, label: String, color: StatusColor, modifier: Modifier = Modifier) {
     Column(
-        modifier.semantics(mergeDescendants = true) { contentDescription = "$label: $count" },
+        modifier
+            .background(color.container, RoundedCornerShape(18.dp))
+            .padding(vertical = 14.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "$label: $count" },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("$count", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = color, textAlign = TextAlign.Center)
-        CardLabel(label)
+        Text("$count", color = color.content, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = color.content, fontSize = 13.sp, lineHeight = 18.sp, textAlign = TextAlign.Center)
     }
+}
+
+/**
+ * Красная карточка о тех, кого не слышно: по строке на человека («Валентин не на связи 4 минуты») и что после
+ * завершения «Не слышно» больше не придёт. Без таких участников карточки нет.
+ */
+@Composable
+private fun LostWarning(lost: List<MemberView>) {
+    if (lost.isEmpty()) return
+    val colors = MaterialTheme.statusColors.lost
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = colors.container, contentColor = colors.content) {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SymIcon(R.drawable.sym_warning_fill)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                lost.forEach { member ->
+                    Text(lostLine(member), fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium)
+                }
+                Text(
+                    "После завершения «Не слышно» больше не придёт, поэтому проверьте, что все с вами.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+/** «Валентин не на связи 4 минуты», «Валентин не на связи примерно 2 часа», «Валентин: связи ещё не было». */
+private fun lostLine(member: MemberView): String {
+    val age = member.lastContact ?: return "${member.name}: связи ещё не было"
+    val minutes = (age.ms / 60_000).toInt()
+    val span = when {
+        minutes < 1 -> "меньше минуты"
+        minutes < 60 -> "$minutes ${plural(minutes, "минуту", "минуты", "минут")}"
+        else -> (minutes / 60).let { "$it ${plural(it, "час", "часа", "часов")}" }
+    }
+    return "${member.name} не на связи ${if (age.approximate) "примерно " else ""}$span"
+}
+
+/** Что произойдёт после завершения: трек остановится, 15 минут обмена, трек уйдёт на карту. */
+@Composable
+private fun AfterFinish() {
+    SectionHeader("После завершения")
+    ListCard(
+        listOf(
+            { ConsequenceRow(R.drawable.sym_location_off, "Трек остановится у всех") },
+            { ConsequenceRow(R.drawable.sym_sync, "15 минут обмена", "Чтобы завершение дошло до каждого") },
+            { ConsequenceRow(R.drawable.sym_cloud_upload, "Трек уйдёт на карту", "Когда появится интернет") },
+        ),
+    )
+}
+
+@Composable
+private fun ConsequenceRow(@DrawableRes icon: Int, title: String, subtitle: String? = null) {
+    val scheme = MaterialTheme.colorScheme
+    ListRow(title, subtitle = subtitle, leading = { IconCircle(icon, scheme.surfaceContainerHigh, scheme.onSurfaceVariant) })
+}
+
+/**
+ * Сводка завершённого маршрута: сколько он шёл (от «Выходим» до завершения) и когда завершён, ниже что трек
+ * уйдёт на карту.
+ */
+@Composable
+private fun FinishedSummary(view: GroupView) {
+    val ok = MaterialTheme.statusColors.ok
+    val started = view.routeStartedAgo
+    val finishedAgo = view.routeFinishedAgo
+    val duration = if (started != null && finishedAgo != null) {
+        "в пути ${formatDuration(Age((started.ms - finishedAgo.ms).coerceAtLeast(0), started.approximate || finishedAgo.approximate))}"
+    } else {
+        null
+    }
+    val subtitle = listOfNotNull(duration, finishedAgo?.let { "завершён ${formatAge(it)}" }).joinToString(" · ")
+    ListCard(
+        listOf(
+            {
+                ListRow(
+                    view.group.name,
+                    subtitle = subtitle.ifEmpty { null },
+                    leading = { IconCircle(R.drawable.sym_flag, ok.container, ok.content) },
+                )
+            },
+            { ConsequenceRow(R.drawable.sym_cloud_upload, "Трек уйдёт на карту", "Когда появится интернет") },
+        ),
+    )
+}
+
+/** «2 ч 14 мин», «14 мин», «меньше минуты»; с `approximate` впереди «примерно». */
+private fun formatDuration(age: Age): String {
+    val minutes = age.ms / 60_000
+    val text = when {
+        minutes < 1 -> "меньше минуты"
+        minutes < 60 -> "$minutes мин"
+        minutes % 60 == 0L -> "${minutes / 60} ч"
+        else -> "${minutes / 60} ч ${minutes % 60} мин"
+    }
+    return if (age.approximate) "примерно $text" else text
 }
 
 @Preview(name = "Завершение: руководитель")
@@ -202,7 +300,11 @@ private fun FinishLeaderPreview() {
 private fun FinishDonePreview() {
     PereklichkaTheme {
         FinishRouteScreen(
-            FakeGroupViews.leader.copy(route = RouteState.FINISHED, rollcall = null),
+            FakeGroupViews.leader.copy(
+                route = RouteState.FINISHED,
+                routeFinishedAgo = Age(3 * 60_000, approximate = false),
+                rollcall = null,
+            ),
             serviceStarted = true, {}, {}, {}, {}, {},
         )
     }
