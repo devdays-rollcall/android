@@ -18,6 +18,10 @@ data class GroupView(
     val me: MemberId,
     val iAmLeader: Boolean,
     val route: RouteState,
+    /** Сколько назад руководитель нажал «Выходим»; null, пока маршрут не начат. */
+    val routeStartedAgo: Age?,
+    /** Сколько назад руководитель завершил маршрут; null, пока маршрут не завершён. */
+    val routeFinishedAgo: Age?,
     /**
      * Все участники из событий JOINED по тяжести: SOS, тревога, «Не слышно», отлучка, остальные. Внутри каждой
      * ступени я первым, остальные по имени.
@@ -76,9 +80,13 @@ data class MemberView(
     val hasSos: Boolean,
 )
 
-/** Активная тревога или SOS о [target]. У SOS [raisedBy] совпадает с [target]. [age] считается от создания тревоги. */
+/**
+ * Активная тревога или SOS о [target]. У SOS [raisedBy] совпадает с [target]. [age] считается от создания тревоги.
+ * [seq] это номер события тревоги в потоке [raisedBy]: по нему видно, какие соседи её уже получили.
+ */
 data class AlarmView(
     val id: EventId,
+    val seq: Long,
     val target: MemberId,
     val targetName: String,
     val raisedBy: MemberId,
@@ -94,6 +102,10 @@ data class AlarmView(
  */
 data class RollcallView(
     val id: EventId,
+    /** Номер события переклички в потоке руководителя: по нему видно, какие соседи её уже получили. */
+    val seq: Long,
+    /** Сколько назад руководитель начал перекличку. */
+    val age: Age,
     val remainingMs: Long,
     val answered: List<MemberId>,
     val silentNearby: List<MemberId>,

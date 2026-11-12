@@ -76,8 +76,11 @@ private val DarkColors = darkColorScheme(
     onErrorContainer = Color(0xFFFFDAD1),
 )
 
-/** Пара «фон и текст» для статуса. Рядом со статусом всегда пишется текст: цвета на солнце различаются плохо. */
-data class StatusColor(val container: Color, val content: Color)
+/**
+ * Цвета одного статуса: фон и текст для плашек и баннеров, [accent] для кольца вокруг аватара и значка статуса.
+ * Кольцо видно на любом фоне, поэтому оно насыщеннее фона плашки.
+ */
+data class StatusColor(val container: Color, val content: Color, val accent: Color)
 
 /** Цвета статусов участников и тревог. «Норма», «Отлучка», «Не слышно» и тревога (сплошной красный фон для AlarmScreen). */
 data class StatusColors(
@@ -88,17 +91,17 @@ data class StatusColors(
 )
 
 private val LightStatus = StatusColors(
-    ok = StatusColor(Color(0xFFDDF1E4), Color(0xFF17603B)),
-    away = StatusColor(Color(0xFFFBEBC8), Color(0xFF7A4B00)),
-    lost = StatusColor(Color(0xFFFBDDD7), Color(0xFF9B2A0A)),
-    alarm = StatusColor(Color(0xFFB93A0B), Color.White),
+    ok = StatusColor(Color(0xFFDDF1E4), Color(0xFF17603B), Color(0xFF3E9A6A)),
+    away = StatusColor(Color(0xFFFBEBC8), Color(0xFF7A4B00), Color(0xFFE0A930)),
+    lost = StatusColor(Color(0xFFFBDDD7), Color(0xFF9B2A0A), Color(0xFFD3542C)),
+    alarm = StatusColor(Color(0xFFB93A0B), Color.White, Color(0xFFB93A0B)),
 )
 
 private val DarkStatus = StatusColors(
-    ok = StatusColor(Color(0xFF1F4A33), Color(0xFFBFE8CF)),
-    away = StatusColor(Color(0xFF4D3A0A), Color(0xFFF5DEA3)),
-    lost = StatusColor(Color(0xFF6B2310), Color(0xFFFFD1C5)),
-    alarm = StatusColor(Color(0xFF9B2A0A), Color.White),
+    ok = StatusColor(Color(0xFF1F4A33), Color(0xFFBFE8CF), Color(0xFF6CC497)),
+    away = StatusColor(Color(0xFF4D3A0A), Color(0xFFF5DEA3), Color(0xFFE8B94A)),
+    lost = StatusColor(Color(0xFF6B2310), Color(0xFFFFD1C5), Color(0xFFFF8A65)),
+    alarm = StatusColor(Color(0xFF9B2A0A), Color.White, Color(0xFFFF7043)),
 )
 
 private val LocalStatusColors = staticCompositionLocalOf { LightStatus }

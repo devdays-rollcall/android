@@ -70,7 +70,7 @@ fun FinishRouteScreen(
             if (finished) {
                 FinishedActions(view, serviceStarted, onStopService, onNewGroup)
             } else {
-                BigButtonFull("Завершить маршрут", { confirm = true }, ButtonKind.DANGER_OUTLINED)
+                BigButtonFull("Завершить маршрут", { confirm = true }, ButtonKind.DANGER_TONAL)
             }
         },
     ) {

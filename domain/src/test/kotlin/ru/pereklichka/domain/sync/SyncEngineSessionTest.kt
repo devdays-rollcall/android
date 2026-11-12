@@ -103,6 +103,21 @@ class SyncEngineSessionTest {
     }
 
     @Test
+    fun `сводка соседа видна в reportedBySeq до разрыва соединения`() = runTest {
+        val rig = rig()
+        network(rig).connect(me, peer)
+        runCurrent()
+
+        rig.receive(Hello.of(SyncSummary(mapOf(me to 3L), emptyMap(), emptyMap()), group.tag, peer))
+        runCurrent()
+        assertEquals(mapOf(peer to mapOf(me to 3L)), rig.engine.reportedBySeq.value)
+
+        network(rig).disconnect(me, peer)
+        runCurrent()
+        assertEquals(emptyMap(), rig.engine.reportedBySeq.value)
+    }
+
+    @Test
     fun `Hello с чужим тегом группы разрывает соединение`() = runTest {
         val rig = rig()
         network(rig).connect(me, peer)

@@ -82,12 +82,20 @@ class GroupCalculator(private val thresholds: Thresholds) {
                 me = me,
                 iAmLeader = me == group.leaderId,
                 route = routeState(),
+                routeStartedAgo = leaderEventAge(EventType.ROUTE_STARTED),
+                routeFinishedAgo = leaderEventAge(EventType.ROUTE_FINISHED),
                 members = members,
                 alarms = alarms,
                 rollcall = rollcallView(members),
                 prompts = nearbyPrompts(),
             )
         }
+
+        /** Возраст первого события [type] руководителя; null, если такого нет. */
+        private fun leaderEventAge(type: EventType): Age? = events
+            .filter { it.value.author == group.leaderId && it.value.type == type }
+            .minByOrNull { it.value.seq }
+            ?.ageNow(clock)
 
         private fun routeState(): RouteState {
             val leaderTypes = events.filter { it.value.author == group.leaderId }.map { it.value.type }.toSet()
@@ -172,7 +180,8 @@ class GroupCalculator(private val thresholds: Thresholds) {
             val rollcall = events
                 .filter { it.value.author == group.leaderId && it.value.type == EventType.ROLLCALL }
                 .maxByOrNull { it.value.seq } ?: return null
-            val remainingMs = thresholds.rollcallWindowMs - rollcall.ageNow(clock).ms
+            val age = rollcall.ageNow(clock)
+            val remainingMs = thresholds.rollcallWindowMs - age.ms
             if (remainingMs <= 0) return null
 
             val answeredIds = events
@@ -185,6 +194,8 @@ class GroupCalculator(private val thresholds: Thresholds) {
             val (notHeard, silentNearby) = silent.partition { it.presence == Presence.LOST }
             return RollcallView(
                 id = rollcall.value.id,
+                seq = rollcall.value.seq,
+                age = age,
                 remainingMs = remainingMs,
                 answered = answered.map { it.id },
                 silentNearby = silentNearby.map { it.id },
@@ -202,6 +213,7 @@ class GroupCalculator(private val thresholds: Thresholds) {
             val target = checkNotNull(alarm.alarmTarget)
             return AlarmView(
                 id = alarm.id,
+                seq = alarm.seq,
                 target = target,
                 targetName = nameOf(target),
                 raisedBy = alarm.author,

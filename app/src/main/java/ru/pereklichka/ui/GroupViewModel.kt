@@ -25,6 +25,7 @@ import ru.pereklichka.domain.model.QrPayload
 import ru.pereklichka.domain.model.ResolveKind
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.RouteState
+import ru.pereklichka.domain.sync.SyncEngine
 import ru.pereklichka.service.RouteService
 import ru.pereklichka.status.GroupViewProvider
 import ru.pereklichka.upload.UploadScheduler
@@ -48,6 +49,7 @@ class GroupViewModel @Inject constructor(
     private val settings: AppSettings,
     private val uploadScheduler: UploadScheduler,
     viewProvider: GroupViewProvider,
+    engine: SyncEngine,
     @FakeGroupData private val useFakeGroupData: Boolean,
 ) : ViewModel() {
 
@@ -60,6 +62,12 @@ class GroupViewModel @Inject constructor(
         } else {
             viewProvider.view
         }
+
+    /**
+     * Что подтвердили соседи на связи: по нему экраны переклички и SOS пишут, кто уже получил событие
+     * (см. `receivedBy`). Подтверждают только соседи, которых мой телефон слышит напрямую.
+     */
+    val reportedBySeq: StateFlow<Map<MemberId, Map<MemberId, Long>>> = engine.reportedBySeq
 
     /** Адрес сервера: его вместе с токеном отправляет «Передать токен» на экране QR. */
     val serverUrl: StateFlow<String> = settings.serverUrl

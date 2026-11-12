@@ -166,7 +166,7 @@ private fun AlarmCard(
         if (aboutMe) {
             BigButtonFull("Я в порядке", { onResolve(alarm.target, ResolveKind.SELF_OK) }, ButtonKind.PRIMARY)
             if (canCancel) {
-                BigButtonFull("Ложная тревога", { onResolve(alarm.target, ResolveKind.FALSE_ALARM) }, ButtonKind.DANGER_OUTLINED)
+                BigButtonFull("Ложная тревога", { onResolve(alarm.target, ResolveKind.FALSE_ALARM) }, ButtonKind.DANGER_TONAL)
             }
         } else if (canCancel) {
             Row(horizontalArrangement = Arrangement.spacedBy(spacing.s)) {
@@ -175,7 +175,7 @@ private fun AlarmCard(
                     "Ложная тревога",
                     { onResolve(alarm.target, ResolveKind.FALSE_ALARM) },
                     Modifier.weight(1f),
-                    ButtonKind.DANGER_OUTLINED,
+                    ButtonKind.DANGER_TONAL,
                 )
             }
         } else {

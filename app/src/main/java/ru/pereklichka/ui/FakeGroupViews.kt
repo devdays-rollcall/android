@@ -58,12 +58,16 @@ object FakeGroupViews {
         me = nikita,
         iAmLeader = true,
         route = RouteState.ACTIVE,
+        routeStartedAgo = Age(2 * 3_600_000 + 14 * 60_000, approximate = false),
+        routeFinishedAgo = null,
         members = bySeverity(members),
         alarms = listOf(
-            AlarmView(alarmAboutValentin, valentin, "Валентин", olga, "Ольга", isSos = false, Age(70_000, approximate = false)),
+            AlarmView(alarmAboutValentin, seq = 4, valentin, "Валентин", olga, "Ольга", isSos = false, Age(70_000, approximate = false)),
         ),
         rollcall = RollcallView(
             id = rollcall,
+            seq = 3,
+            age = Age(60_000, approximate = false),
             remainingMs = 2 * 60_000,
             answered = listOf(olga),
             silentNearby = listOf(daniil, vasilisa),

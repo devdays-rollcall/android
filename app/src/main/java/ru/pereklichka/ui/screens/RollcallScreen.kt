@@ -77,7 +77,7 @@ fun RollcallScreen(
                     BigButtonFull("Запустить перекличку", onStartRollcall)
                 !view.iAmLeader && view.route == RouteState.ACTIVE -> {
                     BigButtonFull("Отлучусь ненадолго", onAway, ButtonKind.SECONDARY)
-                    BigButtonFull("SOS", onSos, ButtonKind.DANGER_OUTLINED)
+                    BigButtonFull("SOS", onSos, ButtonKind.DANGER_TONAL)
                 }
             }
         },

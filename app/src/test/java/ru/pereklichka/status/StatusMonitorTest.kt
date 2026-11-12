@@ -22,12 +22,14 @@ class StatusMonitorTest {
 
     private val leader = MemberId("leader")
     private val bob = MemberId("bob")
-    private val alarm = AlarmView(EventId("alarm"), bob, "Боб", leader, "Руководитель", isSos = false, Age(0, false))
+    private val alarm = AlarmView(EventId("alarm"), seq = 1, bob, "Боб", leader, "Руководитель", isSos = false, Age(0, false))
     private val calm = GroupView(
         group = GroupInfo("tag", "token", "Поход", leaderId = leader, me = leader, createdAtWallMs = 0),
         me = leader,
         iAmLeader = true,
         route = RouteState.ACTIVE,
+        routeStartedAgo = null,
+        routeFinishedAgo = null,
         members = emptyList(),
         alarms = emptyList(),
         rollcall = null,

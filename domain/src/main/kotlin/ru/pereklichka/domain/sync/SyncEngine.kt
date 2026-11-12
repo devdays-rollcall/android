@@ -57,6 +57,16 @@ class SyncEngine @Inject constructor(
     /** Счётчики для экрана диагностики. */
     val diagnostics: StateFlow<SyncDiagnostics> = diagnosticsState.asStateFlow()
 
+    private val reportedState = MutableStateFlow<Map<MemberId, Map<MemberId, Long>>>(emptyMap())
+
+    /**
+     * Что подтвердили соседи на связи: для каждого соседа номер последнего события каждого автора из его
+     * последней сводки. Сводка приходит при подключении и раз в 10 с, поэтому подтверждение отстаёт от отправки
+     * на эти секунды. Отправленное, но не подтверждённое сводкой сюда не попадает. Сосед пропадает отсюда
+     * при разрыве соединения, а всё целиком при [stop].
+     */
+    val reportedBySeq: StateFlow<Map<MemberId, Map<MemberId, Long>>> = reportedState.asStateFlow()
+
     private var session: Session? = null
 
     /**
@@ -83,6 +93,7 @@ class SyncEngine @Inject constructor(
     fun stop() {
         session?.scope?.cancel()
         session = null
+        reportedState.value = emptyMap()
         diagnosticsState.update { it.copy(running = false) }
     }
 
@@ -217,6 +228,7 @@ class SyncEngine @Inject constructor(
 
         private suspend fun onDisconnected(peer: MemberId) {
             peers.remove(peer)?.stopSender()
+            reportedState.update { it - peer }
         }
 
         private suspend fun onReceived(peer: MemberId, bytes: ByteArray) {
@@ -273,6 +285,7 @@ class SyncEngine @Inject constructor(
 
         private suspend fun onHello(session: PeerSession, message: Hello) {
             session.peerKnown = message.summary()
+            reportedState.update { it + (session.peer to session.peerKnown.control) }
             session.drainNormal()
             session.enqueueNormal(composeDeltaReply(session))
         }

@@ -22,8 +22,8 @@ class NotificationChangesTest {
     private val leader = MemberId("leader")
     private val ann = MemberId("ann")
     private val bob = MemberId("bob")
-    private val alarm = AlarmView(EventId("alarm"), bob, "Боб", ann, "Аня", isSos = false, Age(0, false))
-    private val rollcall = RollcallView(EventId("rollcall"), remainingMs = 60_000, answered = emptyList(),
+    private val alarm = AlarmView(EventId("alarm"), seq = 1, bob, "Боб", ann, "Аня", isSos = false, Age(0, false))
+    private val rollcall = RollcallView(EventId("rollcall"), seq = 2, age = Age(0, false), remainingMs = 60_000, answered = emptyList(),
         silentNearby = listOf(ann, bob), notHeard = emptyList())
 
     private val leaderView = view(me = leader)
@@ -101,6 +101,8 @@ class NotificationChangesTest {
         me = me,
         iAmLeader = me == leader,
         route = RouteState.ACTIVE,
+        routeStartedAgo = null,
+        routeFinishedAgo = null,
         members = listOf(member(leader, "Руководитель", me), member(ann, "Аня", me), member(bob, "Боб", me)),
         alarms = emptyList(),
         rollcall = null,

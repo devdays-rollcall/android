@@ -242,7 +242,7 @@ private fun GroupBottomBar(
                     if (view.iAmLeader) BigButtonFull("Перекличка", onRollcall)
                     Row(horizontalArrangement = Arrangement.spacedBy(spacing.s)) {
                         BigButton("Отойду", onAway, Modifier.weight(1f), ButtonKind.SECONDARY)
-                        BigButton("SOS", onSos, Modifier.weight(1f), ButtonKind.DANGER_OUTLINED)
+                        BigButton("SOS", onSos, Modifier.weight(1f), ButtonKind.DANGER_TONAL)
                     }
                 }
             }

@@ -1,5 +1,6 @@
 package ru.pereklichka.ui.components
 
+import ru.pereklichka.domain.model.MemberId
 import ru.pereklichka.domain.rules.MemberView
 import ru.pereklichka.domain.time.Age
 import java.util.Locale
@@ -76,3 +77,10 @@ fun lastSeenLine(member: MemberView): String = listOfNotNull(
     formatPlace(member),
     formatBattery(member.batteryPercent),
 ).joinToString(" · ")
+
+/**
+ * Соседи на связи, чья последняя сводка уже содержит событие номер [seq] от [author]. Сводка приходит раз в 10 с,
+ * поэтому список отстаёт от отправки на эти секунды, а соседей через посредника в нём нет.
+ */
+fun receivedBy(reportedBySeq: Map<MemberId, Map<MemberId, Long>>, author: MemberId, seq: Long): List<MemberId> =
+    reportedBySeq.filter { (_, control) -> (control[author] ?: 0L) >= seq }.keys.toList()

@@ -249,13 +249,25 @@ class GroupCalculatorTest {
     }
 
     @Test
+    fun `время маршрута считается от событий руководителя`() {
+        val history = History().apply { joinAll() }
+        history.event(leader, EventType.ROUTE_STARTED, ageMs = 600_000)
+
+        assertEquals(Age(600_000, false), compute(history).routeStartedAgo)
+        assertEquals(null, compute(history).routeFinishedAgo)
+
+        history.event(leader, EventType.ROUTE_FINISHED, ageMs = 60_000)
+        assertEquals(Age(60_000, false), compute(history).routeFinishedAgo)
+    }
+
+    @Test
     fun `тревога показывает, о ком она и кто её объявил`() {
         val history = History().apply { joinAll() }
         val alarm = history.event(b, EventType.ALARM, target = a, ageMs = 4_000)
 
         val view = compute(history)
 
-        assertEquals(AlarmView(alarm.id, a, "Имя A", b, "Имя B", isSos = false, Age(4_000, false)), view.alarms.single())
+        assertEquals(AlarmView(alarm.id, alarm.seq, a, "Имя A", b, "Имя B", isSos = false, Age(4_000, false)), view.alarms.single())
         assertTrue(view.members.single { it.id == a }.hasActiveAlarm)
         assertFalse(view.members.single { it.id == b }.hasActiveAlarm)
     }
