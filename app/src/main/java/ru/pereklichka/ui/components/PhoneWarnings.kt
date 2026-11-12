@@ -3,37 +3,44 @@ package ru.pereklichka.ui.components
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import androidx.annotation.DrawableRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import ru.pereklichka.R
 import ru.pereklichka.domain.rules.GroupView
 import ru.pereklichka.domain.rules.RouteState
 import ru.pereklichka.notify.PhoneChecks
 import ru.pereklichka.permissions.RequiredPermissions
 import ru.pereklichka.transport.RadioCheck
 
-/** Что на телефоне мешает быть на связи или услышать тревогу. Показывается баннером над списком группы. */
-enum class PhoneWarning(val title: String, val subtitle: String) {
+/** Что на телефоне мешает быть на связи или услышать тревогу. Показывается баннером с [icon] над списком группы. */
+enum class PhoneWarning(val title: String, val subtitle: String, @DrawableRes val icon: Int) {
     SERVICE_NOT_STARTED(
         "Приложение не работает в фоне",
         "Нет разрешений на обмен и геолокацию, поэтому телефон не найдёт группу и не запишет трек. Нажмите, чтобы выдать",
+        R.drawable.sym_error_fill,
     ),
     PERMISSIONS_MISSING(
         "Не все разрешения выданы",
         "Без обмена телефон не найдёт группу, без геолокации не запишет трек. Нажмите, чтобы выдать",
+        R.drawable.sym_location_off,
     ),
     BLUETOOTH_OFF(
         "Включите Bluetooth",
         "Без него телефон не найдёт группу. Нажмите, чтобы открыть настройки",
+        R.drawable.sym_bluetooth,
     ),
     NOTIFICATIONS_OFF(
         "Уведомления выключены",
         "Тревога придёт только звуком, пока приложение работает. Нажмите, чтобы разрешить",
+        R.drawable.sym_notifications_fill,
     ),
     TOTAL_SILENCE(
         "Включена полная тишина",
         "В режиме «Не беспокоить» без исключений тревогу не будет слышно. Нажмите, чтобы изменить",
+        R.drawable.sym_do_not_disturb_on_fill,
     ),
     ;
 

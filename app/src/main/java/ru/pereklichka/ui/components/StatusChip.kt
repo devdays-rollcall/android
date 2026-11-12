@@ -1,11 +1,14 @@
 package ru.pereklichka.ui.components
 
 import android.content.res.Configuration
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -14,13 +17,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import ru.pereklichka.R
 import ru.pereklichka.domain.rules.MemberView
 import ru.pereklichka.domain.rules.Presence
 import ru.pereklichka.ui.theme.PereklichkaTheme
 import ru.pereklichka.ui.theme.spacing
-import ru.pereklichka.ui.theme.statusColors
 
 /** Какой статус показывать: тревога, «Не слышно», отлучка или норма. */
 enum class StatusKind { ALARM, LOST, AWAY, OK }
@@ -44,28 +49,36 @@ fun statusOf(member: MemberView): StatusInfo = when {
     else -> StatusInfo(StatusKind.OK, "Норма")
 }
 
-/** Плашка статуса участника: текст на цветном фоне. Цвет всегда дублируется текстом, тревога ещё и жирным. */
+/**
+ * Плашка статуса участника: значок формы статуса и текст на цветном фоне. Цвет всегда дублируется значком и текстом,
+ * тревога ещё и жирным.
+ */
 @Composable
 fun StatusChip(member: MemberView, modifier: Modifier = Modifier) {
     StatusChip(statusOf(member), modifier)
 }
 
+/** Плашка статуса с готовым текстом: «Тревога · объявил(а) Ольга». Без [withIcon] только текст. */
 @Composable
-fun StatusChip(status: StatusInfo, modifier: Modifier = Modifier) {
-    val colors = MaterialTheme.statusColors
-    val color = when (status.kind) {
-        StatusKind.ALARM -> colors.alarm
-        StatusKind.LOST -> colors.lost
-        StatusKind.AWAY -> colors.away
-        StatusKind.OK -> colors.ok
-    }
+fun StatusChip(status: StatusInfo, modifier: Modifier = Modifier, withIcon: Boolean = true) {
+    val color = statusColor(status.kind)
     Pill(
         text = status.text,
         container = color.container,
         content = color.content,
         bold = status.kind == StatusKind.ALARM,
+        icon = if (withIcon) chipIcon(status.kind) else null,
         modifier = modifier,
     )
+}
+
+/** Значок в плашке статуса. Для «Нормы» галочка в круге, как в макете своей карточки, для тревоги треугольник. */
+@DrawableRes
+fun chipIcon(kind: StatusKind): Int = when (kind) {
+    StatusKind.ALARM -> R.drawable.sym_warning_fill
+    StatusKind.LOST -> R.drawable.sym_wifi_off_fill
+    StatusKind.AWAY -> R.drawable.sym_schedule_fill
+    StatusKind.OK -> R.drawable.sym_check_circle_fill
 }
 
 /** Нейтральная плашка «Руководитель» рядом с именем. Статус участника она не заменяет. */
@@ -73,34 +86,41 @@ fun StatusChip(status: StatusInfo, modifier: Modifier = Modifier) {
 fun LeaderBadge(modifier: Modifier = Modifier) {
     Pill(
         text = "Руководитель",
-        container = MaterialTheme.colorScheme.secondaryContainer,
-        content = MaterialTheme.colorScheme.onSecondaryContainer,
+        container = MaterialTheme.colorScheme.surfaceContainerHigh,
+        content = MaterialTheme.colorScheme.onSurfaceVariant,
         bold = false,
+        icon = null,
         modifier = modifier,
     )
 }
 
+/** Плашка из макета: высота 28 dp, скругление на всю высоту, значок 16 dp перед текстом 13 sp. */
 @Composable
-private fun Pill(
+fun Pill(
     text: String,
     container: Color,
     content: Color,
-    bold: Boolean,
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
+    bold: Boolean = false,
+    @DrawableRes icon: Int? = null,
+    height: Dp = 28.dp,
 ) {
     Row(
         modifier = modifier
-            .background(container, MaterialTheme.shapes.small)
-            .padding(horizontal = MaterialTheme.spacing.s, vertical = MaterialTheme.spacing.xs),
+            .heightIn(min = height)
+            .background(container, CircleShape)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.xs),
     ) {
+        if (icon != null) SymIcon(icon, tint = content, size = 16.dp)
         Text(
             text = text,
             color = content,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (bold) FontWeight.Bold else null,
+            fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

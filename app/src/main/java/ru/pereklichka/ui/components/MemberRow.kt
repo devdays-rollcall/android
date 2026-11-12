@@ -1,18 +1,15 @@
 package ru.pereklichka.ui.components
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -20,82 +17,93 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import ru.pereklichka.R
 import ru.pereklichka.domain.rules.MemberView
-import ru.pereklichka.ui.theme.AvatarColors
-import ru.pereklichka.ui.theme.spacing
 
-private val AvatarSize = 40.dp
-private val MinRowHeight = 72.dp
-private val BorderWidth = 1.dp
-private const val LOST_TINT_ALPHA = 0.35f
+private const val BATTERY_ICON = "battery"
 
 /**
- * Строка участника в списке группы: аватар, имя, под ним «когда слышали · расстояние · заряд» и статус справа.
- * Нажатие открывает карточку участника. Всё, что показано, пришло в [member] уже посчитанным.
+ * Строка участника в карточке-списке группы: аватар с кольцом и значком статуса, имя, строка статуса цветом статуса
+ * ([memberStatusLine], заряд добавляется, только когда он не выше 20 %) и справа стрелка с расстоянием.
+ * Нажатие открывает карточку участника. TalkBack читает строку целиком через [spokenSummary].
  */
 @Composable
 fun MemberRow(member: MemberView, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val status = statusOf(member)
-    val colors = MaterialTheme.colorScheme
-    // Тревога заливается целиком, «Не слышно» только слегка: плашка «Не слышно» на заливке того же цвета пропала бы.
-    val container = when (status.kind) {
-        StatusKind.ALARM -> colors.errorContainer
-        StatusKind.LOST -> colors.errorContainer.copy(alpha = LOST_TINT_ALPHA)
-        else -> colors.surfaceContainerLowest
-    }
     val description = spokenSummary(member, status)
-
-    Surface(
-        onClick = onClick,
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) { contentDescription = description },
-        shape = MaterialTheme.shapes.medium,
-        color = container,
-        border = BorderStroke(BorderWidth, colors.outlineVariant),
+            .clickable(onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = description }
+            .heightIn(min = 72.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .heightIn(min = MinRowHeight)
-                .padding(horizontal = MaterialTheme.spacing.m, vertical = MaterialTheme.spacing.s),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.m),
-        ) {
-            Avatar(member)
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = if (member.isMe) "${member.name} (вы)" else member.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = lastSeenLine(member),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            // «Норма» у руководителя ничего не говорит, поэтому вместо неё пишем, что это руководитель.
-            if (member.isLeader && status.kind == StatusKind.OK) LeaderBadge() else StatusChip(status)
+        StatusAvatar(member)
+        Column(Modifier.weight(1f)) {
+            MemberName(member)
+            StatusLine(member, statusLineColor(status.kind))
         }
+        DirectionBadge(member)
     }
 }
 
+/** Имя 16 sp; у руководителя после имени серым «руководитель». */
 @Composable
-private fun Avatar(member: MemberView) {
-    val color = AvatarColors[Math.floorMod(member.id.value.hashCode(), AvatarColors.size)]
-    Box(
-        modifier = Modifier.size(AvatarSize).background(color, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = member.name.firstOrNull()?.uppercase() ?: "?",
-            color = Color.White,
-            style = MaterialTheme.typography.titleMedium,
-        )
+private fun MemberName(member: MemberView) {
+    val secondary = MaterialTheme.colorScheme.onSurfaceVariant
+    val text = buildAnnotatedString {
+        append(member.name)
+        if (member.isLeader) {
+            withStyle(SpanStyle(color = secondary, fontWeight = FontWeight.Normal, fontSize = 14.sp)) { append(" · руководитель") }
+        }
     }
+    Text(text, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+/** Строка статуса: «Тревога · 4 мин назад · [батарейка] 12%». */
+@Composable
+private fun StatusLine(member: MemberView, color: Color) {
+    val battery = lowBattery(member)
+    val text = buildAnnotatedString {
+        append(memberStatusLine(member))
+        if (battery != null) {
+            append(" · ")
+            appendInlineContent(BATTERY_ICON, "заряд")
+            append("$battery%")
+        }
+    }
+    val inline = mapOf(
+        BATTERY_ICON to InlineTextContent(Placeholder(16.sp, 16.sp, PlaceholderVerticalAlign.TextCenter)) {
+            SymIcon(R.drawable.sym_battery_1_bar_fill, tint = color, size = 16.dp)
+        },
+    )
+    Text(
+        text,
+        inlineContent = inline,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        color = color,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/** Цвет строки статуса: тревога и «Не слышно» красным, отлучка жёлто-коричневым, норма серым. */
+@Composable
+fun statusLineColor(kind: StatusKind): Color = when (kind) {
+    StatusKind.ALARM, StatusKind.LOST -> statusColor(StatusKind.LOST).content
+    StatusKind.AWAY -> statusColor(StatusKind.AWAY).content
+    StatusKind.OK -> MaterialTheme.colorScheme.onSurfaceVariant
 }

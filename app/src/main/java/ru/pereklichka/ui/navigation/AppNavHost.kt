@@ -150,7 +150,7 @@ fun AppNavHost(
                     onAlarms = { go { navController.open(AlarmRoute) } },
                     onSos = { go { navController.open(SosRoute) } },
                     onFinishRoute = { go { navController.open(FinishRouteRoute) } },
-                    onDiagnostics = { go { navController.open(DiagnosticsRoute) } },
+                    onSettings = { go { navController.open(DiagnosticsRoute) } },
                     onPermissions = { go { navController.open(PermissionsRoute) } },
                     onLobby = { go { navController.open(LobbyRoute) } },
                     onStopService = viewModel::stopService,
@@ -173,13 +173,14 @@ fun AppNavHost(
         }
         composable<RollcallRoute> {
             val go = onlyWhenResumed()
+            val reportedBySeq by viewModel.reportedBySeq.collectAsStateWithLifecycle()
             WithView(view) {
                 RollcallScreen(
                     it,
+                    reportedBySeq = reportedBySeq,
                     onStartRollcall = viewModel::startRollcall,
                     onAnswer = viewModel::answerRollcall,
                     onAway = { go { navController.open(AwayRoute) } },
-                    onSos = { go { navController.open(SosRoute) } },
                     onBack = { go { navController.popBackStack() } },
                 )
             }
