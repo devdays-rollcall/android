@@ -111,7 +111,7 @@ class AndroidNotifier @Inject constructor(@ApplicationContext private val contex
     private fun showAlarm(event: NotifyEvent.AlarmRaised, silent: Boolean = false) {
         activeAlarms[event.key] = event
         val (title, text) = when {
-            event.isAboutMe && event.isSos -> "Вы отправили SOS" to "Группа получила сигнал. Если помощь не нужна, отмените его"
+            event.isAboutMe && event.isSos -> "Вы отправили SOS" to "Сигнал дойдёт до всех, кто связан с вами цепочкой. Если помощь не нужна, отмените его"
             event.isAboutMe -> "Группа объявила тревогу о вас" to "Если вы в порядке, откройте и нажмите «Я в порядке»"
             event.isSos -> "SOS: ${event.targetName}" to "Участнику нужна помощь. Откройте, чтобы ответить"
             else -> "Тревога: ${event.targetName}" to "Откройте, чтобы ответить «Вижу, в порядке»"
