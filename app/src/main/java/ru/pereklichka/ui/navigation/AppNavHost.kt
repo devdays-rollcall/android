@@ -208,10 +208,13 @@ fun AppNavHost(
         }
         composable<SosRoute> {
             val go = onlyWhenResumed()
+            val reportedBySeq by viewModel.reportedBySeq.collectAsStateWithLifecycle()
             WithView(view) {
                 SosScreen(
                     it,
+                    reportedBySeq = reportedBySeq,
                     onSos = viewModel::sos,
+                    onCancelSos = { viewModel.resolve(it.me, ResolveKind.SELF_OK) },
                     onResendToServer = viewModel::resendSosToServer,
                     onBack = { go { navController.popBackStack() } },
                 )
